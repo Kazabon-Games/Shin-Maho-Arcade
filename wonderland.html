@@ -1327,6 +1327,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="meta-row">
   <div id="versionMarker">WONDERLAND v2.6.1</div>
   <button class="bugrep-toggle" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="bugrep-toggle" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="bugrep-toggle" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
   <button class="bugrep-toggle skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
   <button class="bugrep-toggle" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
@@ -1517,6 +1518,12 @@ const Grid = (function(){
 const Input = (function(){
   const keys = {};
   let joyX = 0, joyY = 0, joyActive = false;
+  // gamepad — no persistent event stream for stick movement exists (only
+  // connect/disconnect events), so it must be polled every frame inside
+  // axis() itself rather than registered once like the keyboard listeners.
+  let gamepadIndex = null, gamepadDashWasPressed = false;
+  window.addEventListener('gamepadconnected', (e) => { gamepadIndex = e.gamepad.index; });
+  window.addEventListener('gamepaddisconnected', (e) => { if(gamepadIndex === e.gamepad.index) gamepadIndex = null; });
 
   window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
@@ -1559,6 +1566,31 @@ const Input = (function(){
     if(keys['a']||keys['arrowleft']) x -= 1;
     if(keys['d']||keys['arrowright']) x += 1;
     if(joyActive){ x = joyX; y = joyY; }
+
+    // gamepad — same override precedent touch already has over keyboard:
+    // prefer the stick when it's actually off-center, otherwise fall
+    // through to whatever keyboard/touch already computed above.
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = (gamepadIndex !== null && pads[gamepadIndex]) ? pads[gamepadIndex] : (pads[0] || null);
+    if(pad){
+      const DEADZONE = 0.15;
+      let gx = pad.axes[0]||0, gy = pad.axes[1]||0;
+      if(Math.abs(gx) < DEADZONE) gx = 0;
+      if(Math.abs(gy) < DEADZONE) gy = 0;
+      if(gx !== 0 || gy !== 0){ x = gx; y = gy; }
+      // dash — face button 0 (A/Cross), manual rising-edge guard since the
+      // Gamepad API is poll-only (no keydown-style repeat suppression).
+      // Update the tracked "was pressed" state BEFORE calling Game.dash() —
+      // attemptDash() calls Input.axis() again synchronously to read
+      // direction, and if the flag were still stale at that point, this
+      // same rising-edge check would fire again inside that nested call
+      // and recurse until the stack overflows.
+      const pressed = !!(pad.buttons[0] && pad.buttons[0].pressed);
+      const wasPressed = gamepadDashWasPressed;
+      gamepadDashWasPressed = pressed;
+      if(pressed && !wasPressed) Game.dash();
+    }
+
     const len = Math.hypot(x,y);
     if(len > 1){ x/=len; y/=len; }
     return {x,y};
@@ -1760,6 +1792,23 @@ const Game = (function(){
 
   // ── run state ──
   let running = false, paused = false, levelChoosing = false;
+  let wakeLockSentinel = null;
+  // guard-behind-a-feature-check, degrade silently if absent — same posture
+  // the file already takes with navigator.vibrate. Tied to togglePause's
+  // own paused/unpaused transition rather than a separate visibilitychange
+  // hook: the existing visibilitychange/blur listeners (below) already
+  // force-pause on tab-hide, and the browser itself auto-releases any
+  // wake lock on hide too, so by the time the tab is visible again the
+  // game is already paused (never force-resumed) and simply has no active
+  // wake lock yet — exactly correct without extra plumbing. It's
+  // re-acquired the moment the player actually resumes.
+  async function requestWakeLock(){
+    if(!navigator.wakeLock) return;
+    try{ wakeLockSentinel = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+  function releaseWakeLock(){
+    if(wakeLockSentinel){ try{ wakeLockSentinel.release(); }catch(e){} wakeLockSentinel = null; }
+  }
   let elapsed = 0, lastTs = 0;
   let player, enemies = [], bullets = [], gems = [], particles = [], novaRings = [], mines = [];
   let atmosphereTime = 0; // real-clock time, always advances — drives the idle menu backdrop
@@ -1968,6 +2017,7 @@ const Game = (function(){
     Persist.data.totalRuns++;
     Persist.save();
     Events.emit('runStart', {});
+    requestWakeLock();
   }
 
   function hideAll(){
@@ -2225,6 +2275,7 @@ const Game = (function(){
 
   function stageCleared(){
     running = false;
+    releaseWakeLock();
     document.getElementById('hud').classList.remove('show');
     const greed = 1 + Persist.data.upgrades.greed*0.15;
     const total = Math.round((shardsThisRun + 60) * greed); // flat clear bonus
@@ -3479,6 +3530,7 @@ const Game = (function(){
   }
   function die(){
     running = false;
+    releaseWakeLock();
     Events.emit('death', { x: player.x, y: player.y });
     document.getElementById('hud').classList.remove('show');
     const greed = 1 + Persist.data.upgrades.greed*0.15;
@@ -3509,7 +3561,8 @@ const Game = (function(){
     if(!running || levelChoosing) return;
     paused = !paused;
     document.getElementById('pauseOverlay').classList.toggle('show', paused);
-    if(!paused) lastTs = performance.now();
+    if(!paused){ lastTs = performance.now(); requestWakeLock(); }
+    else releaseWakeLock();
   }
   // auto-pause when the tab/app loses focus — without this, switching apps
   // or a notification stealing focus mid-run keeps the sim ticking in the
@@ -4658,6 +4711,21 @@ const Music = (function(){
    graph, separate music/SFX volume. Guards every Music.* call it makes
    with a typeof check so this lands cleanly even before that split exists.
 ===================================================================== */
+/* =====================================================================
+   FULLSCREEN — guard-behind-a-feature-check, degrade silently if absent,
+   same posture as navigator.vibrate elsewhere in this file.
+===================================================================== */
+const FullscreenCtrl = (function(){
+  function toggle(){
+    if(!document.fullscreenElement){
+      if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+    } else {
+      if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+    }
+  }
+  return { toggle };
+})();
+
 const Settings = (function(){
   // reducedMotion(): the manual override in Persist wins when set; a live
   // matchMedia listener keeps mid-session OS changes in effect without a
