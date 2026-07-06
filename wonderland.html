@@ -2707,6 +2707,12 @@ const Game = (function(){
       if(e.hitFlash > 0) e.hitFlash -= dt;
       if(e._hitPunch > 0) e._hitPunch -= dt;
       if(e._spawnT < ENEMY_SPAWN_POP_DUR) e._spawnT += dt;
+      // cached for the render-only attack-anticipation lean below — the
+      // SAME distance the real contact-damage check re-derives itself a
+      // few lines down (dist2(e.x,e.y,player.x,player.y) there); this is
+      // purely a one-frame-old read of it for cosmetics, it never feeds
+      // back into when damage actually applies.
+      e._distToPlayer = d;
     }
 
     // spatial grid rebuild — after movement, before any collision query
@@ -3285,7 +3291,21 @@ const Game = (function(){
         // doesn't pulse in lockstep).
         const travelAngle = Math.atan2(player.y-e.y, player.x-e.x);
         const stretchPhase = Math.sin(elapsed*4 + e.x*0.08)*0.5 + 0.5;
-        const stretchAmt = stretchPhase * (Settings.reducedMotion() ? 0.015 : 0.07);
+        // attack anticipation — purely cosmetic lean toward the player as
+        // contact approaches, reusing e._distToPlayer (the SAME distance
+        // the real contact-damage check computes a few lines up in
+        // update() — this reads it, never delays or gates it). Ramps up
+        // over a render-only buffer well outside the actual hit radius, so
+        // it dramatizes a hit that was always going to land at the same
+        // instant rather than adding a new windup state. Deliberately NOT
+        // a real windup-then-lunge behavior change (see plan) — DPS-per-
+        // second-in-contact is untouched by this.
+        const hitR = e.r + player.r;
+        const telegraphR = hitR + 46;
+        const proximity = e._distToPlayer !== undefined
+          ? clamp(1 - (e._distToPlayer-hitR)/(telegraphR-hitR), 0, 1) : 0;
+        const proximityLean = proximity * (Settings.reducedMotion() ? 0.03 : 0.16);
+        const stretchAmt = stretchPhase * (Settings.reducedMotion() ? 0.015 : 0.07) + proximityLean;
         ctx.save();
         ctx.translate(ex, ey);
         ctx.rotate(travelAngle);
