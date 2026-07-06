@@ -1703,6 +1703,7 @@ const ENEMY_TYPES = {
   bulwark: { r:22, hp:90, speed:36,  dmg:18, xp:4, color:'#ff3d68', shape:'hex'    },
   elite:   { r:30, hp:600,speed:44,  dmg:26, xp:30,color:'#ffdf7e', shape:'diamond'},
 };
+const ENEMY_SPAWN_POP_DUR = 0.2; // seconds — regular-enemy spawn pop-in window (elites skip this, see spawnEnemy)
 
 /* =====================================================================
    STATUS PRIMITIVES — shared engine services any spell/passive can apply
@@ -2054,6 +2055,11 @@ const Game = (function(){
       xp: def.xp,
       color: def.color, shape: def.shape,
       hitFlash: 0,
+      // spawn pop-in — regular enemies used to just appear instantly.
+      // Elites keep their existing comet telegraph instead (a rarity
+      // signal reused for every husk would cheapen it), so they start
+      // already past ENEMY_SPAWN_POP_DUR — the multiplier is a no-op.
+      _spawnT: type==='elite' ? ENEMY_SPAWN_POP_DUR : 0,
     });
   }
   function updateSpawns(dt){
@@ -2570,7 +2576,11 @@ const Game = (function(){
         for(let i=0;i<burstCount;i++){
           const a = (Math.PI*2/burstCount)*i + rand(-0.2,0.2);
           const spd = rand(burstSpeed*0.5, burstSpeed);
-          particles.push({ x:e.x, y:e.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.3,0.5), color:e.color, size:rand(1.6,3.2) });
+          // wedge-shaped, alternating lit/dark tint — the exact same shading
+          // deltas the sprite's own facets use, so death fragments rhyme
+          // with the cut-gem look instead of reading as generic colored dots.
+          particles.push({ x:e.x, y:e.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.3,0.5),
+            color: shadeHex(e.color, i%2===0?18:-16, 6), size:rand(1.6,3.2), shape:'wedge', angle:a });
         }
         // a couple of bright white core sparks for punch
         for(let i=0;i<3;i++){
@@ -2696,6 +2706,7 @@ const Game = (function(){
       e.y += (player.y-e.y)/d * e.speed * sm * dt;
       if(e.hitFlash > 0) e.hitFlash -= dt;
       if(e._hitPunch > 0) e._hitPunch -= dt;
+      if(e._spawnT < ENEMY_SPAWN_POP_DUR) e._spawnT += dt;
     }
 
     // spatial grid rebuild — after movement, before any collision query
@@ -3255,14 +3266,33 @@ const Game = (function(){
         // real weight instead of the white flash being the only reaction
         const punchT = Math.max(0, (e._hitPunch||0) / 0.18);
         const punch = 1 + punchT*0.32*(1-punchT); // pops out then settles, not a linear shrink
-        const s = sprite.size*pulse*punch;
+        // spawn pop-in — regular enemies used to just appear off-screen
+        // instantly. easeOutBack (not popSettle — popSettle is a bulge
+        // around 1, not a grow-from-0 curve, wrong shape for this) scales
+        // from 0 with a small overshoot before settling at 1.
+        const spawnPop = e._spawnT < ENEMY_SPAWN_POP_DUR ? Math.max(0, Ease.easeOutBack(e._spawnT/ENEMY_SPAWN_POP_DUR)) : 1;
+        const s = sprite.size*pulse*punch*spawnPop;
         let frame = sprite.frames[0];
         if(sprite.needsRotation){
           const norm = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
           const idx = Math.round(norm/(Math.PI*2)*ROT_FRAMES) % ROT_FRAMES;
           frame = sprite.frames[idx];
         }
-        ctx.drawImage(frame, ex-s/2, ey-s/2, s, s);
+        // movement squash-stretch — rigid linear homing had no wobble at
+        // all before this; small oscillating stretch along the direction
+        // of travel, phase-offset per enemy via e.x (same desync trick
+        // bulwark's own breathing pulse above already uses, so a pack
+        // doesn't pulse in lockstep).
+        const travelAngle = Math.atan2(player.y-e.y, player.x-e.x);
+        const stretchPhase = Math.sin(elapsed*4 + e.x*0.08)*0.5 + 0.5;
+        const stretchAmt = stretchPhase * (Settings.reducedMotion() ? 0.015 : 0.07);
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(travelAngle);
+        ctx.scale(1+stretchAmt, 1-stretchAmt*0.5);
+        ctx.rotate(-travelAngle);
+        ctx.drawImage(frame, -s/2, -s/2, s, s);
+        ctx.restore();
       }
 
       // burn indicator — a real, distinct status tell instead of the old
@@ -3339,12 +3369,28 @@ const Game = (function(){
       drawCharlesFigure(ctx, px, py, leanX, leanY, iframeBlink ? 0.35 : 1, false, stretchAngle, stretchAmt);
     }
 
-    // particles — glowing sparks with additive blending, real bloom-like stacking
+    // particles — glowing sparks with additive blending, real bloom-like
+    // stacking. Death fragments (p.shape==='wedge') draw a small triangle
+    // instead of the default circle, tinted via shadeHex the same way the
+    // sprite's own facets are — rhymes with the cut-gem look instead of
+    // generic colored dots. Every other particle source (pickups, dash
+    // motes, level-up burst) is untouched, still plain circles.
     ctx.globalCompositeOperation = 'lighter';
     for(const p of particles){
       ctx.globalAlpha = clamp(p.life/0.4, 0, 1) * 0.85;
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x+ox, p.y+oy, p.size||2.2, 0, Math.PI*2); ctx.fill();
+      if(p.shape === 'wedge'){
+        const s = p.size||2.2;
+        ctx.save();
+        ctx.translate(p.x+ox, p.y+oy);
+        ctx.rotate(p.angle||0);
+        ctx.beginPath();
+        ctx.moveTo(s*1.7, 0); ctx.lineTo(-s*0.8, s*0.9); ctx.lineTo(-s*0.8, -s*0.9);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(p.x+ox, p.y+oy, p.size||2.2, 0, Math.PI*2); ctx.fill();
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
