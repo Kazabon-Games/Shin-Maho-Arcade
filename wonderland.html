@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>WONDERLAND v2.6.1</title>
 
+<!-- portal-readiness metadata: previously none of this existed (no favicon,
+     no description, no Open Graph tags) — matters now that this links out
+     from the Shin Mahou Arcade portal. Favicon is an inline SVG data URI
+     (no external asset, matches the file's single-HTML-file constraint) —
+     a small faceted gem echoing the cut-gem art direction used throughout
+     (Charles, Husks, Ramiel). og:image intentionally omitted — ship without
+     it rather than block on producing a real screenshot; a missing tag
+     looks broken in a link preview, a missing image just degrades. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0612'/%3E%3Cpolygon points='16,4 24,16 16,28 8,16' fill='%23ffd76b'/%3E%3Cpolygon points='16,4 24,16 16,16' fill='%23ffcb5c'/%3E%3Cpolygon points='16,16 24,16 16,28' fill='%23e2b855'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0612'/%3E%3Cpolygon points='16,4 24,16 16,28 8,16' fill='%23ffd76b'/%3E%3Cpolygon points='16,4 24,16 16,16' fill='%23ffcb5c'/%3E%3Cpolygon points='16,16 24,16 16,28' fill='%23e2b855'/%3E%3C/svg%3E">
+<meta name="description" content="WONDERLAND — dodge a swarm, auto-cast spells, level up, and survive to a boss fight in this browser survivor-roguelite from Kazabon Game Studio. Free to play instantly, no install.">
+<meta property="og:title" content="WONDERLAND — Shin Mahou Arcade">
+<meta property="og:description" content="A browser survivor-roguelite: dodge a swarm, auto-cast spells, level up, and survive to a boss fight. Instant play, no install.">
+<meta property="og:type" content="website">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -1009,6 +1024,24 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .pick-card:nth-child(6),.stat-box:nth-child(6),.shop-row:nth-child(6),.ach-row:nth-child(6){animation-delay:.2s;}
 .pick-card:nth-child(7),.stat-box:nth-child(7),.shop-row:nth-child(7),.ach-row:nth-child(7){animation-delay:.24s;}
 .pick-card:nth-child(8),.stat-box:nth-child(8),.shop-row:nth-child(8),.ach-row:nth-child(8){animation-delay:.28s;}
+/* prefers-reduced-motion — covers both the OS-detected case and the manual
+   Settings override with one mechanism (Settings.applyReducedMotionClass
+   toggles this class; a bare @media query alone can't express the manual
+   override). Overlay/panel/card entrance animations are screen-space
+   motion, not informational, so they're the ones gated here — boss
+   telegraph timing and per-sprite oscillations are deliberately NOT
+   touched (see Juice.addShake/CAM_LOOKAHEAD/dash-stretch for the other
+   reduced-motion choke points, gated in JS instead of CSS). */
+body.reduced-motion .overlay.show,
+body.reduced-motion .panel,
+body.reduced-motion .pick-card,
+body.reduced-motion .stat-box,
+body.reduced-motion .shop-row,
+body.reduced-motion .ach-row,
+body.reduced-motion .stage-badge,
+body.reduced-motion .arcade-credit{
+  animation:none!important;
+}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
   padding:26px 24px;max-width:520px;width:100%;max-height:92vh;overflow-y:auto;
   box-shadow:0 0 60px -18px rgba(226,184,85,0.22);}
@@ -1068,6 +1101,13 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .stat-box .v{font-size:1.35rem;font-weight:700;font-family:var(--mono);color:var(--neon);}
 .stat-box .v.gold{color:var(--gold);}
 .stat-box .k{font-size:.66rem;color:var(--ink-soft);letter-spacing:.1em;text-transform:uppercase;margin-top:3px;}
+
+/* settings */
+.settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 14px;margin-bottom:10px;font-size:.85rem;font-family:var(--body-font);}
+.settings-row input[type="range"]{width:130px;accent-color:var(--neon);}
+.settings-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--neon);}
 
 /* shop */
 .shop-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--border);
@@ -1178,7 +1218,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- MENU -->
 <div class="overlay show" id="menuOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Main menu">
     <canvas id="crestCanvas" width="150" height="150" style="display:block;margin:0 auto 4px;"></canvas>
     <h1>WONDERLAND</h1>
     <div class="stage-badge">STAGE I &middot; IRIDESCENT COSMOLOGY</div>
@@ -1194,7 +1234,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- LEVEL UP -->
 <div class="overlay" id="levelOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Choose a spell">
     <h2>A NEW PAGE TURNS</h2>
     <div class="tagline">inscribe one spell</div>
     <div class="pick-cards" id="pickCards"></div>
@@ -1203,7 +1243,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- PAUSE -->
 <div class="overlay" id="pauseOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
     <div class="tagline">the wonderland waits · nothing moves until you do</div>
     <button class="btn primary" onclick="Game.togglePause()">RESUME</button>
@@ -1213,7 +1253,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- DEATH -->
 <div class="overlay" id="deathOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Run ended">
     <h2 style="color:var(--danger)">THE WONDERLAND CLOSES</h2>
     <div class="tagline">the hunger was patient tonight · it will wait again</div>
     <div class="stat-grid">
@@ -1230,7 +1270,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- STAGE CLEARED -->
 <div class="overlay" id="stageClearOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Stage cleared">
     <h2 style="color:var(--neon)">✦ STAGE I CLEARED ✦</h2>
     <div class="tagline" style="margin-bottom:16px;">Ramiel is shattered. The Wonderland exhales.</div>
     <div class="stat-grid">
@@ -1245,7 +1285,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- SHOP -->
 <div class="overlay" id="shopOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="The Grimoire — permanent upgrades">
     <h2>THE GRIMOIRE</h2>
     <div class="tagline">essence trades for permanence · spend with intent</div>
     <div class="shard-count">✦ <span id="shopShards">0</span> essence</div>
@@ -1256,7 +1296,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- ACHIEVEMENTS -->
 <div class="overlay" id="achieveOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Achievements">
     <h2>✦ MEMORIES OF THE WONDERLAND ✦</h2>
     <div class="tagline">what the hunger remembers of you</div>
     <div class="ach-progress" id="achProgress"></div>
@@ -1267,7 +1307,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- BUG REPORTER -->
 <div class="overlay" id="bugOverlay">
-  <div class="panel">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
     <h2>REPORT ISSUE</h2>
     <div class="bugcat">
       <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
@@ -1286,9 +1326,31 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <div class="meta-row">
   <div id="versionMarker">WONDERLAND v2.6.1</div>
-  <button class="bugrep-toggle" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music">🔊</button>
-  <button class="bugrep-toggle skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)">⏭</button>
-  <button class="bugrep-toggle" onclick="Bugrep.open()" title="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <button class="bugrep-toggle" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="bugrep-toggle" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="bugrep-toggle skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
+  <button class="bugrep-toggle" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+</div>
+
+<!-- SETTINGS -->
+<div class="overlay" id="settingsOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
+    <h2>SETTINGS</h2>
+    <div class="tagline">tune the wonderland to you</div>
+    <div class="settings-row">
+      <label for="musicVolSlider">Music volume</label>
+      <input type="range" id="musicVolSlider" min="0" max="1" step="0.01" oninput="Settings.setMusicVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="sfxVolSlider">Sound effects volume</label>
+      <input type="range" id="sfxVolSlider" min="0" max="1" step="0.01" oninput="Settings.setSfxVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="reducedMotionToggle">Reduce motion</label>
+      <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
+    </div>
+    <button class="btn" onclick="Settings.close()">BACK</button>
+  </div>
 </div>
 
 <script>
@@ -1307,6 +1369,9 @@ const Persist = (function(){
     lifetimeKills: 0, lifetimeEssence: 0, bossesDefeated: 0, deaths: 0, revives: 0,
     fastestClear: null,
     achievements: {},
+    // reducedMotion: null means "not manually overridden, defer to the OS
+    // prefers-reduced-motion setting" — see Settings.reducedMotion().
+    settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
   };
   function load(){
     try{
@@ -1330,6 +1395,11 @@ const Persist = (function(){
         if(data.revives === undefined) data.revives = 0;
         if(data.fastestClear === undefined) data.fastestClear = null;
         if(!data.achievements) data.achievements = {};
+        // backfill for saves from before the accessibility/settings pass
+        if(!data.settings) data.settings = { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null };
+        if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
+        if(data.settings.sfxVol === undefined) data.settings.sfxVol = 0.5;
+        if(data.settings.reducedMotion === undefined) data.settings.reducedMotion = null;
       }
     }catch(e){}
   }
@@ -2525,8 +2595,12 @@ const Game = (function(){
     // camera lerp + facing-based lookahead, frame-rate-independent (dt is
     // always the fixed SIM_DT here, but the exponential form stays correct
     // even if that ever changes). Replaces the old hard camX=player.x snap.
-    const camTargetX = player.x + player._facingX*CAM_LOOKAHEAD;
-    const camTargetY = player.y + player._facingY*CAM_LOOKAHEAD;
+    // lookahead is the part of the camera effect that shifts the world
+    // independent of direct input — drop it to 0 under reduced motion, but
+    // keep the lerp smoothing itself (subtle, not the disorienting part).
+    const lookahead = Settings.reducedMotion() ? 0 : CAM_LOOKAHEAD;
+    const camTargetX = player.x + player._facingX*lookahead;
+    const camTargetY = player.y + player._facingY*lookahead;
     const camLerpT = 1 - Math.exp(-CAM_LERP_RATE*dt); // standard frame-rate-independent exponential smoothing
     camX += (camTargetX - camX) * camLerpT;
     camY += (camTargetY - camY) * camLerpT;
@@ -3206,7 +3280,7 @@ const Game = (function(){
       // dash squash-stretch: elongate along the dash direction, easing back
       // to normal as _dashStretch decays (see update()).
       const stretchAngle = Math.atan2(player._dashDY, player._dashDX);
-      const stretchAmt = Ease.easeOutCubic(player._dashStretch) * 0.3;
+      const stretchAmt = Ease.easeOutCubic(player._dashStretch) * (Settings.reducedMotion() ? 0.05 : 0.3);
       drawCharlesFigure(ctx, px, py, leanX, leanY, iframeBlink ? 0.35 : 1, false, stretchAngle, stretchAmt);
     }
 
@@ -3556,6 +3630,10 @@ const Juice = (function(){
   const BOSS_NAMEPLATE_DUR = 3.6; // holds through the 3.2s entrance telegraph, then a beat longer before fading
 
   function addShake(mag, dirX, dirY){
+    // single choke point every shake call in the file routes through —
+    // gating here covers kill/hit/playerHurt/levelup/dash/death/boss shake
+    // for free under reduced motion, without touching any call site.
+    if(Settings.reducedMotion()) mag *= 0.15;
     shakeMag = Math.min(shakeMag + mag, 30);
     // optional directional bias — impacts with a known source (player-hurt,
     // boss beam) kick the camera away from that source for the first few
@@ -3722,7 +3800,8 @@ const Juice = (function(){
       const tier = streakCount >= 30 ? 2 : streakCount >= 15 ? 1 : 0;
       const color = tier === 2 ? '#ff5d73' : tier === 1 ? '#ffd166' : '#eee6d4';
       const fontPx = 15 + tier*4;
-      const scale = Ease.popSettle(1 - streakPulse);
+      const effectivePulse = Settings.reducedMotion() ? streakPulse*0.2 : streakPulse;
+      const scale = Ease.popSettle(1 - effectivePulse);
       ctx.save();
       ctx.translate(W/2, 54);
       ctx.scale(scale, scale);
@@ -3863,6 +3942,12 @@ const Juice = (function(){
 ===================================================================== */
 const Music = (function(){
   let ctx = null, master = null, started = false, muted = false;
+  // musicGain/sfxGain — split added on top of the existing, otherwise
+  // untouched master bus (still distortion->compressor->destination, still
+  // what toggleMute zeroes). Every voice in this module was previously
+  // either straight on master or on duckBus (itself on master); this only
+  // repoints those connections, it does not change the mix chain itself.
+  let musicGain = null, sfxGain = null;
   let drone = null; // quiet background bed, same idea as before, much lower presence now
   let intensity = 0;
   let debugTickCount = 0;
@@ -4020,17 +4105,30 @@ const Music = (function(){
     distortion.connect(compressor);
     compressor.connect(ctx.destination);
 
+    // musicGain/sfxGain — leaf buses for the volume-split Settings sliders.
+    // Both feed the existing master untouched; toggleMute() keeps zeroing
+    // master and silences both at once, unmodified.
+    musicGain = ctx.createGain(); musicGain.gain.value = Persist.data.settings.musicVol;
+    musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = Persist.data.settings.sfxVol;
+    sfxGain.connect(master);
+
     // sidechain duck bus — the actual signature trance/hardstyle production
     // technique: the drone/pad ducks briefly on every kick hit and recovers,
     // which is what makes a synth mix feel "pumping" and produced instead
     // of just layered on top of itself. The drone routes through this
     // instead of straight to master; playKick() triggers the duck.
+    // Routes to musicGain (not master directly) now that the split exists —
+    // it's score content, not a stinger.
     duckBus = ctx.createGain(); duckBus.gain.value = 1;
-    duckBus.connect(master);
+    duckBus.connect(musicGain);
 
     // reverb send — a short synthesized impulse response (exponential-decay
     // stereo noise, no external IR file needed) gives the bell accents
     // actual space/dimension instead of sounding like a dry beep in a box.
+    // Deliberately left on the shared master fader, unsplit — it's low-level
+    // ambience feeding both channels' tails; splitting it means either
+    // duplicating the send or picking an arbitrary owner between music/SFX.
     reverb = ctx.createConvolver();
     const irLen = ctx.sampleRate*1.1;
     const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
@@ -4042,6 +4140,9 @@ const Music = (function(){
     reverbSend = ctx.createGain(); reverbSend.gain.value = 0.4;
     reverb.connect(reverbSend); reverbSend.connect(master);
   }
+
+  function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
+  function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
 
   function duckPump(t){
     duckBus.gain.cancelScheduledValues(t);
@@ -4080,7 +4181,7 @@ const Music = (function(){
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(vol||0.22, t+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t+(dur||1.4));
-    g.connect(master);
+    g.connect(sfxGain); // the stinger voice (levelup/elite/boss/victory) — SFX bus, not music
     const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
     const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2.01;
     const g2 = ctx.createGain(); g2.gain.value = 0.28;
@@ -4103,7 +4204,7 @@ const Music = (function(){
     const g = ctx.createGain();
     g.gain.setValueAtTime(hard?0.9:0.7, t);
     g.gain.exponentialRampToValueAtTime(0.001, t+0.22);
-    g.connect(master);
+    g.connect(musicGain);
     const o = ctx.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(hard?170:150, t);
     o.frequency.exponentialRampToValueAtTime(45, t+0.13);
@@ -4114,7 +4215,7 @@ const Music = (function(){
     for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
     const click = ctx.createBufferSource(); click.buffer = clickBuf;
     const cg = ctx.createGain(); cg.gain.value = hard?0.3:0.18;
-    click.connect(cg); cg.connect(master); click.start(t);
+    click.connect(cg); cg.connect(musicGain); click.start(t);
   }
 
   // bass pluck — filtered sawtooth, fast decay envelope + a resonant
@@ -4131,7 +4232,7 @@ const Music = (function(){
     g.gain.linearRampToValueAtTime(0.42, t+0.008);
     g.gain.exponentialRampToValueAtTime(0.001, t+0.17);
     const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq;
-    o.connect(filt); filt.connect(g); g.connect(master);
+    o.connect(filt); filt.connect(g); g.connect(musicGain);
     o.start(t); o.stop(t+0.2);
   }
 
@@ -4199,7 +4300,7 @@ const Music = (function(){
     const src = ctx.createBufferSource(); src.buffer = buf;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
     const g = ctx.createGain(); g.gain.value = (open?0.16:0.11) * (0.6+intensity*0.4);
-    src.connect(hp); hp.connect(g); g.connect(master);
+    src.connect(hp); hp.connect(g); g.connect(musicGain);
     src.start(t);
   }
 
@@ -4222,7 +4323,7 @@ const Music = (function(){
       const src = ctx.createBufferSource(); src.buffer = buf;
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 1.2;
       const g = ctx.createGain(); g.gain.value = 0.2;
-      src.connect(bp); bp.connect(g); g.connect(master);
+      src.connect(bp); bp.connect(g); g.connect(musicGain);
       src.start(t+offset);
     }
     const tailLen = 0.15;
@@ -4232,7 +4333,7 @@ const Music = (function(){
     const tsrc = ctx.createBufferSource(); tsrc.buffer = tbuf;
     const tbp = ctx.createBiquadFilter(); tbp.type = 'bandpass'; tbp.frequency.value = 1200; tbp.Q.value = 0.9;
     const tg = ctx.createGain(); tg.gain.value = 0.15 * (0.7+intensity*0.3);
-    tsrc.connect(tbp); tbp.connect(tg); tg.connect(master);
+    tsrc.connect(tbp); tbp.connect(tg); tg.connect(musicGain);
     tsrc.start(t+0.02);
   }
 
@@ -4259,7 +4360,7 @@ const Music = (function(){
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.2, t+durSec);
-    src.connect(bp); bp.connect(g); g.connect(master);
+    src.connect(bp); bp.connect(g); g.connect(musicGain);
     src.start(t);
 
     const o = ctx.createOscillator(); o.type = 'sawtooth';
@@ -4268,7 +4369,7 @@ const Music = (function(){
     const og = ctx.createGain();
     og.gain.setValueAtTime(0.0001, t);
     og.gain.exponentialRampToValueAtTime(0.1, t+durSec);
-    o.connect(og); og.connect(master);
+    o.connect(og); og.connect(musicGain);
     o.start(t);
 
     riserNodes = { src, o, g, og };
@@ -4458,7 +4559,7 @@ const Music = (function(){
     if(menuActive || started) return; // don't layer menu ambience under a live run
     menuActive = true;
     const g = ctx.createGain(); g.gain.value = 0;
-    g.connect(master);
+    g.connect(musicGain);
     const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value = ROOT; o1.connect(g); o1.start();
     const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value = ROOT*1.4983; o2.connect(g); o2.start(); // quiet fifth, not the full drone pair
     menuCtxNodes = { gain: g, nodes: [o1,o2] };
@@ -4535,16 +4636,85 @@ const Music = (function(){
   return {
     toggleMute,
     stopForRun,
+    setMusicVolume,
+    setSfxVolume,
     _test: { isMuted: () => muted, isStarted: () => started, intensity: () => intensity, bpm: () => BPM,
       isScheduling: () => schedulerHandle !== null, currentStep: () => step,
       droneGain: () => drone ? drone.gain.gain.value : null, tickCount: () => debugTickCount,
       phraseBar: () => phraseBar, bossMode: () => bossMode, section: () => section,
       riserActive: () => riserActive,
       bossPadGain: () => bossPad ? bossPad.gain.gain.value : null,
+      musicGain: () => musicGain ? musicGain.gain.value : null,
+      sfxGain: () => sfxGain ? sfxGain.gain.value : null,
       isMenuActive: () => menuActive,
       menuGain: () => menuCtxNodes ? menuCtxNodes.gain.gain.value : null,
       playVictoryPhrase },
   };
+})();
+
+/* =====================================================================
+   SETTINGS — accessibility/preferences surface. Houses reduced-motion
+   (system-detected + manual override) and, once Pass 4 splits the audio
+   graph, separate music/SFX volume. Guards every Music.* call it makes
+   with a typeof check so this lands cleanly even before that split exists.
+===================================================================== */
+const Settings = (function(){
+  // reducedMotion(): the manual override in Persist wins when set; a live
+  // matchMedia listener keeps mid-session OS changes in effect without a
+  // reload when there's no manual override.
+  let systemReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => {
+    systemReducedMotion = e.matches;
+    applyReducedMotionClass();
+  });
+  function reducedMotion(){
+    const override = Persist.data.settings.reducedMotion;
+    return override === null ? systemReducedMotion : override;
+  }
+  function applyReducedMotionClass(){
+    document.body.classList.toggle('reduced-motion', reducedMotion());
+  }
+
+  // reachable both from the main menu and mid-run (the gear sits in the
+  // always-visible meta-row, same as mute) — opened-from-menu swaps with
+  // the menu overlay; opened mid-run auto-pauses first, same precedent as
+  // Bugrep.open() below, and stacks on top of the pause overlay rather than
+  // hiding it.
+  let openedFromMenu = false;
+  function open(){
+    openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
+    if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
+    else {
+      const st = Game._test.state();
+      if(st.running && !st.paused && !st.levelChoosing) Game.togglePause();
+    }
+    document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
+    document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
+    document.getElementById('reducedMotionToggle').checked = reducedMotion();
+    document.getElementById('settingsOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('settingsOverlay').classList.remove('show');
+    if(openedFromMenu){ Game.renderMenuBest(); document.getElementById('menuOverlay').classList.add('show'); }
+  }
+  function setMusicVol(v){
+    Persist.data.settings.musicVol = Number(v);
+    Persist.save();
+    if(typeof Music.setMusicVolume === 'function') Music.setMusicVolume(Number(v));
+  }
+  function setSfxVol(v){
+    Persist.data.settings.sfxVol = Number(v);
+    Persist.save();
+    if(typeof Music.setSfxVolume === 'function') Music.setSfxVolume(Number(v));
+  }
+  function setReducedMotion(checked){
+    Persist.data.settings.reducedMotion = checked;
+    Persist.save();
+    applyReducedMotionClass();
+  }
+
+  applyReducedMotionClass();
+  return { open, close, setMusicVol, setSfxVol, setReducedMotion, reducedMotion };
 })();
 
 const Shop = (function(){
