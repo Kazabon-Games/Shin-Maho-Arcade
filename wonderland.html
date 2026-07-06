@@ -1263,6 +1263,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <div class="stat-box"><div class="v gold" id="dShards">+0</div><div class="k">essence gathered</div></div>
     </div>
     <div class="hint" id="dRecord" style="color:var(--gold);margin-bottom:12px;"></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
     <button class="btn primary" onclick="Game.start()">↻ &nbsp;OPEN IT AGAIN</button>
     <button class="btn" onclick="Game.toMenu()">MENU</button>
   </div>
@@ -1278,6 +1279,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <div class="stat-box"><div class="v" id="clearKills">0</div><div class="k">Husks destroyed</div></div>
     </div>
     <div class="stat-box" style="margin:10px 0 16px;"><div class="v gold" id="clearShards">+0</div><div class="k">essence gathered</div></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
     <button class="btn primary" onclick="Game.start()">↻ &nbsp;RUN AGAIN</button>
     <button class="btn" onclick="Game.toMenu()">MENU</button>
   </div>
@@ -1793,6 +1795,7 @@ const Game = (function(){
   // ── run state ──
   let running = false, paused = false, levelChoosing = false;
   let wakeLockSentinel = null;
+  let lastRunStats = null; // captured at run-end for ShareCard — same finalized values the overlay itself displays
   // guard-behind-a-feature-check, degrade silently if absent — same posture
   // the file already takes with navigator.vibrate. Tied to togglePause's
   // own paused/unpaused transition rather than a separate visibilitychange
@@ -2292,6 +2295,7 @@ const Game = (function(){
     tweenCountUp('clearKills', kills);
     tweenCountUp('clearShards', total, { prefix:'+' });
     document.getElementById('stageClearOverlay').classList.add('show');
+    lastRunStats = { elapsed, kills, level, total, cleared: true };
   }
 
 
@@ -3555,6 +3559,9 @@ const Game = (function(){
     tweenCountUp('dShards', total, { prefix:'+' });
     document.getElementById('dRecord').textContent = newRecord ? '✦ LONGEST THE WONDERLAND HAS HELD ✦' : '';
     document.getElementById('deathOverlay').classList.add('show');
+    // captured for ShareCard — same finalized values the overlay itself
+    // just displayed, not re-derived from formatted DOM text.
+    lastRunStats = { elapsed, kills, level, total, cleared: false };
   }
 
   function togglePause(){
@@ -3650,7 +3657,7 @@ const Game = (function(){
     return { running, paused, levelChoosing, hp: player?player.hp:null, maxhp: player?player.maxhp:null };
   }
 
-  return { start, pick, togglePause, abandonRun, toMenu, renderMenuBest, setTimeScale, getTimeScale, setShake, dash, dashState, skipToBoss, getRunStatus, _test };
+  return { start, pick, togglePause, abandonRun, toMenu, renderMenuBest, setTimeScale, getTimeScale, setShake, dash, dashState, skipToBoss, getRunStatus, getLastRunStats: () => lastRunStats, _test };
 })();
 
 /* =====================================================================
@@ -4724,6 +4731,73 @@ const FullscreenCtrl = (function(){
     }
   }
   return { toggle };
+})();
+
+/* =====================================================================
+   SHARE CARD — reuses the death/stageClear overlays' already-finalized
+   run stats (Game.getLastRunStats(), the exact same elapsed/kills/level/
+   total values tweenCountUp already drove on those screens) rather than
+   re-parsing formatted DOM text or computing anything new.
+===================================================================== */
+const ShareCard = (function(){
+  function buildCanvas(stats){
+    const cv = document.createElement('canvas');
+    cv.width = 600; cv.height = 315;
+    const c = cv.getContext('2d');
+    const bgGrad = c.createLinearGradient(0,0,0,cv.height);
+    bgGrad.addColorStop(0, '#171226'); bgGrad.addColorStop(1, '#0b0912');
+    c.fillStyle = bgGrad; c.fillRect(0,0,cv.width,cv.height);
+    c.strokeStyle = 'rgba(255,215,107,0.55)'; c.lineWidth = 2;
+    c.strokeRect(8,8,cv.width-16,cv.height-16);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ffd76b';
+    c.font = "bold 38px 'Cormorant Garamond', Georgia, serif";
+    c.fillText('WONDERLAND', cv.width/2, 66);
+    c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
+    c.fillStyle = '#c9b98f';
+    c.fillText(stats.cleared ? 'Stage I cleared — Ramiel is shattered' : 'the hunger was patient tonight', cv.width/2, 92);
+
+    // mirrors exactly what each overlay already shows — no new stats invented
+    const cols = stats.cleared
+      ? [['TIME', fmtTime(stats.elapsed)], ['HUSKS DESTROYED', stats.kills], ['ESSENCE', '+'+stats.total]]
+      : [['SURVIVED', fmtTime(stats.elapsed)], ['HUSKS DESTROYED', stats.kills], ['LEVEL', stats.level], ['ESSENCE', '+'+stats.total]];
+    const colW = cv.width / cols.length;
+    cols.forEach(([label, val], i) => {
+      const x = colW*i + colW/2;
+      c.fillStyle = '#ffe6a8';
+      c.font = "bold 32px 'IBM Plex Mono', monospace";
+      c.fillText(String(val), x, 195);
+      c.fillStyle = '#9a8c6b';
+      c.font = "11px 'Quicksand', sans-serif";
+      c.fillText(label, x, 220);
+    });
+
+    c.fillStyle = '#6b6050';
+    c.font = "12px 'IBM Plex Mono', monospace";
+    c.fillText('SHIN MAHOU ARCADE', cv.width/2, cv.height-24);
+    return cv;
+  }
+
+  function share(){
+    const stats = Game.getLastRunStats();
+    if(!stats) return;
+    const cv = buildCanvas(stats);
+    cv.toBlob(async (blob) => {
+      if(!blob) return;
+      const file = new File([blob], 'wonderland-run.png', { type:'image/png' });
+      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+        try{ await navigator.share({ files:[file], title:'WONDERLAND', text:'My Wonderland run' }); return; }
+        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      }
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = 'wonderland-run.png';
+      a.click();
+    }, 'image/png');
+  }
+
+  return { share };
 })();
 
 const Settings = (function(){
