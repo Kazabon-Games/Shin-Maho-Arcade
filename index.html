@@ -235,6 +235,26 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-art">
+        <canvas id="sigilchainArt" width="640" height="280" aria-hidden="true"></canvas>
+        <div class="card-badge">Stage II · Live Now</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Sigil Chain</div>
+        <div class="card-genre">Puzzle · Score-Attack</div>
+        <p class="card-desc">
+          Trace a chain across a living magic circle, close the loop for a banishing
+          surge, and beat the buzzer. A rune circle that escalates with you in
+          ninety seconds flat — no slider, just the arc.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="sigilchain.html">✦&nbsp; Trace the Circle</a>
+          <span class="card-meta">6 rune types · combo chains · 90-second rounds</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card soon">
       <div class="glyph">✦</div>
       <div class="card-title">More Worlds</div>
@@ -392,6 +412,68 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     }
   }, { threshold: 0.05 });
   io.observe(cv);
+})();
+
+// Sigil Chain card art — a few drifting/rotating faceted rune polygons
+// (the game's own shadeHex facet-shading technique, generalized to an
+// N-gon here at small scale) plus a faint rotating ring echoing the hero
+// sigil, so the card reads as a window into a live magic circle rather
+// than a generic thumbnail. Same offscreen-pause IntersectionObserver
+// pattern as the Wonderland card above — not optional, a previously-caught
+// real perf/battery consideration.
+(function(){
+  const cv = document.getElementById('sigilchainArt');
+  if(!cv) return;
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  function shadeHex(hex, dLight){
+    const n = parseInt(hex.slice(1),16);
+    let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
+    return `rgb(${r},${g},${b})`;
+  }
+  function runeShard(x, y, r, sides, rot, color){
+    c.save();
+    c.translate(x,y); c.rotate(rot);
+    for(let i=0;i<sides;i++){
+      const a1 = (Math.PI*2/sides)*i - Math.PI/2, a2 = (Math.PI*2/sides)*(i+1) - Math.PI/2;
+      c.fillStyle = shadeHex(color, i%2===0?22:-18);
+      c.beginPath(); c.moveTo(0,0);
+      c.lineTo(Math.cos(a1)*r, Math.sin(a1)*r);
+      c.lineTo(Math.cos(a2)*r, Math.sin(a2)*r);
+      c.closePath(); c.fill();
+    }
+    c.restore();
+  }
+  const runes = [
+    { x:0.22, y:0.42, r:20, sides:3, color:'#ff5c3d', spd:0.32, phase:0 },
+    { x:0.45, y:0.62, r:26, sides:6, color:'#4ea8ff', spd:0.24, phase:1 },
+    { x:0.68, y:0.38, r:18, sides:5, color:'#8de0c9', spd:0.4, phase:2 },
+    { x:0.80, y:0.65, r:15, sides:4, color:'#8fce5c', spd:0.5, phase:3 },
+  ];
+  function draw(t){
+    c.clearRect(0,0,W,H);
+    c.save();
+    c.strokeStyle = 'rgba(255,215,107,0.18)'; c.lineWidth = 1.4;
+    c.beginPath(); c.arc(W*0.5, H*0.52, Math.min(W,H)*0.42, t*0.08, t*0.08+Math.PI*1.6); c.stroke();
+    c.restore();
+    for(const rn of runes){
+      const bob = Math.sin(t*rn.spd + rn.phase)*6;
+      runeShard(rn.x*W, rn.y*H + bob, rn.r, rn.sides, t*0.2 + rn.phase, rn.color);
+    }
+  }
+  const t0 = performance.now();
+  let raf;
+  function loop(ts){ draw((ts-t0)/1000); raf = requestAnimationFrame(loop); }
+  raf = requestAnimationFrame(loop);
+  const io2 = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf) raf = requestAnimationFrame(loop);
+      else if(!e.isIntersecting && raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+  }, { threshold: 0.05 });
+  io2.observe(cv);
 })();
 </script>
 </body>
