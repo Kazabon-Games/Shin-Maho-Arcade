@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shin Mahou Arcade — 真魔法</title>
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140b30'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23ffcb5c' stroke-width='1.4'/%3E%3Ccircle cx='16' cy='16' r='3.6' fill='%23ffcb5c'/%3E%3Cpath d='M16 3 L16 8 M16 24 L16 29 M3 16 L8 16 M24 16 L29 16' stroke='%23b98aff' stroke-width='1.4'/%3E%3C/svg%3E">
+<meta name="description" content="Shin Mahou Arcade — instant-play browser games from Kazabon Game Studio. No installs, no launchers, no accounts. Click and play.">
+<meta property="og:title" content="Shin Mahou Arcade">
+<meta property="og:description" content="Instant-play browser games from Kazabon Game Studio. No installs, no launchers, no accounts. Click and play.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#140b30;
+  --bg-deep:#0a0620;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --border:rgba(255,203,92,0.22);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--body-font);}
+body{
+  overflow-x:hidden;
+  background:
+    radial-gradient(ellipse 800px 500px at 15% -10%, rgba(185,138,255,0.16), transparent 60%),
+    radial-gradient(ellipse 700px 600px at 90% 10%, rgba(255,203,92,0.10), transparent 55%),
+    radial-gradient(ellipse 900px 700px at 50% 100%, rgba(90,50,160,0.20), transparent 60%),
+    var(--bg-deep);
+}
+
+/* twinkling starfield — cheap CSS-only, purely decorative */
+.stars, .stars::before, .stars::after{
+  content:'';
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-repeat:repeat;
+  background-image:
+    radial-gradient(1.4px 1.4px at 20px 30px, rgba(244,236,255,0.9), transparent),
+    radial-gradient(1px 1px at 90px 120px, rgba(244,236,255,0.6), transparent),
+    radial-gradient(1.6px 1.6px at 160px 60px, rgba(255,203,92,0.7), transparent),
+    radial-gradient(1px 1px at 220px 150px, rgba(244,236,255,0.5), transparent),
+    radial-gradient(1.2px 1.2px at 280px 20px, rgba(185,138,255,0.7), transparent);
+  background-size:300px 200px;
+  animation:twinkle 7s ease-in-out infinite alternate;
+}
+.stars::before{background-position:40px 60px; animation-duration:9s; opacity:.7;}
+.stars::after{background-position:150px 10px; animation-duration:11s; opacity:.5;}
+@keyframes twinkle{0%{opacity:.5;}100%{opacity:1;}}
+
+.wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:0 24px;}
+
+/* ============ HERO ============ */
+.hero{padding:5.5rem 0 3rem;text-align:center;}
+#sigil{display:block;margin:0 auto 1.4rem;}
+.eyebrow{
+  font-family:var(--mono);font-size:.68rem;letter-spacing:.42em;text-transform:uppercase;
+  color:var(--ink-soft);margin-bottom:1.1rem;
+}
+.eyebrow b{color:var(--neon2);font-weight:600;}
+h1.title{
+  font-family:var(--display);font-weight:600;
+  font-size:clamp(2.6rem,7vw,4.6rem);letter-spacing:.03em;
+  line-height:1.05;color:var(--gold);
+  text-shadow:0 0 40px rgba(255,203,92,0.35);
+  margin-bottom:.6rem;
+}
+.title .kanji{
+  display:block;font-size:.34em;letter-spacing:.5em;color:var(--neon2);
+  font-family:var(--display);font-weight:500;margin-bottom:.5rem;
+  text-shadow:0 0 24px rgba(185,138,255,0.4);
+}
+.tagline{
+  font-family:var(--display);font-style:italic;font-size:1.15rem;
+  color:var(--ink-mid);max-width:520px;margin:0 auto 2.2rem;line-height:1.7;
+}
+.hero-rule{width:140px;height:1px;margin:0 auto 2.2rem;
+  background:linear-gradient(90deg,transparent,var(--border),transparent);}
+.hero-pitch{
+  display:flex;flex-wrap:wrap;gap:.6rem 1.6rem;justify-content:center;
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-soft);
+}
+.hero-pitch span::before{content:'✦';color:var(--neon);margin-right:.5em;font-size:.8em;}
+
+/* ============ SECTION LABEL ============ */
+.section-label{
+  text-align:center;font-family:var(--mono);font-size:.66rem;letter-spacing:.35em;
+  text-transform:uppercase;color:var(--ink-soft);margin:3.5rem 0 1.8rem;
+}
+
+/* ============ GAME GRID ============ */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.4rem;padding-bottom:2rem;}
+
+.card{
+  position:relative;background:linear-gradient(160deg,var(--panel),var(--panel2));
+  border:1px solid var(--border);border-radius:18px;overflow:hidden;
+  display:flex;flex-direction:column;
+  box-shadow:0 20px 50px -24px rgba(0,0,0,0.6);
+  transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.card.flagship{grid-column:1 / -1;}
+.card:hover{transform:translateY(-3px);border-color:rgba(255,203,92,0.45);
+  box-shadow:0 26px 60px -20px rgba(0,0,0,0.7), 0 0 40px -18px rgba(255,203,92,0.3);}
+
+.card-art{
+  position:relative;aspect-ratio:16/7;overflow:hidden;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,203,92,0.16), transparent 55%),
+    radial-gradient(circle at 75% 70%, rgba(185,138,255,0.22), transparent 55%),
+    linear-gradient(160deg,#1c1140,#0d0824);
+  display:flex;align-items:center;justify-content:center;
+}
+.card-art canvas{display:block;width:100%;height:100%;}
+.card-badge{
+  position:absolute;top:14px;left:14px;font-family:var(--mono);font-size:.62rem;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--neon);
+  background:rgba(10,6,20,0.55);border:1px solid var(--border);border-radius:20px;
+  padding:.3em .8em;backdrop-filter:blur(3px);
+}
+
+.card-body{padding:1.6rem 1.7rem 1.8rem;display:flex;flex-direction:column;flex:1;}
+.card-title{
+  font-family:var(--display);font-weight:600;font-size:1.7rem;color:var(--gold);
+  letter-spacing:.02em;margin-bottom:.3rem;
+}
+.card-genre{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--neon2);margin-bottom:.9rem;
+}
+.card-desc{color:var(--ink-mid);font-size:.94rem;line-height:1.65;margin-bottom:1.4rem;max-width:560px;}
+.card-actions{margin-top:auto;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;}
+
+.btn{
+  display:inline-flex;align-items:center;gap:.5em;
+  font-family:var(--body-font);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  color:var(--bg-deep);background:linear-gradient(135deg,var(--gold),#e2b855);
+  padding:.75rem 1.5rem;border-radius:10px;text-decoration:none;
+  box-shadow:0 8px 24px -8px rgba(255,203,92,0.5);
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 10px 28px -6px rgba(255,203,92,0.65);}
+.btn:active{transform:translateY(0);}
+.btn-ghost{
+  color:var(--ink-mid);background:transparent;border:1px solid var(--border);
+  box-shadow:none;padding:.75rem 1.3rem;
+}
+.btn-ghost:hover{color:var(--ink);border-color:rgba(255,203,92,0.4);}
+
+.card-meta{
+  font-family:var(--mono);font-size:.68rem;color:var(--ink-soft);letter-spacing:.06em;
+}
+
+/* coming-soon placeholder card */
+.card.soon{align-items:center;justify-content:center;text-align:center;padding:2.4rem 1.6rem;}
+.card.soon .card-art{display:none;}
+.card.soon .glyph{font-size:2.2rem;color:var(--ink-soft);opacity:.5;margin-bottom:.8rem;}
+.card.soon .card-title{font-size:1.25rem;color:var(--ink-mid);}
+.card.soon .card-desc{margin-bottom:0;font-size:.85rem;}
+
+/* ============ FOOTER ============ */
+footer{
+  text-align:center;padding:3rem 0 4rem;color:var(--ink-soft);
+}
+.footer-rule{width:200px;height:1px;margin:0 auto 2rem;
+  background:linear-gradient(90deg,transparent,var(--border),transparent);}
+.studio-credit{
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;
+  background:linear-gradient(90deg,var(--neon2),var(--gold),#5ec4a8,var(--neon2));
+  background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:iridescentShift 8s linear infinite;
+}
+@keyframes iridescentShift{0%{background-position:0% 50%;}100%{background-position:300% 50%;}}
+footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;}
+
+@media (max-width:640px){
+  .hero{padding:4rem 0 2.5rem;}
+  .card-body{padding:1.3rem 1.3rem 1.5rem;}
+}
+</style>
+</head>
+<body>
+
+<div class="stars"></div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <canvas id="sigil" width="120" height="120" aria-hidden="true"></canvas>
+    <div class="eyebrow">Kazabon Game Studio <b>·</b> Browser Arcade</div>
+    <h1 class="title"><span class="kanji">真魔法</span>Shin Mahou Arcade</h1>
+    <p class="tagline">A friend sends a link. You click it. You're playing. That's the whole idea.</p>
+    <div class="hero-rule"></div>
+    <div class="hero-pitch">
+      <span>Instant play</span>
+      <span>No installs</span>
+      <span>No accounts</span>
+      <span>Built for the browser</span>
+    </div>
+  </div>
+
+  <div class="section-label">The Collection</div>
+
+  <div class="grid">
+    <div class="card flagship">
+      <div class="card-art">
+        <canvas id="wonderlandArt" width="640" height="280" aria-hidden="true"></canvas>
+        <div class="card-badge">Stage I · Live Now</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Wonderland</div>
+        <div class="card-genre">Survivor · Roguelite</div>
+        <p class="card-desc">
+          Dodge a swarm, auto-cast spells drawn from a real operator schema, level up, and
+          survive to a boss fight that actually escalates with you. Iridescent wonder giving
+          way to swarm chaos — one continuous arc, not a loop with a difficulty slider.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="wonderland.html">✦&nbsp; Open the Wonderland</a>
+          <span class="card-meta">12 spells · 7 passives · 6 evolutions</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card soon">
+      <div class="glyph">✦</div>
+      <div class="card-title">More Worlds</div>
+      <p class="card-desc">The next stage is being written.</p>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-rule"></div>
+    <div class="studio-credit">Kazabon Game Studio</div>
+    <div class="fine">Built with Claude · directed by a human who still plays every build</div>
+  </footer>
+
+</div>
+
+<script>
+'use strict';
+// arcade sigil — a slowly turning magic circle, the platform's own mark
+// (distinct from any individual game's crest/branding). Same technique as
+// Wonderland's title crest (conic gradient sweep + Path2D rune ring), kept
+// deliberately simpler and more abstract since this represents the arcade
+// itself, not a specific game's lore.
+(function(){
+  const cv = document.getElementById('sigil');
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height, cx = W/2, cy = H/2;
+
+  const ring = new Path2D();
+  ring.arc(cx, cy, 34, 0, Math.PI*2);
+
+  function draw(t){
+    c.clearRect(0,0,W,H);
+
+    const conic = c.createConicGradient(t*0.35, cx, cy);
+    conic.addColorStop(0,    'rgba(255,203,92,0.05)');
+    conic.addColorStop(0.25, 'rgba(185,138,255,0.18)');
+    conic.addColorStop(0.5,  'rgba(255,203,92,0.05)');
+    conic.addColorStop(0.75, 'rgba(185,138,255,0.18)');
+    conic.addColorStop(1,    'rgba(255,203,92,0.05)');
+    c.fillStyle = conic;
+    c.beginPath(); c.arc(cx, cy, 56, 0, Math.PI*2); c.fill();
+
+    // outer rune ring, slowly rotating
+    c.save();
+    c.translate(cx, cy); c.rotate(t*0.12); c.translate(-cx, -cy);
+    c.strokeStyle = 'rgba(255,215,107,0.75)'; c.lineWidth = 1.3;
+    c.stroke(ring);
+    const marks = 12;
+    for(let i=0;i<marks;i++){
+      const a = (Math.PI*2/marks)*i;
+      const r1 = 34, r2 = i%3===0 ? 42 : 38;
+      c.beginPath();
+      c.moveTo(cx+Math.cos(a)*r1, cy+Math.sin(a)*r1);
+      c.lineTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
+      c.stroke();
+    }
+    c.restore();
+
+    // inner hexagram core
+    c.save();
+    c.translate(cx, cy); c.rotate(-t*0.08); c.translate(-cx, -cy);
+    c.strokeStyle = 'rgba(185,138,255,0.85)'; c.lineWidth = 1.2;
+    for(let flip=0; flip<2; flip++){
+      c.beginPath();
+      for(let i=0;i<3;i++){
+        const a = (Math.PI*2/3)*i + (flip?Math.PI:0) - Math.PI/2;
+        const px = cx+Math.cos(a)*18, py = cy+Math.sin(a)*18;
+        i===0 ? c.moveTo(px,py) : c.lineTo(px,py);
+      }
+      c.closePath(); c.stroke();
+    }
+    c.restore();
+
+    c.fillStyle = '#ffe6a8';
+    c.beginPath(); c.arc(cx, cy, 3.2, 0, Math.PI*2); c.fill();
+  }
+
+  const t0 = performance.now();
+  function loop(ts){ draw((ts-t0)/1000); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+})();
+
+// Wonderland card art — a quiet preview loop reusing the same cut-gem
+// facet-shading technique as the game itself (drifting Husk-like shapes +
+// Charles's gold halo silhouette), so the card reads as a real window into
+// the game rather than a generic placeholder thumbnail.
+(function(){
+  const cv = document.getElementById('wonderlandArt');
+  if(!cv) return;
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  function shadeHex(hex, dLight){
+    const n = parseInt(hex.slice(1),16);
+    let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function facetShard(x, y, r, rot, color){
+    const n = 6;
+    c.save();
+    c.translate(x,y); c.rotate(rot);
+    for(let i=0;i<n;i++){
+      const a1 = (Math.PI*2/n)*i, a2 = (Math.PI*2/n)*(i+1);
+      c.fillStyle = shadeHex(color, i%2===0?22:-18);
+      c.beginPath(); c.moveTo(0,0);
+      c.lineTo(Math.cos(a1)*r, Math.sin(a1)*r);
+      c.lineTo(Math.cos(a2)*r, Math.sin(a2)*r);
+      c.closePath(); c.fill();
+    }
+    c.restore();
+  }
+
+  const shards = [
+    { x:0.18, y:0.55, r:22, color:'#b45cff', spd:0.3, phase:0 },
+    { x:0.32, y:0.30, r:14, color:'#ffe066', spd:0.5, phase:1 },
+    { x:0.78, y:0.60, r:28, color:'#ff3d68', spd:0.22, phase:2 },
+    { x:0.60, y:0.25, r:16, color:'#ffdf7e', spd:0.4, phase:3 },
+  ];
+
+  function drawCharles(x, y){
+    c.save();
+    c.translate(x,y); c.scale(1.3,1.3);
+    const haloGrad = c.createRadialGradient(0,-16,0,0,-16,20);
+    haloGrad.addColorStop(0,'rgba(255,214,120,0.55)'); haloGrad.addColorStop(1,'rgba(255,214,120,0)');
+    c.fillStyle = haloGrad; c.beginPath(); c.arc(0,-16,20,0,Math.PI*2); c.fill();
+    c.fillStyle = 'rgba(10,6,16,0.95)';
+    c.beginPath();
+    c.moveTo(0,-20); c.lineTo(7,-16); c.lineTo(8,-6); c.lineTo(5,8); c.lineTo(0,22);
+    c.lineTo(-5,8); c.lineTo(-8,-6); c.lineTo(-7,-16); c.closePath(); c.fill();
+    c.strokeStyle='rgba(255,214,120,0.7)'; c.lineWidth=1.2; c.stroke();
+    c.restore();
+  }
+
+  function draw(t){
+    c.clearRect(0,0,W,H);
+    for(const s of shards){
+      const bob = Math.sin(t*s.spd + s.phase)*8;
+      facetShard(s.x*W, s.y*H + bob, s.r, t*0.15 + s.phase, s.color);
+    }
+    drawCharles(W*0.47, H*0.6);
+  }
+
+  const t0 = performance.now();
+  let raf;
+  function loop(ts){ draw((ts-t0)/1000); raf = requestAnimationFrame(loop); }
+  raf = requestAnimationFrame(loop);
+  // pause the loop when off-screen (portal page, not the game itself — no
+  // reason to burn cycles animating a card nobody's looking at)
+  const io = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf) raf = requestAnimationFrame(loop);
+      else if(!e.isIntersecting && raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+  }, { threshold: 0.05 });
+  io.observe(cv);
+})();
+</script>
+</body>
+</html>
