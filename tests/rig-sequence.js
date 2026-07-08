@@ -6,6 +6,8 @@
 // mirrored-angle wraparound), plus a structural fix making the recovery
 // phase interruptible — this test locks in both the crash-safety and the
 // committed-phase/recovery-interrupt timing contract going forward.
+// Section 6 covers the v0.1.4 solveRig()/renderRig() split — the foot/hand
+// world-positions that real hit detection will read from next.
 //
 // Usage: serve the repo (`npx http-server -p 8935`), then
 // `NODE_PATH=/opt/node22/lib/node_modules node tests/rig-sequence.js`.
@@ -85,6 +87,25 @@ function ok(cond, label) {
   let maxStep = 0;
   for (let i = 1; i < spineTrace.length; i++) maxStep = Math.max(maxStep, Math.abs(spineTrace[i] - spineTrace[i - 1]));
   ok(maxStep < 0.5, 'left-kick spineA moves smoothly frame-to-frame (max step ' + maxStep.toFixed(3) + ' rad), no ~2pi wraparound sweep');
+
+  console.log('6. solveRig() exposes real joint world-positions (the v0.1.4 refactor)');
+  await page.waitForTimeout(700); // settle to idle
+  const idleJoints = (await page.evaluate(() => window.Rig._test.state())).joints;
+  const expectedJoints = ['pelvis', 'hipL', 'kneeL', 'footL', 'hipR', 'kneeR', 'footR',
+    'chest', 'shoulderL', 'elbowL', 'handL', 'shoulderR', 'elbowR', 'handR', 'head'];
+  const hasAllFinite = expectedJoints.every(k => idleJoints[k] &&
+    Number.isFinite(idleJoints[k].x) && Number.isFinite(idleJoints[k].y));
+  ok(hasAllFinite, 'all ' + expectedJoints.length + ' joints present with finite x/y at idle');
+  ok(idleJoints.footL.x < idleJoints.footR.x, 'idle stance: left foot sits left of right foot (sane spatial layout)');
+
+  // The strike phase is exactly the window Phase 2 (real hit detection) will
+  // read a foot position from — confirm it actually moves, not just exists.
+  const idleFootRX = idleJoints.footR.x;
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(150); // inside the strike phase (110-180ms)
+  const strikeJoints = (await page.evaluate(() => window.Rig._test.state())).joints;
+  const kickReach = Math.abs(strikeJoints.footR.x - idleFootRX);
+  ok(kickReach > 20, 'kicking foot (footR) has moved meaningfully from idle during strike (moved ' + kickReach.toFixed(1) + 'px)');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
