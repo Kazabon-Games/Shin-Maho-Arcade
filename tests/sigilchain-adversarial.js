@@ -295,6 +295,161 @@ function ok(cond, label){
   ok(consoleErrors.length===0, 'zero console errors after full soak');
   ok(pageErrors.length===0, 'zero page errors after full soak');
 
+  console.log('13. Board solvability guarantee (pre-game-3 quality pass)');
+  const solveResult = await page.evaluate(() => {
+    let initFails = 0, refillFails = 0;
+    for(let i=0;i<200;i++){
+      Board.init(8,8, i%4);
+      if(!Board.hasValidMove()) initFails++;
+    }
+    Board.init(8,8,3);
+    for(let i=0;i<300;i++){
+      Board.clearCells([{col:i%8,row:0},{col:(i+1)%8,row:0},{col:(i+2)%8,row:0}]);
+      Board.collapseAndRefill(3);
+      if(!Board.hasValidMove()) refillFails++;
+    }
+    return { initFails, refillFails };
+  });
+  ok(solveResult.initFails === 0, 'Board.init always produces a solvable board (0/200 failures)');
+  ok(solveResult.refillFails === 0, 'Board.collapseAndRefill always leaves a solvable board (0/300 failures)');
+
+  console.log('14. Closing the Circle: shake/hitstop scale with n, phase-3 shake-only');
+  await page.evaluate(() => {
+    Game.startRound();
+    Game._test.setBoard([
+      ['fire','fire','earth','earth','earth','earth','earth','earth'],
+      ['fire','fire','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+    ]);
+  });
+  const circleShakeResult = await page.evaluate(() => {
+    const r = Game._test.simulateChain([[0,0],[1,0],[1,1],[0,1],[0,0]]);
+    return { circleClosed: r.circleClosed, shake: Juice._test.shakeMag(), hitstop: Juice._test.hitstopActive() };
+  });
+  ok(circleShakeResult.circleClosed, 'circle-closed scenario actually closed');
+  ok(circleShakeResult.shake > 0, 'Closing the Circle triggers screen shake (mag='+circleShakeResult.shake+')');
+  ok(circleShakeResult.hitstop === true, 'Closing the Circle triggers a brief hitstop');
+  await page.waitForTimeout(400);
+  const phase3ShakeResult = await page.evaluate(() => {
+    const before = Juice._test.shakeMag();
+    Events.emit('phaseChange', { phase: 3 });
+    const after = { shake: Juice._test.shakeMag(), hitstop: Juice._test.hitstopActive() };
+    return { before, after };
+  });
+  ok(phase3ShakeResult.after.shake > 0, 'phase-3 transition triggers shake (mag='+phase3ShakeResult.after.shake+')');
+  ok(phase3ShakeResult.after.hitstop === false, 'phase-3 transition does NOT trigger hitstop (shake-only, per design)');
+
+  console.log('15. Closing the Circle: composed chord, not a single note');
+  const chordResult = await page.evaluate(() => {
+    window.__oscStarts = [];
+    const orig = AudioContext.prototype.createOscillator;
+    AudioContext.prototype.createOscillator = function(){
+      const o = orig.call(this);
+      const origStart = o.start.bind(o);
+      o.start = (t) => { window.__oscStarts.push(t); origStart(t); };
+      return o;
+    };
+    Music.circleChord('fire');
+    return window.__oscStarts;
+  });
+  ok(chordResult.length === 6, 'circleChord fires 6 oscillators (3 bell() calls x fundamental+overtone), got '+chordResult.length);
+  ok(new Set(chordResult).size === 1, 'all 6 oscillators start at the same ctx.currentTime (a real chord, not a sequence)');
+
+  console.log('16. Wake Lock lifecycle');
+  const wakeLockResult = await page.evaluate(async () => {
+    const calls = [];
+    if(!navigator.wakeLock) return { supported: false, calls };
+    const origRequest = navigator.wakeLock.request.bind(navigator.wakeLock);
+    navigator.wakeLock.request = async () => { calls.push('request'); return { release: async () => calls.push('release') }; };
+    Game.startRound();
+    await new Promise(r=>setTimeout(r,30));
+    Game.togglePause();
+    await new Promise(r=>setTimeout(r,30));
+    Game.togglePause();
+    await new Promise(r=>setTimeout(r,30));
+    navigator.wakeLock.request = origRequest;
+    return { supported: true, calls };
+  });
+  if(wakeLockResult.supported){
+    ok(JSON.stringify(wakeLockResult.calls) === JSON.stringify(['request','release','request']), 'Wake Lock requested on start, released on pause, re-requested on resume (got '+JSON.stringify(wakeLockResult.calls)+')');
+  } else {
+    ok(true, 'navigator.wakeLock unsupported in this browser — guarded path not exercised (acceptable, matches degrade-silently convention)');
+  }
+
+  console.log('17. Achievements: unlock, persist, backfill for old saves');
+  await page.evaluate(() => { localStorage.removeItem('sigilchain-save-v1'); });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof Game !== 'undefined');
+  const achResult = await page.evaluate(async () => {
+    Game.startRound();
+    const ringBoard = [
+      ['fire','fire','earth','earth','earth','earth','earth','earth'],
+      ['fire','fire','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+    ];
+    for(let i=0;i<3;i++){ Game._test.setBoard(ringBoard); Game._test.simulateChain([[0,0],[1,0],[1,1],[0,1],[0,0]]); }
+    Game._test.setTimeRemaining(0.01);
+    await new Promise(r=>setTimeout(r,300));
+    return JSON.parse(localStorage.getItem('sigilchain-save-v1')).achievements;
+  });
+  ok(achResult && achResult.circle_master, 'Circle Master unlocks after 3 circle-closes in one round');
+  const backfillResult = await page.evaluate(async () => {
+    localStorage.setItem('sigilchain-save-v1', JSON.stringify({ best:{score:1,longestChain:1,circlesClosed:0}, totalRounds:1, lifetimeTilesCleared:1, settings:{musicVol:0.5,sfxVol:0.5,reducedMotion:null} }));
+    location.reload();
+  });
+  await page.waitForFunction(() => typeof Persist !== 'undefined');
+  const backfilled = await page.evaluate(() => typeof Persist.data.achievements === 'object' && Persist.data.achievements !== null);
+  ok(backfilled, 'achievements field backfills to {} for a save with no achievements field at all');
+
+  console.log('18. Round-end overlay: distinct entrance for a new best vs. not');
+  await page.evaluate(() => { localStorage.removeItem('sigilchain-save-v1'); });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof Game !== 'undefined');
+  const entranceResult = await page.evaluate(async () => {
+    Game.startRound();
+    Game._test.setBoard([
+      ['fire','fire','fire','earth','earth','earth','earth','earth'],
+      ['wind','wind','wind','wind','wind','wind','wind','wind'],
+      ['water','water','water','water','water','water','water','water'],
+      ['light','light','light','light','light','light','light','light'],
+      ['fire','fire','fire','fire','fire','fire','fire','fire'],
+      ['earth','earth','earth','earth','earth','earth','earth','earth'],
+      ['wind','wind','wind','wind','wind','wind','wind','wind'],
+      ['water','water','water','water','water','water','water','water'],
+    ]);
+    Game._test.simulateChain([[0,0],[1,0],[2,0]]);
+    Game._test.setTimeRemaining(0.01);
+    await new Promise(r=>setTimeout(r,300));
+    const newBestClass = document.querySelector('#roundEndOverlay .panel').className;
+    Game.startRound();
+    Game._test.setTimeRemaining(0.01);
+    await new Promise(r=>setTimeout(r,300));
+    const noScoreClass = document.querySelector('#roundEndOverlay .panel').className;
+    return { newBestClass, noScoreClass };
+  });
+  ok(entranceResult.newBestClass.includes('new-best-entrance'), 'a new-best round gets the distinct entrance class');
+  ok(!entranceResult.noScoreClass.includes('new-best-entrance'), 'a non-best round does not get the new-best entrance class');
+
+  console.log('19. Hand-authored rune silhouettes: all 7 shapes distinct, no shared vertex lists');
+  const shapeResult = await page.evaluate(() => {
+    const keys = Object.keys(RUNE_VERT_DEFS);
+    const allLists = keys.map(k => JSON.stringify(RUNE_VERT_DEFS[k])).concat([JSON.stringify(CURSED_VERTS)]);
+    const distinct = new Set(allLists).size;
+    return { keyCount: keys.length, totalLists: allLists.length, distinct };
+  });
+  ok(shapeResult.keyCount === 6, 'all 6 rune types have a hand-authored vertex list');
+  ok(shapeResult.distinct === shapeResult.totalLists, 'every rune + the cursed tile has a genuinely distinct silhouette (no shared vertex lists), got '+shapeResult.distinct+'/'+shapeResult.totalLists);
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   if(consoleErrors.length) console.log('console errors:', consoleErrors);
   if(pageErrors.length) console.log('page errors:', pageErrors);

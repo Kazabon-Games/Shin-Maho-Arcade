@@ -2393,7 +2393,20 @@ const Game = (function(){
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){ hitEnemy(e, dmg); hitCount++; }
           return false;
         });
-        if(rewind && hitCount > 0) player.hp = Math.min(player.maxhp, player.hp + hitCount*3);
+        // Same uncapped-heal shape as Drain had before its own fix (see
+        // HEAL_CAP_TARGETS below): hitCount*3 with no ceiling meant a max-
+        // level Nova (r=230, 1.7s cooldown / rateMult) hitting a realistic
+        // dense-wave count of ~60 enemies healed 180hp per cast — sustained
+        // ~159hp/sec, worse than the ~159-300+ range this exact bug class
+        // already shipped once on Drain at 358hp/sec. Capped at 10 targets
+        // instead of Drain's 5 because Rewind heals per-cast (burst, ~0.88
+        // casts/sec at max) rather than per-tick — 10 targets lands its
+        // sustained rate at ~26.5hp/sec, matching Drain's own re-verified
+        // ~32hp/sec ballpark for "real sustain, not a get-out-of-danger-free
+        // aura" rather than copying Drain's cap number onto a differently-
+        // shaped formula and ending up under-powered instead.
+        const REWIND_HEAL_CAP_TARGETS = 10;
+        if(rewind && hitCount > 0) player.hp = Math.min(player.maxhp, player.hp + Math.min(hitCount, REWIND_HEAL_CAP_TARGETS)*3);
       }
     }
     // Drain — lifesteal aura. Siphon evolution: bigger radius + speed burst on heal.

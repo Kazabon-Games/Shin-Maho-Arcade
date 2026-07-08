@@ -59,6 +59,16 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 @keyframes ovfade{from{opacity:0;}to{opacity:1;}}
 @keyframes panelPop{0%{opacity:0;transform:scale(.92) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
 .overlay .panel{animation:panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;}
+/* round-end gets its own entrance identity instead of reusing the generic
+   panelPop every other overlay uses — same precedent as Wonderland's
+   deathFade vs panelPop split (wonderland.html:1004-1010): the biggest
+   emotional screen in the game (personal best) shouldn't look like a
+   settings panel. Heavier/desaturated by default, a brighter snap-in when
+   .new-best-entrance is toggled on. */
+@keyframes roundFade{0%{opacity:0;filter:grayscale(60%) brightness(.7);transform:scale(.96);}100%{opacity:1;filter:grayscale(0%) brightness(1);transform:scale(1);}}
+@keyframes newBestPop{0%{opacity:0;transform:scale(.85) translateY(-4px);filter:brightness(1.6);}60%{transform:scale(1.04);}100%{opacity:1;transform:scale(1) translateY(0);filter:brightness(1);}}
+#roundEndOverlay .panel{animation:roundFade .5s ease both;}
+#roundEndOverlay .panel.new-best-entrance{animation:newBestPop .5s cubic-bezier(.2,.9,.3,1.3) both;}
 /* prefers-reduced-motion — one mechanism (Settings.applyReducedMotionClass
    toggles this class) covers both the OS-detected case and the manual
    Settings override, same convention as wonderland.html. Only screen-space
@@ -91,6 +101,28 @@ body.reduced-motion .panel{
   padding:10px 14px;margin-bottom:10px;font-size:.85rem;font-family:var(--body-font);}
 .settings-row input[type="range"]{width:120px;accent-color:var(--neon);}
 .settings-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--neon);}
+
+/* achievements — same classes/values as wonderland.html:1132-1150, the
+   studio's one existing achievements implementation, reused verbatim so a
+   third game inherits one proven pattern instead of a second invention. */
+.ach-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;margin-bottom:10px;opacity:.45;transition:opacity .2s;}
+.ach-row.unlocked{opacity:1;border-color:var(--gold);box-shadow:0 0 14px -8px var(--gold);}
+.ach-icon{width:34px;height:34px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);color:var(--ink-soft);font-size:1rem;}
+.ach-row.unlocked .ach-icon{border-color:var(--gold);color:var(--gold);}
+.ach-info{flex:1;}
+.ach-name{font-weight:700;font-size:.9rem;font-family:var(--body-font);}
+.ach-desc{font-size:.74rem;color:var(--ink-mid);margin-top:2px;font-family:var(--body-font);}
+.ach-progress{text-align:center;font-family:var(--mono);color:var(--ink-mid);font-size:.85rem;margin-bottom:14px;}
+.achieve-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-140%);
+  display:flex;align-items:center;gap:10px;background:rgba(10,11,20,0.94);border:1px solid var(--gold);
+  border-radius:12px;padding:10px 16px;box-shadow:0 0 24px -6px var(--gold);z-index:999;
+  transition:transform .4s cubic-bezier(.2,.9,.3,1.3);pointer-events:none;}
+.achieve-toast.show{transform:translateX(-50%) translateY(0);}
+.achieve-toast-icon{font-size:1.3rem;color:var(--gold);}
+.achieve-toast-title{font-size:.65rem;letter-spacing:.1em;color:var(--ink-mid);text-transform:uppercase;font-family:var(--mono);}
+.achieve-toast-name{font-size:.9rem;font-weight:700;color:var(--gold);font-family:var(--body-font);}
 
 .meta-row{position:fixed;bottom:8px;right:10px;z-index:60;display:flex;align-items:center;gap:6px;font-family:var(--mono);}
 .icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
@@ -125,8 +157,19 @@ body.reduced-motion .panel{
     <div class="tagline">trace the circle, close the loop</div>
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a round">TRACE THE CIRCLE</button>
+    <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
     <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+  </div>
+</div>
+
+<div class="overlay" id="achieveOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Achievements">
+    <h2>✦ SIGILS REMEMBERED ✦</h2>
+    <div class="tagline">what the circle keeps of you</div>
+    <div class="ach-progress" id="achProgress"></div>
+    <div id="achRows"></div>
+    <button class="btn" onclick="Achievements.close()" aria-label="Back">BACK</button>
   </div>
 </div>
 
@@ -189,6 +232,7 @@ const Persist = (function(){
     totalRounds: 0,
     lifetimeTilesCleared: 0,
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
+    achievements: {},
   };
   function load(){
     try{
@@ -205,6 +249,7 @@ const Persist = (function(){
         if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
         if(data.settings.sfxVol === undefined) data.settings.sfxVol = 0.5;
         if(data.settings.reducedMotion === undefined) data.settings.reducedMotion = null;
+        if(!data.achievements) data.achievements = {};
       }
     }catch(e){}
   }
@@ -334,19 +379,52 @@ function shadeHex(hex, dLight, dSat){
 }
 
 const SPRITE_SIZE = 72;
-function ngonVerts(cx, cy, r, sides){
-  const verts = [];
-  for(let i=0;i<sides;i++){ const a = i*Math.PI*2/sides - Math.PI/2; verts.push({x:cx+Math.cos(a)*r, y:cy+Math.sin(a)*r}); }
-  return verts;
+// Hand-authored asymmetric silhouettes, same {angle-in-turns, radius
+// multiplier} data shape as Wonderland's RAMIEL_VERTS
+// (wonderland.html:2137-2150) — a uniform regular polygon per rune read as
+// "one shape with a different vertex count," hard to tell apart by shape
+// alone at actual board render size (the shape cue collapsed into the color
+// cue). Each rune keeps a rough vertex-count identity echoing its old side
+// count (fewer/simpler for fire, most/busiest for shadow) but is now a real,
+// distinct silhouette rather than a parametric n-gon.
+const RUNE_VERT_DEFS = {
+  fire: [ // sharp upward tongue, pinched waist
+    {a:0.00,m:1.30},{a:0.14,m:0.50},{a:0.32,m:0.90},{a:0.50,m:0.42},{a:0.66,m:1.00},{a:0.85,m:0.55},
+  ],
+  earth: [ // blocky, chunky, no sharp points
+    {a:0.00,m:0.95},{a:0.18,m:1.05},{a:0.38,m:0.80},{a:0.55,m:1.10},{a:0.75,m:0.75},{a:0.90,m:1.00},
+  ],
+  wind: [ // elongated, swirling teardrop
+    {a:0.00,m:1.35},{a:0.12,m:0.65},{a:0.28,m:1.00},{a:0.45,m:0.50},{a:0.60,m:0.85},{a:0.76,m:0.55},{a:0.90,m:0.95},
+  ],
+  water: [ // rounded droplet narrowing to one tip
+    {a:0.00,m:0.70},{a:0.15,m:1.05},{a:0.32,m:0.85},{a:0.50,m:1.20},{a:0.68,m:0.85},{a:0.85,m:1.05},
+  ],
+  light: [ // radiant starburst, alternating long/short points
+    {a:0.00,m:1.30},{a:0.10,m:0.55},{a:0.25,m:1.15},{a:0.35,m:0.50},{a:0.50,m:1.30},{a:0.62,m:0.55},{a:0.75,m:1.10},{a:0.88,m:0.55},
+  ],
+  shadow: [ // jagged, crooked crystal
+    {a:0.00,m:1.20},{a:0.10,m:0.60},{a:0.26,m:0.95},{a:0.42,m:0.70},{a:0.58,m:1.10},{a:0.73,m:0.50},{a:0.88,m:0.85},
+  ],
+};
+// Cursed tile's own silhouette — deliberately not shared with any rune
+// (it used to reuse the exact same regular-octagon shape as the "shadow"
+// rune, a real legibility collision: a hazard indistinguishable by shape
+// from a legitimate playable tile). Sharp inward notches read as "broken."
+const CURSED_VERTS = [
+  {a:0.00,m:1.10},{a:0.16,m:0.40},{a:0.30,m:0.95},{a:0.48,m:0.55},{a:0.62,m:1.05},{a:0.80,m:0.35},{a:0.92,m:0.75},
+];
+function handVerts(cx, cy, r, defs){
+  return defs.map(d => ({ x:cx+Math.cos(d.a*Math.PI*2)*r*d.m, y:cy+Math.sin(d.a*Math.PI*2)*r*d.m }));
 }
-function buildRuneSprite(sides, color, radiant){
+function buildRuneSprite(key, color, radiant){
   const size = SPRITE_SIZE;
   const cvs = document.createElement('canvas');
   cvs.width = size; cvs.height = size;
   const c2 = cvs.getContext('2d');
   const cx = size/2, cy = size/2, r = size*0.38;
   c2.shadowColor = color; c2.shadowBlur = radiant ? 18 : 10;
-  const verts = ngonVerts(cx, cy, r, sides);
+  const verts = handVerts(cx, cy, r, RUNE_VERT_DEFS[key]);
   c2.beginPath();
   verts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
   c2.closePath();
@@ -377,7 +455,7 @@ function buildCursedSprite(){
   cvs.width = size; cvs.height = size;
   const c2 = cvs.getContext('2d');
   const cx = size/2, cy = size/2, r = size*0.38;
-  const verts = ngonVerts(cx, cy, r, 8);
+  const verts = handVerts(cx, cy, r, CURSED_VERTS);
   c2.fillStyle = '#241333';
   c2.beginPath();
   verts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
@@ -404,8 +482,8 @@ let CURSED_SPRITE = null;
 (function buildSprites(){
   for(const key of RUNE_KEYS){
     const def = RUNE_TYPES[key];
-    RUNE_SPRITES[key] = buildRuneSprite(def.sides, def.color, false);
-    RADIANT_SPRITES[key] = buildRuneSprite(def.sides, def.color, true);
+    RUNE_SPRITES[key] = buildRuneSprite(key, def.color, false);
+    RADIANT_SPRITES[key] = buildRuneSprite(key, def.color, true);
   }
   CURSED_SPRITE = buildCursedSprite();
 })();
@@ -415,6 +493,7 @@ let CURSED_SPRITE = null;
    overall module shape; no direct wonderland analogue for the grid logic
    itself (Wonderland has no grid).
 ===================================================================== */
+const MAX_SOLVE_ATTEMPTS = 30; // bounded reroll retry — see hasValidMove()
 const Board = (function(){
   let cols = COLS, rows = ROWS;
   let grid = [];
@@ -433,12 +512,54 @@ const Board = (function(){
       animT: spawnAboveBy ? 0 : 1, animDur: 0.28,
     };
   }
-  function init(c, r, phase){
-    cols = c; rows = r; grid = [];
+  // Real playtest finding: tiles used to spawn via pure independent random
+  // choice with no check the resulting board was actually playable, so a
+  // player could get stuck with no legal 3+ chain anywhere. A spanning tree
+  // with >=3 nodes always contains a simple path of length >=3, so "does any
+  // orthogonally-connected same-rune component have size >= MIN_CHAIN" is a
+  // sufficient legal-move check — no path search needed, one flood-fill pass.
+  function hasValidMove(){
+    const visited = new Set();
     for(let row=0; row<rows; row++){
-      grid.push([]);
-      for(let col=0; col<cols; col++) grid[row].push(makeTile(randomTileFor(phase), col, row, 0));
+      for(let col=0; col<cols; col++){
+        const key = col+','+row;
+        if(visited.has(key)) continue;
+        const t = grid[row][col];
+        if(!t || t.cursed){ visited.add(key); continue; }
+        let count = 0;
+        const stack = [{col,row}];
+        while(stack.length){
+          const c = stack.pop();
+          const k = c.col+','+c.row;
+          if(visited.has(k)) continue;
+          if(!inBounds(c.col,c.row)) continue;
+          const tt = grid[c.row][c.col];
+          if(!tt || tt.cursed || tt.rune !== t.rune) continue;
+          visited.add(k); count++;
+          stack.push({col:c.col+1,row:c.row},{col:c.col-1,row:c.row},{col:c.col,row:c.row+1},{col:c.col,row:c.row-1});
+        }
+        if(count >= MIN_CHAIN) return true;
+      }
     }
+    return false;
+  }
+  function rerollTiles(tiles, phase){
+    for(const t of tiles){
+      const fresh = randomTileFor(phase);
+      t.cursed = fresh.cursed; t.rune = fresh.rune; t.radiant = fresh.radiant;
+    }
+  }
+  function init(c, r, phase){
+    cols = c; rows = r;
+    let attempts = 0;
+    do{
+      grid = [];
+      for(let row=0; row<rows; row++){
+        grid.push([]);
+        for(let col=0; col<cols; col++) grid[row].push(makeTile(randomTileFor(phase), col, row, 0));
+      }
+      attempts++;
+    }while(!hasValidMove() && attempts < MAX_SOLVE_ATTEMPTS);
   }
   function setFromPattern(pattern){
     rows = pattern.length; cols = pattern[0].length; grid = [];
@@ -468,6 +589,7 @@ const Board = (function(){
     return count;
   }
   function collapseAndRefill(phase){
+    const spawned = [];
     for(let col=0; col<cols; col++){
       const stack = [];
       for(let row=rows-1; row>=0; row--){ if(grid[row][col]) stack.push(grid[row][col]); }
@@ -484,12 +606,24 @@ const Board = (function(){
       }
       for(let i=0; i<newHoles; i++){
         const row = newHoles-1-i;
-        grid[row][col] = makeTile(randomTileFor(phase), col, row, newHoles - row + 1);
+        const tile = makeTile(randomTileFor(phase), col, row, newHoles - row + 1);
+        grid[row][col] = tile;
+        spawned.push(tile);
       }
     }
+    // Re-roll only the brand-new tiles (never a settled survivor) until the
+    // board is solvable again — invisible to the player since these tiles
+    // haven't played their fall-in animation yet.
+    let attempts = 0;
+    while(!hasValidMove() && spawned.length && attempts < MAX_SOLVE_ATTEMPTS){
+      rerollTiles(spawned, phase);
+      attempts++;
+    }
+    return spawned;
   }
   return {
     init, setFromPattern, tileAt, forEachTile, inBounds, findAllOfRune, clearCells, collapseAndRefill,
+    hasValidMove,
     get cols(){ return cols; }, get rows(){ return rows; },
   };
 })();
@@ -528,9 +662,22 @@ const Game = (function(){
   let running=false, paused=false, roundEnded=false;
   let elapsed=0, timeRemaining=ROUND_SECONDS, phase=0;
   let totalScore=0, comboStreak=0, lastClearTime=-Infinity;
-  let roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0 };
+  let roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0, runesCleared:new Set() };
   let lastEventType = null;
   const frameTimes = [];
+
+  // Wake Lock — same pattern as wonderland.html:1834-1840: guarded behind a
+  // feature check, degrades silently where unsupported. Requested on round
+  // start/resume, released on pause/round-end — a focused round is just as
+  // prone to screen-sleep as an action-game run.
+  let wakeLockSentinel = null;
+  async function requestWakeLock(){
+    if(!navigator.wakeLock) return;
+    try{ wakeLockSentinel = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+  function releaseWakeLock(){
+    if(wakeLockSentinel){ try{ wakeLockSentinel.release(); }catch(e){} wakeLockSentinel = null; }
+  }
 
   // ── drag state ──
   let dragging=false, chainCells=[], chainRune=null, dragPointer=null;
@@ -575,6 +722,7 @@ const Game = (function(){
     roundStats.tilesCleared += n;
     if(n > roundStats.maxChain) roundStats.maxChain = n;
     if(eventName === 'circleClosed') roundStats.circlesClosed += 1;
+    if(rune) roundStats.runesCleared.add(rune);
     updateHudScore();
     Events.emit(eventName, { cells: info.map(i=>({x:i.x,y:i.y,sprite:i.sprite})), n, score, streak, rune });
     lastEventType = eventName;
@@ -696,6 +844,9 @@ const Game = (function(){
   }
   function render(){
     ctx.clearRect(0,0,W,H);
+    const shake = Juice.getShake();
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
     ctx.save();
     ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(boardX-14, boardY-14, boardPx+28, boardPx+28, 18);
@@ -732,6 +883,7 @@ const Game = (function(){
     }
 
     Juice.render(ctx, W, H);
+    ctx.restore();
   }
   function loop(ts){
     let frameDt = (ts-lastTs)/1000;
@@ -739,7 +891,11 @@ const Game = (function(){
     if(frameDt>0.25) frameDt=0.25;
     acc += frameDt;
     let steps=0;
-    while(acc>=SIM_DT && steps<MAX_STEPS){ update(SIM_DT); acc-=SIM_DT; steps++; }
+    // hitstop: still drains the accumulator (no backlog once it ends) but
+    // skips the actual simulation step while frozen, same visual effect as
+    // Wonderland's timeScale=0 without needing a dt multiplier threaded
+    // through every call site.
+    while(acc>=SIM_DT && steps<MAX_STEPS){ if(Juice.getTimeScale()>0) update(SIM_DT); acc-=SIM_DT; steps++; }
     frameTimes.push(frameDt*1000);
     if(frameTimes.length>120) frameTimes.shift();
     render();
@@ -750,7 +906,7 @@ const Game = (function(){
     running=true; paused=false; roundEnded=false;
     elapsed=0; timeRemaining=ROUND_SECONDS; phase=0;
     totalScore=0; comboStreak=0; lastClearTime=-Infinity;
-    roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0 };
+    roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0, runesCleared:new Set() };
     dragging=false; chainCells=[]; chainRune=null; dragPointer=null;
     Board.init(Board.cols, Board.rows, 0);
     document.getElementById('menuOverlay').classList.remove('show');
@@ -760,14 +916,17 @@ const Game = (function(){
     document.getElementById('hud').classList.add('show');
     Music.ensureCtx();
     updateHudScore(); updateHudTimer();
+    requestWakeLock();
   }
   function togglePause(){
     if(!running || roundEnded) return;
     paused = !paused;
     document.getElementById('pauseOverlay').classList.toggle('show', paused);
+    if(paused) releaseWakeLock(); else requestWakeLock();
   }
   function showMenu(){
     running=false; roundEnded=false; paused=false;
+    releaseWakeLock();
     document.getElementById('hud').classList.remove('show');
     document.getElementById('roundEndOverlay').classList.remove('show');
     document.getElementById('pauseOverlay').classList.remove('show');
@@ -776,6 +935,7 @@ const Game = (function(){
   }
   function endRound(){
     running=false; roundEnded=true;
+    releaseWakeLock();
     const best = Persist.data.best;
     const newBest = totalScore > best.score;
     if(newBest) best.score = totalScore;
@@ -784,12 +944,14 @@ const Game = (function(){
     Persist.data.totalRounds += 1;
     Persist.data.lifetimeTilesCleared += roundStats.tilesCleared;
     Persist.save();
+    Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared });
     Events.emit('roundEnd', { score: totalScore, best: best.score, newBest });
     lastEventType = 'roundEnd';
     document.getElementById('hud').classList.remove('show');
     document.getElementById('finalScoreVal').textContent = totalScore;
     document.getElementById('bestScoreVal').textContent = best.score;
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
+    document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
   }
 
@@ -833,6 +995,22 @@ const Juice = (function(){
   let pops = [];
   let comboPulse = 0, circlePulse = 0;
   let vignetteActive = false, vignette = 0;
+  // shake/hitstop/haptic — Wonderland's proven technique
+  // (wonderland.html:3783-3818), ported at conservatively smaller
+  // magnitudes for a calm puzzle game rather than an action game. Closing
+  // the Circle is the literal "pop" moment and gets the full treatment,
+  // scaled by n (tile count) same as Wonderland scales shake by event
+  // severity rather than a flat constant; the phase-3 transition gets a
+  // single smaller shake snap only, no hitstop — it's a rising-tension
+  // shift the vignette already telegraphs gradually, not a discrete impact.
+  let shakeMag = 0, hitstopUntil = 0;
+  function addShake(mag){
+    if(Settings.reducedMotion()) mag *= 0.15;
+    shakeMag = Math.min(shakeMag + mag, 14);
+  }
+  function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+  function getTimeScale(){ return performance.now() < hitstopUntil ? 0 : 1; }
+  function getShake(){ return shakeMag>0 ? { x:(Math.random()*2-1)*shakeMag, y:(Math.random()*2-1)*shakeMag } : { x:0, y:0 }; }
 
   Events.on('chainCleared', (p)=>{
     for(const c of p.cells) pops.push({x:c.x,y:c.y,sprite:c.sprite,t:0,dur:0.3});
@@ -841,14 +1019,22 @@ const Juice = (function(){
   Events.on('circleClosed', (p)=>{
     for(const c of p.cells) pops.push({x:c.x,y:c.y,sprite:c.sprite,t:0,dur:0.42});
     circlePulse = Settings.reducedMotion() ? 0.3 : 1;
+    const n = p.n || 0;
+    addShake(Math.min(4 + n*0.35, 14));
+    hitstopUntil = Math.max(hitstopUntil, performance.now() + (Settings.reducedMotion() ? 0 : 70));
+    vibrate(Settings.reducedMotion() ? [] : [20, 30, 40]);
   });
-  Events.on('phaseChange', (p)=>{ vignetteActive = (p.phase===3); });
+  Events.on('phaseChange', (p)=>{
+    vignetteActive = (p.phase===3);
+    if(p.phase===3){ addShake(5); vibrate(Settings.reducedMotion() ? [] : [15]); }
+  });
 
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
     circlePulse = Math.max(0, circlePulse - dt*1.6);
+    if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
     if(vignetteActive){
       const base = Settings.reducedMotion() ? 0.1 : 0.32;
       const wobble = Settings.reducedMotion() ? 0 : Math.sin(performance.now()/260)*0.1;
@@ -881,7 +1067,8 @@ const Juice = (function(){
     }
   }
   function comboPulseScale(){ return 1 + comboPulse*0.35; }
-  return { update, render, comboPulseScale };
+  return { update, render, comboPulseScale, getTimeScale, getShake,
+    _test: { shakeMag: () => shakeMag, hitstopActive: () => performance.now() < hitstopUntil } };
 })();
 
 /* =====================================================================
@@ -943,11 +1130,26 @@ const Music = (function(){
     o1.start(t); o2.start(t);
     o1.stop(t+(dur||1.0)+0.05); o2.stop(t+(dur||1.0)+0.05);
   }
-  function runeBell(runeKey, big){
+  function runeBell(runeKey){
     ensureCtx();
     const def = RUNE_TYPES[runeKey];
     const freq = 220 * (1 + (def?def.sides:4)*0.08);
-    bell(freq, big?1.3:0.5, big?0.3:0.18);
+    bell(freq, 0.5, 0.18);
+  }
+  // Closing the Circle gets a real musical gesture instead of the ordinary
+  // clear's single note scaled louder — a major triad (root/major-third/
+  // perfect-fifth, equal-temperament ratios) through the same bell()
+  // primitive Wonderland's playVictoryPhrase() composes into a motif,
+  // sized as one chord rather than a full phrase for this game's smaller
+  // scope. Verify live: three oscillator pairs starting at the same
+  // ctx.currentTime, not one louder note.
+  function circleChord(runeKey){
+    ensureCtx();
+    const def = RUNE_TYPES[runeKey];
+    const root = 220 * (1 + (def?def.sides:4)*0.08);
+    bell(root, 1.3, 0.26);
+    bell(root * Math.pow(2, 4/12), 1.3, 0.22);
+    bell(root * Math.pow(2, 7/12), 1.3, 0.2);
   }
   function roundEndCue(){ ensureCtx(); bell(160, 1.1, 0.22); }
   function toggleMute(){
@@ -958,11 +1160,11 @@ const Music = (function(){
   function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
   function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
 
-  Events.on('chainCleared', (p)=>{ if(p.rune) runeBell(p.rune, false); });
-  Events.on('circleClosed', (p)=>{ if(p.rune) runeBell(p.rune, true); });
+  Events.on('chainCleared', (p)=>{ if(p.rune) runeBell(p.rune); });
+  Events.on('circleClosed', (p)=>{ if(p.rune) circleChord(p.rune); });
   Events.on('roundEnd', ()=> roundEndCue());
 
-  return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, runeBell,
+  return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, runeBell, circleChord,
     _test: { isMuted: () => muted, isStarted: () => started } };
 })();
 
@@ -1018,6 +1220,68 @@ const Settings = (function(){
   }
   applyReducedMotionClass();
   return { open, close, setMusicVol, setSfxVol, setReducedMotion, reducedMotion };
+})();
+
+/* =====================================================================
+   ACHIEVEMENTS — closes the meta-progression gap a quality-bar audit
+   found: 3 tracked stats and no achievements/unlocks versus Wonderland's
+   shop + 13 achievements. Same DEFS/checkAll/toast shape as Wonderland's
+   own Achievements module (wonderland.html:5018-5086), sized down to what
+   this game's existing roundStats already track — no new content system,
+   just exposing state already computed.
+===================================================================== */
+const Achievements = (function(){
+  const DEFS = [
+    { id:'circle_master', name:'Circle Master', desc:'Close 3 circles in one round.', check:d=>d.circlesClosed>=3 },
+    { id:'full_spectrum', name:'Full Spectrum', desc:'Chain all 6 rune types in one round.', check:d=>(d.runesCleared?d.runesCleared.size:0)>=6 },
+    { id:'high_roller', name:'High Roller', desc:'Score 500 or more in one round.', check:d=>d.score>=500 },
+  ];
+  function checkAll(roundSummary){
+    if(!Persist.data.achievements) Persist.data.achievements = {};
+    const unlocked = [];
+    for(const a of DEFS){
+      if(!Persist.data.achievements[a.id] && a.check(roundSummary)){
+        Persist.data.achievements[a.id] = { at: Date.now() };
+        unlocked.push(a);
+      }
+    }
+    if(unlocked.length){ Persist.save(); unlocked.forEach((a,i)=>setTimeout(()=>toast(a), i*900)); }
+    if(document.getElementById('achieveOverlay').classList.contains('show')) render();
+    return unlocked;
+  }
+  function toast(a){
+    const el = document.createElement('div');
+    el.className = 'achieve-toast';
+    el.innerHTML = `<div class="achieve-toast-icon">✦</div><div><div class="achieve-toast-title">Achievement Unlocked</div><div class="achieve-toast-name">${a.name}</div></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('show'));
+    setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(), 500); }, 3600);
+  }
+  function render(){
+    const d = Persist.data;
+    const unlockedCount = DEFS.filter(a=>d.achievements && d.achievements[a.id]).length;
+    document.getElementById('achProgress').textContent = `${unlockedCount} / ${DEFS.length} unlocked`;
+    document.getElementById('achRows').innerHTML = DEFS.map(a=>{
+      const on = !!(d.achievements && d.achievements[a.id]);
+      return `<div class="ach-row ${on?'unlocked':''}">
+        <div class="ach-icon">${on?'✦':'?'}</div>
+        <div class="ach-info">
+          <div class="ach-name">${a.name}</div>
+          <div class="ach-desc">${on ? a.desc : '???'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('achieveOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('achieveOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, checkAll, render, DEFS };
 })();
 
 /* =====================================================================
