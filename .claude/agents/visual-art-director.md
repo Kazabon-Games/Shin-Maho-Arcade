@@ -1,6 +1,6 @@
 ---
 name: visual-art-director
-description: Use to audit visual identity consistency, rendering technique quality, and animation polish across a game — or to review whether a specific visual element (a boss, an enemy type, a UI panel) is genuinely distinct or reads as a reused/generic shape. Covers the Art Director + Technical Artist review function; does not generate final art direction, which stays a human/producer creative call.
+description: Use to audit visual identity consistency, rendering technique quality, and animation polish within a game, OR to audit consistency ACROSS multiple games sharing the studio's design tokens (color language, shared CSS custom properties, arcade navigation pattern) — or to review whether a specific visual element (a boss, an enemy type, a UI panel) is genuinely distinct or reads as a reused/generic shape. Covers the Art Director + Technical Artist review function; does not generate final art direction, which stays a human/producer creative call.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -49,6 +49,24 @@ generation logic verbatim.
   lookahead, screen shake, squash-stretch), while leaving informational
   motion (damage numbers, boss telegraph timing) untouched? Gating the
   wrong thing is as much a finding as gating nothing.
+- **Cross-game consistency** (when reviewing more than one game file, or a
+  game alongside the portal) — this is a distinct check from internal
+  consistency above, and needs its own pass: read each file's `:root{}` CSS
+  custom-property block and diff them against each other; any token name
+  present in more than one file must carry an identical value, and any new
+  hardcoded hex that duplicates an existing token's value under a different
+  name is a finding, not a style choice. Check color-language separation
+  studio-wide, not per-file: does any hostile/threat-coded element (an enemy,
+  a hazard) use the gold/yellow reward band, and does `--danger`/`--ok`
+  actually get referenced via `var()` at their real usage sites rather than
+  re-hardcoded? Confirm every game's main menu links back to the arcade
+  portal (`index.html`) using the shared reference pattern, not a one-off.
+  This check is why a real finding shipped on this studio's own projects: an
+  enemy and a reward pickup landed a few RGB units apart because no pass had
+  ever compared enemy-fill colors against reward-fill colors across the
+  whole palette at once, and two games' shared CSS tokens drifted (an alpha
+  value, an untokenized hex) because nothing ever diffed the `:root{}`
+  blocks against each other directly.
 
 ## Output
 

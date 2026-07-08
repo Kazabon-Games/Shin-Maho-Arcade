@@ -1057,13 +1057,18 @@ body.reduced-motion .arcade-credit{
   animation:iridescentShift 6s linear infinite;
 }
 @keyframes iridescentShift{0%{background-position:0% 50%;}100%{background-position:300% 50%;}}
+/* STUDIO_BIBLE.md §11: this is the arcade-back-navigation reference site —
+   reuses index.html's .studio-credit gradient verbatim (var(--neon2)/
+   var(--gold), not the untokenized #9d6bff this class used to hardcode) so
+   the same visual effect is one shared pattern, not two drifted copies. */
 .arcade-credit{
-  text-align:center;font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;
-  margin-top:18px;font-weight:700;opacity:.7;
-  background:linear-gradient(90deg,#9d6bff,#e2b855,#5ec4a8,#9d6bff);
+  display:block;text-align:center;font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;
+  margin-top:18px;font-weight:700;opacity:.7;text-decoration:none;cursor:pointer;
+  background:linear-gradient(90deg,var(--neon2),var(--gold),#5ec4a8,var(--neon2));
   background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
   animation:iridescentShift 8s linear infinite;
 }
+.arcade-credit:hover{opacity:1;}
 
 .btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
   background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
@@ -1167,10 +1172,15 @@ body.touch-mode #dashBtn{display:flex;}
 /* meta */
 .meta-row{position:fixed;bottom:8px;right:10px;z-index:60;display:flex;align-items:center;gap:6px;font-family:var(--mono);}
 #versionMarker{font-size:9px;color:var(--ink-soft);opacity:.6;}
-.bugrep-toggle{width:20px;height:20px;border-radius:50%;border:1px solid var(--border);
-  background:var(--panel);color:var(--ink-soft);font-size:10px;cursor:pointer;opacity:.7;
+/* .icon-btn is the shared studio-wide meta-row icon-button class per
+   STUDIO_BIBLE.md §11 — same name/size (26x26px) as sigilchain.html's, so a
+   third game reuses one convention instead of inventing another. `position:
+   relative` stays local here since only this file's bug-report button needs
+   it (for its notification badge). */
+.icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
   display:flex;align-items:center;justify-content:center;position:relative;}
-.bugrep-toggle:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
+.icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
 .bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;
   width:12px;height:12px;font-size:8px;display:none;align-items:center;justify-content:center;}
 /* skip-to-boss dev shortcut mirrors the B key, but B doesn't exist on a
@@ -1228,7 +1238,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint">WASD / arrows to move · spells cast themselves<br>on touch: drag the joystick<br><span style="color:var(--neon2)">master a spell and its matching passive — together, they evolve</span></div>
-    <div class="arcade-credit">SHIN MAHOU ARCADE</div>
+    <a class="arcade-credit" href="index.html" aria-label="Back to the Shin Mahou Arcade">SHIN MAHOU ARCADE</a>
   </div>
 </div>
 
@@ -1328,11 +1338,11 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <div class="meta-row">
   <div id="versionMarker">WONDERLAND v2.6.1</div>
-  <button class="bugrep-toggle" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
-  <button class="bugrep-toggle" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
-  <button class="bugrep-toggle" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
-  <button class="bugrep-toggle skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
-  <button class="bugrep-toggle" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="icon-btn skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
+  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
 </div>
 
 <!-- SETTINGS -->
@@ -1424,6 +1434,14 @@ function dist2(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
 function rand(a,b){ return a + Math.random()*(b-a); }
 function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// resolves a CSS custom property into a real value for canvas fillStyle use
+// — canvas draw calls can't reference var(--token) directly the way CSS can,
+// so this is the one place that bridges the two. Per STUDIO_BIBLE.md §11,
+// canvas code should read the declared token rather than re-hardcoding its
+// hex value (the small-gem sparkle color used to hardcode '#5eff9c' even
+// though --ok already declared that exact value).
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+const OK_COLOR = cssVar('--ok');
 
 // death/victory stats used to just be set as static text — a count-up tween
 // gives them the same "weight" the rest of the juice layer already has
@@ -1697,11 +1715,18 @@ const EVOLUTIONS = {
 };
 
 // Enemy archetypes. hp/speed/damage scale with elapsed minutes.
+// Colors are governed by STUDIO_BIBLE.md §11 Cross-Game Visual & Color
+// Language: the gold/yellow reward band (--gold/--neon) is reserved for
+// pickups/currency/UI, never a hostile entity — swarmer/elite were
+// originally citrine/gold jewel tones that collided with XP-gem and
+// currency colors (a real playtest finding: they read as rewards). Recolored
+// off that band entirely rather than just darkened, so neither reads as
+// currency-adjacent anymore.
 const ENEMY_TYPES = {
   husk:    { r:13, hp:22, speed:62,  dmg:9,  xp:1, color:'#b45cff', shape:'tri'    },
-  swarmer: { r:8,  hp:9,  speed:105, dmg:5,  xp:1, color:'#ffe066', shape:'dot'    },
+  swarmer: { r:8,  hp:9,  speed:105, dmg:5,  xp:1, color:'#2dd9c9', shape:'dot'    },
   bulwark: { r:22, hp:90, speed:36,  dmg:18, xp:4, color:'#ff3d68', shape:'hex'    },
-  elite:   { r:30, hp:600,speed:44,  dmg:26, xp:30,color:'#ffdf7e', shape:'diamond'},
+  elite:   { r:30, hp:600,speed:44,  dmg:26, xp:30,color:'#7a1030', shape:'diamond'},
 };
 const ENEMY_SPAWN_POP_DUR = 0.2; // seconds — regular-enemy spawn pop-in window (elites skip this, see spawnEnemy)
 
@@ -2612,7 +2637,7 @@ const Game = (function(){
   // Lives in Game (not Juice) because it needs the private `particles` array.
   Events.on('gemPickup', (data) => {
     if(particles.length < MAX_PARTICLES){
-      const color = data.v >= 4 ? '#ffd166' : '#5eff9c';
+      const color = data.v >= 4 ? '#ffd166' : OK_COLOR;
       for(let i=0;i<3;i++){
         particles.push({ x:data.x, y:data.y, vx:rand(-40,40), vy:rand(-70,-20), life:rand(0.2,0.35), color, size:rand(1,2) });
       }
@@ -3194,7 +3219,7 @@ const Game = (function(){
     for(const g of gems){
       const gx = g.x+ox, gy = g.y+oy;
       if(gx < -20 || gx > W+20 || gy < -20 || gy > H+20) continue;
-      const color = g.v >= 4 ? '#ffd166' : '#5eff9c';
+      const color = g.v >= 4 ? '#ffd166' : OK_COLOR;
       const tw = 0.7 + 0.3*Math.sin(elapsed*6 + gx*0.1);
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 8*tw;
