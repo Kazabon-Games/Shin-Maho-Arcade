@@ -22,10 +22,17 @@
                           waiting out — a buffered input fires the instant
                           the committed phase ends, and a fresh input during
                           recovery starts right away. Also added a window.Rig
-                          _test hook and a committed non-DOM regression test
-                          (tests/rig-sequence-logic.js) for this state
-                          machine, since two real bugs upstream were already
-                          found by simulating it, not by reading it.
+                          _test hook and a committed Playwright regression
+                          test (tests/rig-sequence.js) driving this state
+                          machine through the real page, since two real bugs
+                          upstream were already found by simulating it, not
+                          by reading it.
+                          Correction (independent engineer audit, same day):
+                          this comment previously misnamed the test file and
+                          called it "non-DOM" — it's DOM/Playwright-driven.
+                          Treat git commit messages as the authoritative
+                          record for this file's history; this comment is
+                          useful context but not ground truth.
 
   v0.1.2 — 2026-07-08 — v0.1.1's pose-blend fix only covered the transition
                           inside the sequence loop; startAttack() had the
