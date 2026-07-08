@@ -9,6 +9,21 @@
   RYKNDU DOLL RIG — CHANGE LOG
   (one line per change, most recent on top)
 
+  v0.1.2 — 2026-07-08 — v0.1.1's pose-blend fix only covered the transition
+                          inside the sequence loop; startAttack() had the
+                          same circular-self-read bug (fromPose was captured
+                          AFTER seq was reassigned, so it read as a no-op),
+                          causing a visible snap on every attack after the
+                          first. Reordered so fromPose is captured first.
+                          Also fixed a left-kick-only bug where the mirrored
+                          spine angle landed ~2pi away from its visual
+                          equivalent, making lerpPose sweep almost a full
+                          rotation instead of a small lean — mirror() now
+                          wraps spineA into (-pi, pi]. And mockEnemy.hitAt
+                          no longer re-hardcodes the windup/strike durations
+                          (it now reads them from the sequence itself), so a
+                          future timing-tuning pass can't silently desync it.
+
   v0.1.1 — 2026-07-08 — Fixed a crash on the last phase of any attack
                           sequence: seqIdx could go out of bounds and get
                           read before the end-of-sequence check ran. Reordered
@@ -48,7 +63,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.1</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.2</div>
 <div id="debug"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
 <div class="tapzone" id="zoneL"></div>
@@ -104,11 +119,22 @@
     }
   };
 
+  // Keep a mirrored spine angle within (-pi, pi] of the un-mirrored range —
+  // spineA's resting orientation is near -pi/2, so a raw "pi - angle"
+  // reflection lands near +3pi/2 instead: numerically ~2pi away from its
+  // own visual equivalent, which made lerpPose sweep almost a full
+  // rotation on every left-side kick instead of a small lean.
+  function wrapAngle(a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a <= -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
   // Build the mirrored left-side kick from the right-side kick definitions,
   // so the two sides can never silently drift out of sync with each other.
   function mirror(pose) {
     return {
-      pelvisDX: -pose.pelvisDX, pelvisDY: pose.pelvisDY, spineA: Math.PI - pose.spineA,
+      pelvisDX: -pose.pelvisDX, pelvisDY: pose.pelvisDY, spineA: wrapAngle(Math.PI - pose.spineA),
       hipL: Math.PI - pose.hipR, kneeL: Math.PI - pose.kneeR,
       hipR: Math.PI - pose.hipL, kneeR: Math.PI - pose.kneeL,
       shoulderL: Math.PI - pose.shoulderR, elbowL: Math.PI - pose.elbowR,
@@ -154,15 +180,18 @@
   }
 
   function startAttack(side) {
+    // Capture the outgoing pose BEFORE seq/seqIdx/seqStart change — otherwise
+    // currentPose() below takes its mid-sequence branch against the new seq
+    // (t=0), returning fromPose unchanged instead of the actual current pose.
+    fromPose = currentPose();
     seq = attackSequence(side);
     seqIdx = 0;
     seqStart = performance.now();
-    fromPose = currentPose();
     mockEnemy = {
       side,
       x: side === 'R' ? canvas.width + 40 : -40,
       alive: true,
-      hitAt: seqStart + 110 + 70 * 0.6
+      hitAt: seqStart + seq[0].dur + seq[1].dur * 0.6
     };
   }
 
