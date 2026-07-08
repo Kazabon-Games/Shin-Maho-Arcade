@@ -130,7 +130,13 @@ function ok(cond, label) {
   await page.waitForTimeout(145);
   let after = await page.evaluate(() => window.Rig._test.state());
   ok(after.killCount === before.killCount + 1, 'well-timed matching-side kick kills the enemy');
-  ok(after.enemies.length === 0, 'killed enemy is removed from the collection');
+  // A killed enemy now lingers ~220ms as a fading death-flash (quality-pass
+  // juice work) rather than vanishing instantly -- it stays in the array,
+  // marked dying, until ENEMY_DEATH_DUR elapses.
+  ok(after.enemies.length === 1 && after.enemies[0].dying === true, 'killed enemy lingers as a dying flash, not an instant vanish');
+  await page.waitForTimeout(280); // past ENEMY_DEATH_DUR (220ms)
+  let settled = await page.evaluate(() => window.Rig._test.state());
+  ok(settled.enemies.length === 0, 'dying enemy is fully removed once its death animation ends');
 
   // A mismatched-side kick must not kill it, even at the same timing.
   await page.waitForTimeout(700);
@@ -165,6 +171,31 @@ function ok(cond, label) {
   after = await page.evaluate(() => window.Rig._test.state());
   ok(after.missedCount === before.missedCount + 1, 'an unanswered enemy is counted as missed after reaching melee range');
   ok(after.enemies.length === 0, 'missed enemy is removed, not left hanging around');
+
+  console.log('8. resolveHits() vs updateEnemies() ordering (quality-pass engineer finding)');
+  // An engineer audit found that when an enemy's melee-range timeout (t>=1)
+  // and the player's committed-phase-ends-into-strike transition land in the
+  // SAME frame, the old call order (updateEnemies before resolveHits) let
+  // the miss-timeout steal a geometrically clean, in-radius hit and record
+  // it as a miss instead -- one-directional (only ever cost the player),
+  // worse on lower frame rates, and exactly the kind of invisible unfairness
+  // that erodes trust in a player's own correct timing. Fixed by swapping
+  // the call order in frame(). Reproduced here by timing a fresh spawn's
+  // natural travel so its t crosses 1.0 during the strike phase specifically
+  // (trigger_time solved to satisfy trigger_time+110 <= 600 <= trigger_time+180,
+  // i.e. trigger_time in [420,490]; 455 is the midpoint, for margin against
+  // real timer jitter -- the same discipline as every other timing test in
+  // this file).
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
+  before = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => window.Rig._test.spawnEnemy('R', 0)); // fresh enemy, natural approach
+  await page.waitForTimeout(455);
+  await page.evaluate(() => window.Rig._test.trigger('R')); // strike begins ~110ms from now, enemy's t crosses 1 during that window
+  await page.waitForTimeout(250);
+  after = await page.evaluate(() => window.Rig._test.state());
+  ok(after.killCount === before.killCount + 1 && after.missedCount === before.missedCount,
+    'a hit whose timing coincides with the enemy\'s own melee-timeout still registers as a kill, not a stolen miss');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
