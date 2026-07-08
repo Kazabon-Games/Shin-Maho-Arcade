@@ -14,7 +14,8 @@
      it rather than block on producing a real screenshot; a missing tag
      looks broken in a link preview, a missing image just degrades. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0612'/%3E%3Cpolygon points='16,4 24,16 16,28 8,16' fill='%23ffd76b'/%3E%3Cpolygon points='16,4 24,16 16,16' fill='%23ffcb5c'/%3E%3Cpolygon points='16,16 24,16 16,28' fill='%23e2b855'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0612'/%3E%3Cpolygon points='16,4 24,16 16,28 8,16' fill='%23ffd76b'/%3E%3Cpolygon points='16,4 24,16 16,16' fill='%23ffcb5c'/%3E%3Cpolygon points='16,16 24,16 16,28' fill='%23e2b855'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icons/wonderland-192.png">
+<link rel="manifest" href="wonderland.webmanifest">
 <meta name="description" content="WONDERLAND — dodge a swarm, auto-cast spells, level up, and survive to a boss fight in this browser survivor-roguelite from Kazabon Game Studio. Free to play instantly, no install.">
 <meta property="og:title" content="WONDERLAND — Shin Mahou Arcade">
 <meta property="og:description" content="A browser survivor-roguelite: dodge a swarm, auto-cast spells, level up, and survive to a boss fight. Instant play, no install.">
@@ -5233,6 +5234,15 @@ const Bugrep = (function(){
   function loop(ts){ draw((ts-t0)/1000); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 })();
+
+// PWA registration — see the pwa-offline-games skill. Explicit scope keeps
+// this service worker from ever intercepting fetches for the other games
+// sharing this same repo-root directory (index.html, sigilchain.html).
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./wonderland-sw.js', { scope: './wonderland.html' }).catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>

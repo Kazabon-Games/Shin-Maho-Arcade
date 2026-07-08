@@ -1,0 +1,15 @@
+{
+  "name": "Sigil Chain",
+  "short_name": "Sigil Chain",
+  "description": "Trace a chain across a living magic circle, close the loop for a banishing surge, and beat the buzzer.",
+  "start_url": "./sigilchain.html",
+  "scope": "./sigilchain.html",
+  "display": "standalone",
+  "background_color": "#140b30",
+  "theme_color": "#ffd76b",
+  "icons": [
+    { "src": "icons/sigilchain-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/sigilchain-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/sigilchain-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
