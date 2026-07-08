@@ -1,3 +1,6 @@
 # internal studio docs — kept on disk, not published with the public repo
 STUDIO_BIBLE.md
 WONDERLAND_HANDOVER.md
+
+# ephemeral agent-tooling worktrees, not project content
+.claude/worktrees/
