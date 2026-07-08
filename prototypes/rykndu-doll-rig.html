@@ -9,6 +9,24 @@
   RYKNDU DOLL RIG — CHANGE LOG
   (one line per change, most recent on top)
 
+  v0.1.3 — 2026-07-08 — Studio audit (game-designer subagent) found the
+                          attack model was structurally unable to support
+                          the decided double-boss/single-input-stream design
+                          goal: windup+strike+recover (400ms) was one
+                          indivisible lock, even though the hit resolves
+                          during strike (152ms) and the remaining 220ms of
+                          recovery has no gameplay function. Split the lock
+                          into committed phases (windup+strike, 180ms,
+                          uninterruptible) and a final recovery phase that a
+                          new input can now cancel immediately instead of
+                          waiting out — a buffered input fires the instant
+                          the committed phase ends, and a fresh input during
+                          recovery starts right away. Also added a window.Rig
+                          _test hook and a committed non-DOM regression test
+                          (tests/rig-sequence-logic.js) for this state
+                          machine, since two real bugs upstream were already
+                          found by simulating it, not by reading it.
+
   v0.1.2 — 2026-07-08 — v0.1.1's pose-blend fix only covered the transition
                           inside the sequence loop; startAttack() had the
                           same circular-self-read bug (fromPose was captured
@@ -63,7 +81,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.2</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.3</div>
 <div id="debug"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
 <div class="tapzone" id="zoneL"></div>
@@ -171,11 +189,25 @@
   let seqIdx = 0;
   let seqStart = 0;
   let fromPose = POSES.idle;
-  let queuedSide = null; // one buffered input so a fast tap during recovery isn't dropped
+  let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
   let mockEnemy = null;  // visual-only, for connect-timing feel — not real hit detection
 
+  // Convention: the LAST phase of any attackSequence is recovery — cosmetic
+  // follow-through with no remaining gameplay function (the hit has already
+  // resolved during strike). Every phase before that is committed: once it
+  // starts, it plays out in full. This distinction is load-bearing for the
+  // double-boss threat-reading design goal — a player must be able to answer
+  // a second threat without waiting out dead recovery time from the first.
+  function isCommittedPhase(idx) {
+    return idx < seq.length - 1;
+  }
+
   function triggerAttack(side) {
-    if (seq) { queuedSide = side; return; }
+    if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
+    // Either idle, or sitting in the (interruptible) recovery phase — start
+    // immediately. startAttack() captures currentPose() as fromPose, so an
+    // interrupted recovery blends smoothly into the new windup instead of
+    // snapping.
     startAttack(side);
   }
 
@@ -235,6 +267,15 @@
         return;
       }
       fromPose = completed;
+      // The committed phases (windup+strike) just finished, so we're about
+      // to enter recovery — which has no gameplay function left. If an
+      // input was already buffered during windup/strike, don't make the
+      // player wait out the full recovery: fire it now instead.
+      if (!isCommittedPhase(seqIdx) && queuedSide) {
+        const s = queuedSide;
+        queuedSide = null;
+        startAttack(s);
+      }
     }
   }
 
@@ -299,6 +340,24 @@
   });
   document.getElementById('zoneL').addEventListener('pointerdown', () => triggerAttack('L'));
   document.getElementById('zoneR').addEventListener('pointerdown', () => triggerAttack('R'));
+
+  // ---- Test hook (mirrors this studio's Game._test convention) ----
+  // Read-only state introspection plus a direct trigger, so QA/tests can set
+  // up exact scenarios (e.g. "trigger during recovery") instead of guessing
+  // real-time delays around synthetic keyboard events.
+  window.Rig = {
+    _test: {
+      state: () => ({
+        idle: !seq,
+        seqIdx,
+        seqLen: seq ? seq.length : 0,
+        committed: seq ? isCommittedPhase(seqIdx) : false,
+        queuedSide,
+        pose: currentPose()
+      }),
+      trigger: (side) => triggerAttack(side)
+    }
+  };
 
   // ---- Main loop ----
   function frame(now) {
