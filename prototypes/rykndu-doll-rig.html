@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rykndu Doll Rig — Prototype</title>
+
+<!--
+  RYKNDU DOLL RIG — CHANGE LOG
+  (one line per change, most recent on top)
+
+  v0.1.1 — 2026-07-08 — Fixed a crash on the last phase of any attack
+                          sequence: seqIdx could go out of bounds and get
+                          read before the end-of-sequence check ran. Reordered
+                          so the bounds check happens first, and fixed the
+                          pose-blend handoff to use the just-completed phase's
+                          actual target instead of a circular self-read.
+
+  v0.1.0 — 2026-07-08 — Phase 0 + first rig prototype: joint hierarchy
+                          (pelvis/spine/head, hip-knee legs, shoulder-elbow
+                          arms), idle breathing pose, left/right kick attack
+                          with windup/strike/recover phases and input
+                          buffering, keyboard + tap-zone input, mock
+                          incoming-enemy marker for connect-timing
+                          feel-testing only (not real hit detection).
+-->
+
+<style>
+  html, body { margin: 0; padding: 0; background: #12141c; overflow: hidden; height: 100%; }
+  #stage { display: block; touch-action: none; }
+  .version-marker {
+    position: fixed; top: 8px; right: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed; bottom: 10px; left: 0; right: 0; text-align: center;
+    color: #666; font-family: monospace; font-size: 12px; pointer-events: none;
+  }
+  #debug {
+    position: fixed; top: 8px; left: 10px; font-size: 11px; color: #5c6;
+    font-family: monospace; opacity: 0.7; pointer-events: none; white-space: pre;
+  }
+  .tapzone { position: fixed; top: 0; bottom: 0; width: 50%; }
+  #zoneL { left: 0; }
+  #zoneR { right: 0; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="version-marker">Doll Rig Prototype — v0.1.1</div>
+<div id="debug"></div>
+<div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
+<div class="tapzone" id="zoneL"></div>
+<div class="tapzone" id="zoneR"></div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const debugEl = document.getElementById('debug');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- Segment lengths (px) ----
+  const LEN = {
+    thigh: 62, shin: 60, upperArm: 46, forearm: 46,
+    spine: 78, neck: 14, headR: 24,
+    hipW: 16, shoulderW: 30
+  };
+
+  // Angle convention: 0 = pointing right (+x), PI/2 = pointing down (canvas is y-down).
+  const DOWN = Math.PI / 2;
+
+  // ---- Poses: absolute angle per segment + pelvis offset ----
+  // These numbers are a first guess, not a tuned result — expect to hand-adjust
+  // them once you see the rig move.
+  const POSES = {
+    idle: {
+      pelvisDX: 0, pelvisDY: 0, spineA: -DOWN + 0.03,
+      hipL: DOWN + 0.18, kneeL: DOWN + 0.05,
+      hipR: DOWN - 0.18, kneeR: DOWN - 0.05,
+      shoulderL: DOWN + 1.9, elbowL: DOWN + 1.6,
+      shoulderR: DOWN - 1.9, elbowR: DOWN - 1.6
+    },
+    kickR_windup: {
+      pelvisDX: -10, pelvisDY: 4, spineA: -DOWN - 0.12,
+      hipL: DOWN + 0.35, kneeL: DOWN + 0.55,
+      hipR: DOWN - 0.55, kneeR: DOWN - 0.75,
+      shoulderL: DOWN + 2.0, elbowL: DOWN + 1.7,
+      shoulderR: DOWN - 1.6, elbowR: DOWN - 1.2
+    },
+    kickR_strike: {
+      pelvisDX: -14, pelvisDY: 0, spineA: -DOWN - 0.22,
+      hipL: DOWN + 0.25, kneeL: DOWN + 0.35,
+      hipR: -0.35, kneeR: -0.30,
+      shoulderL: DOWN + 2.1, elbowL: DOWN + 1.8,
+      shoulderR: DOWN - 1.3, elbowR: DOWN - 0.9
+    }
+  };
+
+  // Build the mirrored left-side kick from the right-side kick definitions,
+  // so the two sides can never silently drift out of sync with each other.
+  function mirror(pose) {
+    return {
+      pelvisDX: -pose.pelvisDX, pelvisDY: pose.pelvisDY, spineA: Math.PI - pose.spineA,
+      hipL: Math.PI - pose.hipR, kneeL: Math.PI - pose.kneeR,
+      hipR: Math.PI - pose.hipL, kneeR: Math.PI - pose.kneeL,
+      shoulderL: Math.PI - pose.shoulderR, elbowL: Math.PI - pose.elbowR,
+      shoulderR: Math.PI - pose.shoulderL, elbowR: Math.PI - pose.elbowL
+    };
+  }
+  POSES.kickL_windup = mirror(POSES.kickR_windup);
+  POSES.kickL_strike = mirror(POSES.kickR_strike);
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function lerpPose(a, b, t) {
+    const out = {};
+    for (const k in a) out[k] = lerp(a[k], b[k], t);
+    return out;
+  }
+  function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+  function easeInQuad(t) { return t * t; }
+  function easeInOutQuad(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+  // Windup -> strike -> recover. Durations are a first guess for tempo —
+  // this is the single most important thing to tune once you're watching it.
+  function attackSequence(side) {
+    const w = side === 'R' ? 'kickR_windup' : 'kickL_windup';
+    const s = side === 'R' ? 'kickR_strike' : 'kickL_strike';
+    return [
+      { pose: w, dur: 110, ease: easeOutQuad },
+      { pose: s, dur: 70, ease: easeInQuad },
+      { pose: 'idle', dur: 220, ease: easeInOutQuad }
+    ];
+  }
+
+  // ---- Animation state ----
+  let seq = null;
+  let seqIdx = 0;
+  let seqStart = 0;
+  let fromPose = POSES.idle;
+  let queuedSide = null; // one buffered input so a fast tap during recovery isn't dropped
+  let mockEnemy = null;  // visual-only, for connect-timing feel — not real hit detection
+
+  function triggerAttack(side) {
+    if (seq) { queuedSide = side; return; }
+    startAttack(side);
+  }
+
+  function startAttack(side) {
+    seq = attackSequence(side);
+    seqIdx = 0;
+    seqStart = performance.now();
+    fromPose = currentPose();
+    mockEnemy = {
+      side,
+      x: side === 'R' ? canvas.width + 40 : -40,
+      alive: true,
+      hitAt: seqStart + 110 + 70 * 0.6
+    };
+  }
+
+  function currentPose() {
+    if (!seq) {
+      // subtle idle breathing so the rig isn't static between attacks
+      const bob = Math.sin(performance.now() / 450) * 3;
+      const sway = Math.sin(performance.now() / 900) * 0.04;
+      return Object.assign({}, POSES.idle, {
+        pelvisDY: POSES.idle.pelvisDY + bob,
+        shoulderL: POSES.idle.shoulderL + sway,
+        shoulderR: POSES.idle.shoulderR - sway
+      });
+    }
+    const step = seq[seqIdx];
+    const t = Math.min(1, (performance.now() - seqStart) / step.dur);
+    const eased = step.ease(t);
+    const target = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+    return lerpPose(fromPose, target, eased);
+  }
+
+  function updateSeq(now) {
+    if (!seq) return;
+    const step = seq[seqIdx];
+    if (now - seqStart >= step.dur) {
+      // Capture the pose this phase was heading toward BEFORE advancing,
+      // so the next phase blends from the correct starting point.
+      const completed = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+      seqIdx++;
+      seqStart = now;
+      if (seqIdx >= seq.length) {
+        // Sequence is over — bail out before touching seq[seqIdx], which
+        // is now out of bounds. This check has to come before any read of
+        // the next step, not after.
+        seq = null;
+        if (queuedSide) {
+          const s = queuedSide;
+          queuedSide = null;
+          startAttack(s);
+        }
+        return;
+      }
+      fromPose = completed;
+    }
+  }
+
+  // ---- Drawing ----
+  function drawSeg(x1, y1, angle, len, width) {
+    const x2 = x1 + Math.cos(angle) * len;
+    const y2 = y1 + Math.sin(angle) * len;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#e8e8f0';
+    ctx.stroke();
+    return { x: x2, y: y2 };
+  }
+
+  function drawRig(pose) {
+    const groundY = canvas.height * 0.78;
+    const cx = canvas.width / 2 + pose.pelvisDX;
+    const pelvis = { x: cx, y: groundY - LEN.thigh - LEN.shin + pose.pelvisDY };
+
+    // legs first (drawn behind torso)
+    const kneeL = drawSeg(pelvis.x - LEN.hipW * 0.4, pelvis.y, pose.hipL, LEN.thigh, 7);
+    drawSeg(kneeL.x, kneeL.y, pose.kneeL, LEN.shin, 6);
+    const kneeR = drawSeg(pelvis.x + LEN.hipW * 0.4, pelvis.y, pose.hipR, LEN.thigh, 7);
+    drawSeg(kneeR.x, kneeR.y, pose.kneeR, LEN.shin, 6);
+
+    // spine
+    const chest = drawSeg(pelvis.x, pelvis.y, pose.spineA, LEN.spine, 9);
+
+    // arms
+    const elbowL = drawSeg(chest.x - LEN.shoulderW * 0.5, chest.y + 8, pose.shoulderL, LEN.upperArm, 6);
+    drawSeg(elbowL.x, elbowL.y, pose.elbowL, LEN.forearm, 5);
+    const elbowR = drawSeg(chest.x + LEN.shoulderW * 0.5, chest.y + 8, pose.shoulderR, LEN.upperArm, 6);
+    drawSeg(elbowR.x, elbowR.y, pose.elbowR, LEN.forearm, 5);
+
+    // head
+    const headY = chest.y - LEN.neck - LEN.headR;
+    ctx.beginPath();
+    ctx.arc(chest.x, headY, LEN.headR, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8e8f0';
+    ctx.fill();
+  }
+
+  function drawMockEnemy(now) {
+    if (!mockEnemy || !mockEnemy.alive) return;
+    const groundY = canvas.height * 0.78;
+    const dir = mockEnemy.side === 'R' ? -1 : 1;
+    mockEnemy.x += dir * 0.55 * 16.6;
+    if (now >= mockEnemy.hitAt) { mockEnemy.alive = false; return; }
+    ctx.beginPath();
+    ctx.arc(mockEnemy.x, groundY - 30, 14, 0, Math.PI * 2);
+    ctx.fillStyle = '#c0392b';
+    ctx.fill();
+  }
+
+  // ---- Input ----
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') triggerAttack('L');
+    if (e.key === 'ArrowRight') triggerAttack('R');
+  });
+  document.getElementById('zoneL').addEventListener('pointerdown', () => triggerAttack('L'));
+  document.getElementById('zoneR').addEventListener('pointerdown', () => triggerAttack('R'));
+
+  // ---- Main loop ----
+  function frame(now) {
+    updateSeq(now);
+    const pose = currentPose();
+
+    ctx.fillStyle = '#12141c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#2a2d3a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height * 0.78 + 2);
+    ctx.lineTo(canvas.width, canvas.height * 0.78 + 2);
+    ctx.stroke();
+
+    drawMockEnemy(now);
+    drawRig(pose);
+
+    debugEl.textContent = 'state: ' + (seq ? ('attacking [' + seqIdx + '/' + seq.length + ']') : 'idle') +
+      (queuedSide ? '\nbuffered: ' + queuedSide : '');
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
