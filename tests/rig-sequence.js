@@ -7,7 +7,8 @@
 // phase interruptible — this test locks in both the crash-safety and the
 // committed-phase/recovery-interrupt timing contract going forward.
 // Section 6 covers the v0.1.4 solveRig()/renderRig() split — the foot/hand
-// world-positions that real hit detection will read from next.
+// world-positions that real hit detection will read from next. Section 7
+// covers v0.1.5's real hit detection and autonomous enemies.
 //
 // Usage: serve the repo (`npx http-server -p 8935`), then
 // `NODE_PATH=/opt/node22/lib/node_modules node tests/rig-sequence.js`.
@@ -106,6 +107,64 @@ function ok(cond, label) {
   const strikeJoints = (await page.evaluate(() => window.Rig._test.state())).joints;
   const kickReach = Math.abs(strikeJoints.footR.x - idleFootRX);
   ok(kickReach > 20, 'kicking foot (footR) has moved meaningfully from idle during strike (moved ' + kickReach.toFixed(1) + 'px)');
+
+  console.log('7. Real hit detection and autonomous enemies (v0.1.5)');
+  await page.waitForTimeout(700); // settle to idle
+  // Isolate from the autonomous spawn timer for these deterministic checks —
+  // the timer firing mid-test is correct product behavior, not something
+  // these specific assertions are trying to exercise.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
+
+  // A well-timed, matching-side kick should kill. Trigger and spawn happen
+  // in ONE evaluate() call so they share the same performance.now() moment
+  // exactly — no inter-call IPC gap between two separate evaluate() round
+  // trips to introduce jitter. elapsedMs=455 puts the enemy AT contactX
+  // (dead center of the ~45px/~42ms-wide hit radius, not its edge) right
+  // at the midpoint of the 70ms strike window (110+35=145ms after trigger),
+  // giving ~35ms of slack on either side against real timer/frame jitter —
+  // this is the fix for the tight-margin flakiness the first version of
+  // this test had (same class of issue the recovery-boundary test hit).
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
+  let before = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => { window.Rig._test.trigger('R'); window.Rig._test.spawnEnemy('R', 455); });
+  await page.waitForTimeout(145);
+  let after = await page.evaluate(() => window.Rig._test.state());
+  ok(after.killCount === before.killCount + 1, 'well-timed matching-side kick kills the enemy');
+  ok(after.enemies.length === 0, 'killed enemy is removed from the collection');
+
+  // A mismatched-side kick must not kill it, even at the same timing.
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); window.Rig._test.spawnEnemy('L', 460); });
+  before = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(120);
+  after = await page.evaluate(() => window.Rig._test.state());
+  ok(after.killCount === before.killCount, 'mismatched-side kick does not kill (kill count unchanged)');
+  ok(after.enemies.length === 1 && after.enemies[0].alive, 'mismatched-side enemy is still alive and approaching');
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); }); // don't let it carry into the next check
+
+  // A whiff -- correct side, but thrown too early while the enemy is still
+  // far away -- must not kill either. Timing alone isn't enough; position matters.
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); window.Rig._test.spawnEnemy('R', 0); });
+  before = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(120);
+  after = await page.evaluate(() => window.Rig._test.state());
+  ok(after.killCount === before.killCount, 'a correct-side kick thrown too early (enemy still far away) whiffs, no kill');
+  ok(after.enemies.length === 1, 'whiffed enemy is still alive, still approaching');
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
+
+  // An enemy that's never answered should register as missed once it
+  // reaches melee range, not silently vanish or hang around forever.
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
+  before = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => window.Rig._test.spawnEnemy('L', 0));
+  await page.waitForTimeout(900); // full ~600ms travel plus generous margin against real timer jitter
+  after = await page.evaluate(() => window.Rig._test.state());
+  ok(after.missedCount === before.missedCount + 1, 'an unanswered enemy is counted as missed after reaching melee range');
+  ok(after.enemies.length === 0, 'missed enemy is removed, not left hanging around');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();

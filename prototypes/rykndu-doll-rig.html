@@ -11,6 +11,30 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.5 — 2026-07-08 — Real hit detection and an autonomous enemy,
+                          replacing the mock marker. Two independent team
+                          reviews (game-designer and engineer) had found the
+                          same root cause behind this rig "feeling thin":
+                          the old mockEnemy only ever existed as a side
+                          effect of the player's own startAttack() call, so
+                          it could never actually threaten anything.
+                          Enemies now spawn and approach on their own timer
+                          (one at a time for now — the array/side-based
+                          shape is ready for a second concurrent enemy
+                          later, but actually spawning two at once is still
+                          deferred, per the studio's own gate on the
+                          double-boss goal). A hit is checked only during
+                          the strike phase specifically, against the real
+                          kicking foot's world position from solveRig() —
+                          the exact thing the v0.1.4 refactor was for. An
+                          enemy that reaches melee range unanswered is
+                          counted as missed rather than killed; neither
+                          count is wired to a health bar or win/lose yet —
+                          that's the next phase, gated on this one existing
+                          first. window.Rig._test now exposes the enemy
+                          list, kill/miss counts, and a spawnEnemy(side,
+                          elapsedMs) hook for deterministic testing.
+
   v0.1.4 — 2026-07-08 — Split drawRig() into solveRig(pose), pure math that
                           returns every joint's world-space position, and
                           renderRig(joints), which only draws from that
@@ -106,7 +130,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.4</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.5</div>
 <div id="debug"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
 <div class="tapzone" id="zoneL"></div>
@@ -215,7 +239,7 @@
   let seqStart = 0;
   let fromPose = POSES.idle;
   let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
-  let mockEnemy = null;  // visual-only, for connect-timing feel — not real hit detection
+  let attackSide = null; // which side the currently-playing (or most recent) attack was on
 
   // Convention: the LAST phase of any attackSequence is recovery — cosmetic
   // follow-through with no remaining gameplay function (the hit has already
@@ -244,12 +268,7 @@
     seq = attackSequence(side);
     seqIdx = 0;
     seqStart = performance.now();
-    mockEnemy = {
-      side,
-      x: side === 'R' ? canvas.width + 40 : -40,
-      alive: true,
-      hitAt: seqStart + seq[0].dur + seq[1].dur * 0.6
-    };
+    attackSide = side;
   }
 
   function currentPose() {
@@ -380,16 +399,73 @@
     ctx.fill();
   }
 
-  function drawMockEnemy(now) {
-    if (!mockEnemy || !mockEnemy.alive) return;
-    const groundY = canvas.height * 0.78;
-    const dir = mockEnemy.side === 'R' ? -1 : 1;
-    mockEnemy.x += dir * 0.55 * 16.6;
-    if (now >= mockEnemy.hitAt) { mockEnemy.alive = false; return; }
-    ctx.beginPath();
-    ctx.arc(mockEnemy.x, groundY - 30, 14, 0, Math.PI * 2);
-    ctx.fillStyle = '#c0392b';
-    ctx.fill();
+  // ---- Enemies ----
+  // Autonomous: enemies spawn and approach on their own schedule, independent
+  // of when the player attacks. Previously the "enemy" only ever existed as
+  // a side effect of the player's own startAttack() call, which meant it
+  // could never actually threaten the player — this is the fix for that.
+  //
+  // These numbers are first guesses, same convention as the pose timings:
+  // expect to hand-tune once this is being watched, not read as final.
+  const ENEMY_HIT_RADIUS = 45;    // generous hitbox around the enemy, for the player's kicking foot
+  const ENEMY_MELEE_REACH = 55;   // how close (px from the pelvis) an enemy gets before it "lands" a hit
+  const ENEMY_TRAVEL_MS = 600;    // spawn-to-contact time; within this rig's own ~430-700ms derived floor
+  const ENEMY_SPAWN_GAP_MS = 900; // gap after an enemy resolves before the next one spawns
+
+  let enemies = [];
+  let nextSpawnAt = 1000; // small initial grace period before the first enemy
+  let killCount = 0;
+  let missedCount = 0;
+
+  function makeEnemy(spawnAt, side) {
+    const pelvisX = canvas.width / 2; // idle pelvisDX is 0; small attack-time offsets are ignored here
+    const spawnX = side === 'R' ? canvas.width + 50 : -50;
+    const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
+    return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true };
+  }
+
+  function updateEnemies(now) {
+    if (enemies.length === 0 && now >= nextSpawnAt) {
+      enemies.push(makeEnemy(now, Math.random() < 0.5 ? 'L' : 'R'));
+    }
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      const t = Math.min(1, (now - e.spawnAt) / ENEMY_TRAVEL_MS);
+      e.x = lerp(e.spawnX, e.contactX, t);
+      if (t >= 1) {
+        // Reached melee range with no correct-side hit landed in time.
+        missedCount++;
+        enemies.splice(i, 1);
+        nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
+      }
+    }
+  }
+
+  // Only checked during the strike phase specifically (not windup/recover) —
+  // reads the kicking foot's real world position from solveRig(), which is
+  // exactly what the v0.1.4 refactor exists to make possible.
+  function resolveHits(now, joints) {
+    if (!seq || seqIdx !== 1 || !attackSide) return;
+    const foot = attackSide === 'R' ? joints.footR : joints.footL;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.side !== attackSide) continue;
+      const dx = foot.x - e.x, dy = foot.y - e.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= ENEMY_HIT_RADIUS) {
+        enemies.splice(i, 1);
+        killCount++;
+        nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
+      }
+    }
+  }
+
+  function drawEnemies() {
+    for (const e of enemies) {
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 14, 0, Math.PI * 2);
+      ctx.fillStyle = '#c0392b';
+      ctx.fill();
+    }
   }
 
   // ---- Input ----
@@ -412,10 +488,30 @@
         seqLen: seq ? seq.length : 0,
         committed: seq ? isCommittedPhase(seqIdx) : false,
         queuedSide,
+        attackSide,
         pose: currentPose(),
-        joints: solveRig(currentPose())
+        joints: solveRig(currentPose()),
+        enemies: enemies.map(e => ({ side: e.side, x: e.x, alive: e.alive })),
+        killCount,
+        missedCount
       }),
-      trigger: (side) => triggerAttack(side)
+      trigger: (side) => triggerAttack(side),
+      // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
+      // path production spawning does, just backdating spawnAt so the enemy
+      // is already partway (or fully) through its approach on the very next
+      // frame — no separate/duplicated enemy-placement logic to drift out
+      // of sync with the real thing.
+      spawnEnemy: (side, elapsedMs) => {
+        const now = performance.now();
+        const e = makeEnemy(now - (elapsedMs || 0), side);
+        enemies.push(e);
+        return e;
+      },
+      // The autonomous spawner is the point of this system, but that means
+      // it can also fire in the middle of a deterministic test's own waits.
+      // These two let a test isolate a scenario without fighting the timer.
+      clearEnemies: () => { enemies = []; },
+      freezeSpawns: () => { nextSpawnAt = Infinity; }
     }
   };
 
@@ -423,6 +519,7 @@
   function frame(now) {
     updateSeq(now);
     const pose = currentPose();
+    const joints = solveRig(pose); // solved once per frame; rendering and hit detection both read from this
 
     ctx.fillStyle = '#12141c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -434,11 +531,15 @@
     ctx.lineTo(canvas.width, canvas.height * 0.78 + 2);
     ctx.stroke();
 
-    drawMockEnemy(now);
-    renderRig(solveRig(pose));
+    updateEnemies(now);
+    resolveHits(now, joints);
+    drawEnemies();
+    renderRig(joints);
 
     debugEl.textContent = 'state: ' + (seq ? ('attacking [' + seqIdx + '/' + seq.length + ']') : 'idle') +
-      (queuedSide ? '\nbuffered: ' + queuedSide : '');
+      (queuedSide ? '\nbuffered: ' + queuedSide : '') +
+      '\nkills: ' + killCount + '  missed: ' + missedCount +
+      (enemies.length ? '\nenemy: ' + enemies[0].side + ' @ ' + enemies[0].x.toFixed(0) : '');
 
     requestAnimationFrame(frame);
   }
