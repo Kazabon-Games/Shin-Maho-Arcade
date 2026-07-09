@@ -257,6 +257,27 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-art">
+        <canvas id="wardfallArt" width="640" height="280" aria-hidden="true"></canvas>
+        <div class="card-badge">Stage III · Live Now</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Wardfall</div>
+        <div class="card-genre">Puzzle · Cluster-Clear</div>
+        <p class="card-desc">
+          Swing censer-fire into a rising thicket of bound ward-spirits. Bind three of
+          the same ward-color and the knot breaks in a banishing flare — everything it
+          was anchoring crashes free in a wardfall of its own. The ceiling doesn't
+          wait on a timer; it just keeps descending, so the arc tightens with you.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="wardfall.html">✦&nbsp; Sound the Wardfall</a>
+          <span class="card-meta">3 ward-colors · bomb &amp; rainbow orbs · descending ceiling</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card soon">
       <div class="glyph">✦</div>
       <div class="card-title">More Worlds</div>
@@ -476,6 +497,94 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     }
   }, { threshold: 0.05 });
   io2.observe(cv);
+})();
+
+// Wardfall card art — deliberately breaks from both other cards' faceted-
+// shard silhouette language (a viewer's eye keys on silhouette more than
+// palette, so reusing shadeHex-polygon shards here would read as a
+// reskin). Soft-lit radial-gradient spheres in a loose hex cluster,
+// periodically flashing a trio into rising light motes then reforming —
+// previews the actual "wardfall" event in miniature, not just ambient
+// drift — plus a faint upward aim-trail hinting at the censer launch arc.
+// Same offscreen-pause IntersectionObserver pattern as the other two cards.
+(function(){
+  const cv = document.getElementById('wardfallArt');
+  if(!cv) return;
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  function shadeHex(hex, dLight){
+    const n = parseInt(hex.slice(1),16);
+    let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
+    return `rgb(${r},${g},${b})`;
+  }
+  function sphere(x, y, r, color){
+    const g = c.createRadialGradient(x-r*0.3, y-r*0.35, r*0.1, x, y, r);
+    g.addColorStop(0, shadeHex(color, 45));
+    g.addColorStop(0.55, color);
+    g.addColorStop(1, shadeHex(color, -30));
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fill();
+  }
+
+  const COLORS = ['#4ea8ff','#b98aff','#2d8f9e'];
+  const orbs = [
+    { x:0.30, y:0.32, r:20, color:COLORS[0] },
+    { x:0.44, y:0.28, r:18, color:COLORS[1] },
+    { x:0.37, y:0.46, r:19, color:COLORS[2] },
+    { x:0.66, y:0.35, r:16, color:COLORS[1] },
+    { x:0.78, y:0.30, r:14, color:COLORS[0] },
+    { x:0.72, y:0.50, r:15, color:COLORS[2] },
+  ];
+  const flareGroup = [0,1,2]; // the trio that periodically banishes
+
+  function draw(t){
+    c.clearRect(0,0,W,H);
+
+    // faint upward aim-trail from the bottom edge, hinting at the censer
+    c.save();
+    c.strokeStyle = 'rgba(255,215,107,0.16)'; c.lineWidth = 2;
+    c.setLineDash([3,6]);
+    c.beginPath();
+    c.moveTo(W*0.5, H*1.05);
+    c.quadraticCurveTo(W*0.42, H*0.7, W*0.38, H*0.5);
+    c.stroke();
+    c.restore();
+
+    const cycle = 3.4, phase = (t % cycle) / cycle;
+    const flaring = phase > 0.78;
+    for(const o of orbs){
+      const bob = Math.sin(t*0.4 + o.x*10)*4;
+      const isFlare = flareGroup.includes(orbs.indexOf(o));
+      if(isFlare && flaring){
+        const localT = (phase-0.78)/0.22;
+        const alpha = 1-localT;
+        c.save();
+        c.globalAlpha = Math.max(0, alpha);
+        for(let i=0;i<3;i++){
+          const ang = (Math.PI*2/3)*i + t;
+          const dist = localT*22;
+          sphere(o.x*W + Math.cos(ang)*dist, o.y*H + bob + Math.sin(ang)*dist - localT*14, o.r*(1-localT*0.5), o.color);
+        }
+        c.restore();
+      } else if(!isFlare || phase < 0.05){
+        sphere(o.x*W, o.y*H + bob, o.r, o.color);
+      }
+    }
+  }
+
+  const t0 = performance.now();
+  let raf;
+  function loop(ts){ draw((ts-t0)/1000); raf = requestAnimationFrame(loop); }
+  raf = requestAnimationFrame(loop);
+  const io3 = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf) raf = requestAnimationFrame(loop);
+      else if(!e.isIntersecting && raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+  }, { threshold: 0.05 });
+  io3.observe(cv);
 })();
 
 // PWA registration — see the pwa-offline-games skill. Root-scoped

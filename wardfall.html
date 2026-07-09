@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Wardfall — Shin Mahou Arcade</title>
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0620'/%3E%3Ccircle cx='12' cy='12' r='4.4' fill='%234ea8ff'/%3E%3Ccircle cx='21' cy='12' r='4.4' fill='%23b98aff'/%3E%3Ccircle cx='16.5' cy='20' r='4.4' fill='%232d8f9e'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23ffd76b' stroke-width='1.1' opacity='0.6'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icons/wardfall-192.png">
+<link rel="manifest" href="wardfall.webmanifest">
+<meta name="description" content="Swing censer-fire into a rising thicket of bound ward-spirits. Bind three of the same ward-color and the knot breaks in a banishing flare. A puzzle-shooter from Kazabon Game Studio.">
+<meta property="og:title" content="Wardfall">
+<meta property="og:description" content="Swing censer-fire into a rising thicket of bound ward-spirits. Bind three of the same ward-color and the knot breaks in a banishing flare.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#140b30;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --danger:#ff4d70;
+  --ok:#5eff9c;
+  --border:rgba(255,203,92,0.25);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:var(--body-font);user-select:none;-webkit-user-select:none;}
+
+#gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);touch-action:none;}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:none;
+  align-items:flex-start;justify-content:space-between;pointer-events:none;z-index:10;
+  font-family:var(--mono);}
+#hud.show{display:flex;}
+.hud-left{display:flex;flex-direction:column;gap:2px;}
+#scoreVal{font-size:28px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
+#comboVal{font-size:13px;color:var(--neon);min-height:16px;}
+.hud-right{text-align:right;display:flex;flex-direction:column;gap:2px;}
+#descentVal{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:.05em;}
+#phaseVal{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
+
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.86);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.overlay.show{display:flex;animation:ovfade .2s ease;}
+@keyframes ovfade{from{opacity:0;}to{opacity:1;}}
+@keyframes panelPop{0%{opacity:0;transform:scale(.92) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
+.overlay .panel{animation:panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;}
+@keyframes roundFade{0%{opacity:0;filter:grayscale(60%) brightness(.7);transform:scale(.96);}100%{opacity:1;filter:grayscale(0%) brightness(1);transform:scale(1);}}
+@keyframes newBestPop{0%{opacity:0;transform:scale(.85) translateY(-4px);filter:brightness(1.6);}60%{transform:scale(1.04);}100%{opacity:1;transform:scale(1) translateY(0);filter:brightness(1);}}
+#roundEndOverlay .panel{animation:roundFade .5s ease both;}
+#roundEndOverlay .panel.new-best-entrance{animation:newBestPop .5s cubic-bezier(.2,.9,.3,1.3) both;}
+body.reduced-motion .overlay.show,
+body.reduced-motion .panel{
+  animation:none!important;
+}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:26px 24px;max-width:420px;width:100%;max-height:92vh;overflow-y:auto;
+  box-shadow:0 0 60px -18px rgba(226,184,85,0.22);}
+.panel h1{font-size:2rem;letter-spacing:.18em;text-align:center;color:var(--neon);
+  text-shadow:0 0 26px rgba(255,203,92,0.55);margin-bottom:4px;font-family:var(--display);font-weight:600;}
+.panel h2{font-size:1.2rem;letter-spacing:.1em;color:var(--neon);text-align:center;margin-bottom:16px;font-family:var(--display);font-weight:600;}
+.tagline{text-align:center;color:var(--ink-soft);font-size:.85rem;margin-bottom:18px;font-family:var(--display);font-style:italic;}
+.stat-line{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.85rem;
+  color:var(--ink-mid);padding:6px 0;border-bottom:1px solid var(--border);}
+.stat-line b{color:var(--neon);font-weight:600;}
+.new-best{text-align:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+  color:var(--gold);margin:6px 0 4px;text-transform:uppercase;}
+.btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
+  margin-bottom:10px;transition:all .15s;font-family:inherit;letter-spacing:.04em;}
+.btn:hover{border-color:var(--neon);color:var(--neon);box-shadow:0 0 18px -6px var(--neon);}
+.btn:active{transform:scale(.98);}
+.settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 14px;margin-bottom:10px;font-size:.85rem;font-family:var(--body-font);}
+.settings-row input[type="range"]{width:120px;accent-color:var(--neon);}
+.settings-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--neon);}
+
+.ach-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;margin-bottom:10px;opacity:.45;transition:opacity .2s;}
+.ach-row.unlocked{opacity:1;border-color:var(--gold);box-shadow:0 0 14px -8px var(--gold);}
+.ach-icon{width:34px;height:34px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);color:var(--ink-soft);font-size:1rem;}
+.ach-row.unlocked .ach-icon{border-color:var(--gold);color:var(--gold);}
+.ach-info{flex:1;}
+.ach-name{font-weight:700;font-size:.9rem;font-family:var(--body-font);}
+.ach-desc{font-size:.74rem;color:var(--ink-mid);margin-top:2px;font-family:var(--body-font);}
+.ach-progress{text-align:center;font-family:var(--mono);color:var(--ink-mid);font-size:.85rem;margin-bottom:14px;}
+.achieve-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-140%);
+  display:flex;align-items:center;gap:10px;background:rgba(10,11,20,0.94);border:1px solid var(--gold);
+  border-radius:12px;padding:10px 16px;box-shadow:0 0 24px -6px var(--gold);z-index:999;
+  transition:transform .4s cubic-bezier(.2,.9,.3,1.3);pointer-events:none;}
+.achieve-toast.show{transform:translateX(-50%) translateY(0);}
+.achieve-toast-icon{font-size:1.3rem;color:var(--gold);}
+.achieve-toast-title{font-size:.65rem;letter-spacing:.1em;color:var(--ink-mid);text-transform:uppercase;font-family:var(--mono);}
+.achieve-toast-name{font-size:.9rem;font-weight:700;color:var(--gold);font-family:var(--body-font);}
+
+.shop-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel2);
+  border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:.85rem;}
+.shop-row.owned{border-color:var(--ok);}
+.shop-buy{font-family:var(--mono);font-size:.72rem;padding:.4em .8em;border-radius:8px;border:1px solid var(--gold);
+  background:transparent;color:var(--gold);cursor:pointer;}
+.shop-buy:disabled{opacity:.35;cursor:default;}
+
+.meta-row{position:fixed;bottom:8px;right:10px;z-index:60;display:flex;align-items:center;gap:6px;font-family:var(--mono);}
+.icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
+  display:flex;align-items:center;justify-content:center;}
+.icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
+
+@media (max-width:480px){
+  #scoreVal{font-size:22px;} #descentVal{font-size:20px;}
+  .panel{padding:20px 18px;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="hud">
+  <div class="hud-left">
+    <div id="scoreVal">0</div>
+    <div id="comboVal"></div>
+  </div>
+  <div class="hud-right">
+    <div id="descentVal">8</div>
+    <div id="phaseVal">Phase 1</div>
+  </div>
+</div>
+
+<div class="overlay show" id="menuOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Wardfall main menu">
+    <h1>WARDFALL</h1>
+    <div class="tagline">swing the censer, break the ward</div>
+    <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
+    <div class="stat-line">Shards <b id="menuShardsVal">0</b></div>
+    <button class="btn" onclick="Game.startRound()" aria-label="Start a run">SOUND THE WARDFALL</button>
+    <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
+    <button class="btn" onclick="Shop.open()" aria-label="Shop">✦ SHARD SHOP</button>
+    <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+  </div>
+</div>
+
+<div class="overlay" id="achieveOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Achievements">
+    <h2>✦ WARDS REMEMBERED ✦</h2>
+    <div class="tagline">what the censer keeps of you</div>
+    <div class="ach-progress" id="achProgress"></div>
+    <div id="achRows"></div>
+    <button class="btn" onclick="Achievements.close()" aria-label="Back">BACK</button>
+  </div>
+</div>
+
+<div class="overlay" id="shopOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Shard Shop">
+    <h2>✦ SHARD SHOP ✦</h2>
+    <div class="tagline">cosmetic only — never changes how the censer plays</div>
+    <div class="stat-line">Shards <b id="shopShardsVal">0</b></div>
+    <div id="shopRows"></div>
+    <button class="btn" onclick="Shop.close()" aria-label="Back">BACK</button>
+  </div>
+</div>
+
+<div class="overlay" id="pauseOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
+    <h2>PAUSED</h2>
+    <button class="btn" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
+    <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
+    <button class="btn" onclick="Game.showMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
+  </div>
+</div>
+
+<div class="overlay" id="roundEndOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Run ended">
+    <h2>THE WARD BREAKS</h2>
+    <div class="new-best" id="newBestBadge" style="display:none;">✦ New Best ✦</div>
+    <div class="stat-line">Score <b id="finalScoreVal">0</b></div>
+    <div class="stat-line">Best <b id="bestScoreVal">0</b></div>
+    <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
+    <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
+    <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
+    <h2>SETTINGS</h2>
+    <div class="tagline">tune the wardfall to you</div>
+    <div class="settings-row">
+      <label for="musicVolSlider">Music volume</label>
+      <input type="range" id="musicVolSlider" min="0" max="1" step="0.01" oninput="Settings.setMusicVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="sfxVolSlider">Sound effects volume</label>
+      <input type="range" id="sfxVolSlider" min="0" max="1" step="0.01" oninput="Settings.setSfxVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="reducedMotionToggle">Reduce motion</label>
+      <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
+    </div>
+    <div class="settings-row">
+      <label for="colorblindToggle">Colorblind-safe palette</label>
+      <input type="checkbox" id="colorblindToggle" onchange="Settings.setColorblind(this.checked)">
+    </div>
+    <button class="btn" onclick="Settings.close()" aria-label="Back">BACK</button>
+  </div>
+</div>
+
+<div class="meta-row">
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
+  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   PERSIST
+===================================================================== */
+const SAVE_KEY = 'wardfall-save-v1';
+const Persist = (function(){
+  let data = {
+    best: { score: 0, longestGroupPopped: 0, longestComboStreak: 0, totalOrbsPoppedLifetime: 0 },
+    totalRounds: 0,
+    shards: 0,
+    settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null, colorblind: false },
+    achievements: {},
+    cosmetics: { owned: {}, equipped: {} },
+  };
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(raw){
+        const p = JSON.parse(raw); Object.assign(data, p);
+        if(!data.best) data.best = { score:0, longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedLifetime:0 };
+        for(const k of ['score','longestGroupPopped','longestComboStreak','totalOrbsPoppedLifetime']) if(data.best[k]===undefined) data.best[k]=0;
+        if(data.totalRounds===undefined) data.totalRounds = 0;
+        if(data.shards===undefined) data.shards = 0;
+        if(!data.settings) data.settings = { musicVol:0.5, sfxVol:0.5, reducedMotion:null, colorblind:false };
+        if(data.settings.musicVol===undefined) data.settings.musicVol = 0.5;
+        if(data.settings.sfxVol===undefined) data.settings.sfxVol = 0.5;
+        if(data.settings.reducedMotion===undefined) data.settings.reducedMotion = null;
+        if(data.settings.colorblind===undefined) data.settings.colorblind = false;
+        if(!data.achievements) data.achievements = {};
+        if(!data.cosmetics) data.cosmetics = { owned:{}, equipped:{} };
+        if(!data.cosmetics.owned) data.cosmetics.owned = {};
+        if(!data.cosmetics.equipped) data.cosmetics.equipped = {};
+      }
+    }catch(e){}
+  }
+  function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }catch(e){} }
+  load();
+  return { data, save };
+})();
+
+/* =====================================================================
+   UTILS / EASE
+===================================================================== */
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function rand(a,b){ return a + Math.random()*(b-a); }
+function randInt(n){ return Math.floor(Math.random()*n); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const Ease = {
+  popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
+  easeOutCubic(t){ t = clamp(t,0,1); return 1 - Math.pow(1-t, 3); },
+  easeOutBack(t){ t = clamp(t,0,1); const c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
+};
+function tweenCountUp(id, endValue, opts){
+  opts = opts || {};
+  const el = document.getElementById(id);
+  if(!el) return;
+  const dur = opts.dur || 500;
+  const t0 = performance.now();
+  function frame(now){
+    const t = Math.min(1, (now-t0)/dur);
+    const eased = Ease.easeOutCubic(t);
+    const val = Math.round(endValue*eased);
+    el.textContent = val;
+    if(t < 1) requestAnimationFrame(frame);
+    else el.textContent = endValue;
+  }
+  requestAnimationFrame(frame);
+}
+
+/* =====================================================================
+   EVENTS
+===================================================================== */
+const Events = (function(){
+  const subs = {};
+  function on(type, fn){ (subs[type] = subs[type]||[]).push(fn); }
+  function emit(type, payload){
+    const l = subs[type];
+    if(!l) return;
+    for(const fn of l){ try{ fn(payload); }catch(e){ console.error('event handler error ['+type+']', e); } }
+  }
+  return { on, emit };
+})();
+
+/* =====================================================================
+   CONTENT DEFINITIONS — 3 ward-colors verified against the studio's
+   color-language rule by an actual RGB-distance audit (see
+   GAME_3_PILLARS.md §3): every warm hue tested collided with the
+   gold/reward or danger/red band, so the safe zone is a blue-violet-teal
+   wedge. A 4th color is gated on a real screenshot legibility pass, not
+   shipped here — see GAME_3_PILLARS.md.
+===================================================================== */
+const COLOR_KEYS = ['sapphire','amethyst','teal'];
+const COLORS = {
+  sapphire: { color:'#4ea8ff', pip:'circle' },
+  amethyst: { color:'#b98aff', pip:'square' },
+  teal:     { color:'#2d8f9e', pip:'triangle' },
+};
+const COLORBLIND_COLORS = {
+  sapphire: { color:'#4ea8ff', pip:'circle' },
+  amethyst: { color:'#ffb347', pip:'square' }, // swapped off-violet toward amber for the alt palette, still checked clear of gold/danger by hue+lightness separation from teal/sapphire
+  teal:     { color:'#2d8f9e', pip:'triangle' },
+};
+function activeColorDef(key){ return (Settings.colorblind() ? COLORBLIND_COLORS : COLORS)[key]; }
+
+const COLS = 9;
+const MIN_GROUP = 3;
+const INITIAL_ROWS = 5;
+
+// escalation — shot-count driven, no separate timer (see GAME_3_PILLARS.md
+// §2 "Difficulty curve"). Staggered so shots-per-descent and color count
+// don't both hit their maxima at once. Color count held at 3 for this
+// build (see COLOR_KEYS note above) — the array is kept per-phase for
+// forward compatibility once a 4th color clears verification.
+const PHASE_BOUNDS_SHOTS   = [15, 35, 60, 90];
+const PHASE_SHOTS_PER_DESCENT = [8, 7, 6, 5, 4];
+const PHASE_COLOR_COUNT    = [3, 3, 3, 3, 3];
+const PHASE_STONE_CHANCE   = [0, 0.04, 0.08, 0.10, 0.12];
+const PHASE_BOMB_CHANCE    = [0.03, 0.04, 0.05, 0.05, 0.06];
+const PHASE_RAINBOW_CHANCE = [0.02, 0.03, 0.04, 0.04, 0.05];
+function phaseForShots(shots){
+  for(let i=PHASE_BOUNDS_SHOTS.length-1; i>=0; i--){ if(shots>=PHASE_BOUNDS_SHOTS[i]) return i+1; }
+  return 0;
+}
+
+// scoring — recomputed and bounded, see GAME_3_PILLARS.md §6. Bomb/hazard
+// terms stay flat (never routed through groupMult) so a future "bigger
+// bomb" upgrade can't reproduce this studio's uncapped-heal-per-hit bug.
+const POP_BASE = 10, FALL_BASE = 20, BOMB_BASE = 10, HAZARD_BASE = 15;
+const GROUP_STEP = 0.15, GROUP_CAP = 20;
+const COMBO_STEP = 0.2, COMBO_CAP = 6;
+function groupMult(n){ return 1 + GROUP_STEP * (Math.min(n, GROUP_CAP) - MIN_GROUP); }
+function comboMult(streak){ return 1 + COMBO_STEP * Math.min(streak - 1, COMBO_CAP - 1); }
+function shotScore(nPopped, nFallen, nBomb, nHazard, streak){
+  const raw = POP_BASE*nPopped*(nPopped>0?groupMult(nPopped):0) + FALL_BASE*nFallen + BOMB_BASE*nBomb + HAZARD_BASE*nHazard;
+  return Math.round(raw * comboMult(streak));
+}
+
+/* =====================================================================
+   FACETED RENDERING — shadeHex copied verbatim from
+   sigilchain.html:362-380 (itself copied from wonderland.html:1867-1885).
+   Regular color orbs use the radial-gradient round-pickup variant the
+   faceted-gem-rendering skill specifies for round shapes; special orbs
+   use the hand-authored asymmetric-polygon variant, each its own
+   silhouette grammar (see GAME_3_PILLARS.md §3).
+===================================================================== */
+function shadeHex(hex, dLight, dSat){
+  dSat = dSat || 0;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max+min)/2;
+  if(max===min){ h=s=0; }
+  else {
+    const d = max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d+(g<b?6:0); break;
+      case g: h=(b-r)/d+2; break;
+      case b: h=(r-g)/d+4; break;
+    }
+    h/=6;
+  }
+  h*=360; s = clamp(s*100+dSat,0,100); l = clamp(l*100+dLight,0,100);
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+}
+
+const SPRITE_SIZE = 64;
+function buildOrbSprite(color, pipShape){
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.42;
+  const g = c2.createRadialGradient(cx-r*0.3, cy-r*0.35, r*0.1, cx, cy, r);
+  g.addColorStop(0, shadeHex(color, 26, 10));
+  g.addColorStop(0.55, color);
+  g.addColorStop(1, shadeHex(color, -18, 0));
+  c2.fillStyle = g;
+  c2.beginPath(); c2.arc(cx,cy,r,0,Math.PI*2); c2.fill();
+  c2.strokeStyle='rgba(255,255,255,0.35)'; c2.lineWidth=1.4;
+  c2.beginPath(); c2.arc(cx,cy,r,0,Math.PI*2); c2.stroke();
+  c2.fillStyle='rgba(255,255,255,0.55)';
+  c2.beginPath(); c2.ellipse(cx-r*0.32, cy-r*0.36, r*0.22, r*0.14, -0.6, 0, Math.PI*2); c2.fill();
+  // secondary colorblind-safe discrimination cue — a distinct pip glyph
+  // per color, not relying on hue alone (GAME_3_PILLARS.md §3)
+  c2.fillStyle='rgba(20,11,48,0.55)';
+  const pr = r*0.22;
+  if(pipShape==='circle'){ c2.beginPath(); c2.arc(cx,cy+r*0.18,pr,0,Math.PI*2); c2.fill(); }
+  else if(pipShape==='square'){ c2.fillRect(cx-pr, cy+r*0.18-pr, pr*2, pr*2); }
+  else { c2.beginPath(); c2.moveTo(cx,cy+r*0.18-pr); c2.lineTo(cx+pr,cy+r*0.18+pr); c2.lineTo(cx-pr,cy+r*0.18+pr); c2.closePath(); c2.fill(); }
+  return cvs;
+}
+
+// Hand-authored asymmetric vertex lists — same {angle-in-turns, radius
+// multiplier} data shape as wonderland.html's RAMIEL_VERTS /
+// sigilchain.html's RUNE_VERT_DEFS. Three distinct silhouette grammars
+// (sharp outward spikes / soft outward lobes / jagged inward notches) so
+// bomb, rainbow, and stone read apart by shape alone, not just color —
+// see GAME_3_PILLARS.md §3 "the mistake, twice."
+const BOMB_VERTS = [
+  {a:0.00,m:1.35},{a:0.09,m:0.45},{a:0.22,m:1.15},{a:0.30,m:0.50},{a:0.41,m:1.30},
+  {a:0.52,m:0.42},{a:0.63,m:1.20},{a:0.74,m:0.48},{a:0.86,m:1.10},{a:0.93,m:0.55},
+];
+const RAINBOW_VERTS = [
+  {a:0.00,m:1.05},{a:0.16,m:0.92},{a:0.33,m:1.12},{a:0.50,m:0.88},{a:0.68,m:1.08},{a:0.84,m:0.95},
+];
+// Stone's first draft (an 8-point jagged star) visually collapsed into the
+// same "generic spiky blob" silhouette as the bomb once rendered at actual
+// board size — verified by a real screenshot, not just reading the vertex
+// counts, per the faceted-gem-rendering skill's Verification section.
+// Rebuilt on a genuinely different grammar: a mostly chunky, rounded-ish
+// silhouette (echoing sigilchain's "earth" rune idea, RUNE_VERT_DEFS.earth)
+// with exactly one deep inward notch, reading as "a solid chunk with a
+// crack bitten out of it" rather than another radiating star.
+const STONE_VERTS = [
+  {a:0.00,m:1.05},{a:0.15,m:0.95},{a:0.30,m:1.10},{a:0.42,m:0.38},
+  {a:0.55,m:1.00},{a:0.70,m:0.92},{a:0.85,m:1.05},
+];
+function handVerts(cx, cy, r, defs){
+  return defs.map(d => ({ x:cx+Math.cos(d.a*Math.PI*2)*r*d.m, y:cy+Math.sin(d.a*Math.PI*2)*r*d.m }));
+}
+function facetSprite(defs, baseColor, litFn, darkFn){
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.38;
+  const verts = handVerts(cx, cy, r, defs);
+  c2.shadowColor = baseColor; c2.shadowBlur = 10;
+  c2.beginPath();
+  verts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.fillStyle = baseColor; c2.fill();
+  c2.shadowBlur = 0;
+  for(let i=0;i<verts.length;i++){
+    const a = verts[i], b = verts[(i+1)%verts.length];
+    const lit = i % 2 === 0;
+    c2.fillStyle = lit ? litFn(i) : darkFn(i);
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(a.x,a.y); c2.lineTo(b.x,b.y); c2.closePath(); c2.fill();
+  }
+  c2.strokeStyle = 'rgba(255,255,255,0.4)'; c2.lineWidth = 1.2;
+  c2.beginPath();
+  verts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.stroke();
+  return cvs;
+}
+function buildBombSprite(){
+  // near-black obsidian base; a hot ember accent lives only on two lit
+  // facets (a glowing fuse/crack), not the base fill — deliberately kept
+  // off --danger red as an accent, not a semantic hazard color.
+  const OBSIDIAN = '#161022', EMBER = '#ff9d52';
+  return facetSprite(BOMB_VERTS, OBSIDIAN,
+    (i)=> (i===0||i===6) ? EMBER : shadeHex(OBSIDIAN, 14, 6),
+    (i)=> shadeHex(OBSIDIAN, -10, -4));
+}
+function buildRainbowSprite(){
+  // 4+ distinct cycling hues per facet, not the usual binary lit/dark
+  // alternation of one color — a rainbow orb built with the standard
+  // i%2 alternation would read as "a two-color gem," not rainbow.
+  const HUES = ['#4ea8ff','#b98aff','#2d8f9e','#e8e4ff'];
+  return facetSprite(RAINBOW_VERTS, '#c9b8ff',
+    (i)=> shadeHex(HUES[i%HUES.length], 14, 6),
+    (i)=> shadeHex(HUES[(i+2)%HUES.length], -12, -4));
+}
+function buildStoneSprite(crack){
+  // lighter true ash-grey, deliberately split in lightness/saturation
+  // from the bomb's near-black obsidian (both starting from "neutral
+  // slate" was a real collision flagged in review).
+  const ASH = '#8a8798';
+  const cvs = facetSprite(STONE_VERTS, ASH,
+    (i)=> shadeHex(ASH, 10, 2),
+    (i)=> shadeHex(ASH, -14, -4));
+  if(crack>=1){
+    const c2 = cvs.getContext('2d');
+    const cx=SPRITE_SIZE/2, cy=SPRITE_SIZE/2, r=SPRITE_SIZE*0.3;
+    c2.strokeStyle='rgba(255,255,255,0.6)'; c2.lineWidth=1.6;
+    c2.beginPath();
+    c2.moveTo(cx-r*0.5, cy-r*0.6); c2.lineTo(cx+r*0.1, cy-r*0.05); c2.lineTo(cx-r*0.1, cy+r*0.2); c2.lineTo(cx+r*0.55, cy+r*0.65);
+    c2.stroke();
+  }
+  return cvs;
+}
+const ORB_SPRITES = {}, ORB_SPRITES_CB = {};
+for(const key of COLOR_KEYS){ ORB_SPRITES[key] = buildOrbSprite(COLORS[key].color, COLORS[key].pip); ORB_SPRITES_CB[key] = buildOrbSprite(COLORBLIND_COLORS[key].color, COLORBLIND_COLORS[key].pip); }
+const BOMB_SPRITE = buildBombSprite();
+const RAINBOW_SPRITE = buildRainbowSprite();
+const STONE_SPRITES = [buildStoneSprite(0), buildStoneSprite(1)];
+function spriteFor(cell){
+  if(!cell) return null;
+  if(cell.special==='bomb') return BOMB_SPRITE;
+  if(cell.special==='rainbow') return RAINBOW_SPRITE;
+  if(cell.special==='stone') return STONE_SPRITES[Math.min(cell.crack||0,1)];
+  return (Settings.colorblind() ? ORB_SPRITES_CB : ORB_SPRITES)[cell.color];
+}
+
+/* =====================================================================
+   GRID — hex offset grid. Fixed COLS-wide rows (never COLS/COLS-1
+   alternating) so a row's column indices stay valid no matter how many
+   times it shifts index via descend()'s unshift; only the pixel-space
+   render offset alternates by row parity. See GAME_3_PILLARS.md §2
+   "Grid & matching" for why this differs from Sigil Chain's square grid.
+   floodFill(seeds, matchFn) generalizes sigilchain.html:522-546's
+   stack-based DFS for match-check and ceiling-connectivity alike.
+===================================================================== */
+const Grid = (function(){
+  let rows = []; // rows[0] = topmost/newest; rows[rows.length-1] = deepest/oldest
+
+  function rowOffset(row){ return (row % 2 === 1) ? 0.5 : 0; }
+  function inBounds(col,row){ return row>=0 && row<rows.length && col>=0 && col<COLS; }
+  function orbAt(col,row){ return inBounds(col,row) ? rows[row][col] : null; }
+  function setOrb(col,row,orb){ if(inBounds(col,row)) rows[row][col] = orb; }
+  function removeOrb(col,row){ if(inBounds(col,row)) rows[row][col] = null; }
+
+  function hexNeighbors(col,row){
+    const n = [{col:col-1,row},{col:col+1,row}];
+    if(row % 2 === 0){
+      n.push({col:col-1,row:row-1},{col,row:row-1});
+      n.push({col:col-1,row:row+1},{col,row:row+1});
+    } else {
+      n.push({col,row:row-1},{col:col+1,row:row-1});
+      n.push({col,row:row+1},{col:col+1,row:row+1});
+    }
+    return n;
+  }
+
+  function generateRow(colorPool, stoneChance){
+    const row = [];
+    for(let i=0;i<COLS;i++){
+      if(Math.random() < stoneChance) row.push({ special:'stone', crack:0 });
+      else row.push({ color: colorPool[randInt(colorPool.length)] });
+    }
+    return row;
+  }
+  function init(initialRows, colorPool, stoneChance){
+    rows = [];
+    for(let i=0;i<initialRows;i++) rows.push(generateRow(colorPool, stoneChance));
+  }
+  function descend(colorPool, stoneChance){
+    rows.unshift(generateRow(colorPool, stoneChance));
+  }
+  // Test-only deterministic board setup, mirroring sigilchain.html's
+  // Game._test.setBoard pattern: pattern[row][col] is null, a color key
+  // string, or {special,crack}.
+  function setRows(pattern){
+    rows = pattern.map(row => row.map(spec => {
+      if(spec == null) return null;
+      if(typeof spec === 'string') return { color: spec };
+      return { special: spec.special, crack: spec.crack||0 };
+    }));
+  }
+  function forEachOrb(fn){
+    for(let r=0;r<rows.length;r++) for(let c=0;c<COLS;c++){ const o = rows[r][c]; if(o) fn(o,c,r); }
+  }
+  function liveColors(){
+    const set = new Set();
+    forEachOrb(o=>{ if(o.color) set.add(o.color); });
+    return set;
+  }
+  function bottomOccupiedRow(){
+    for(let r=rows.length-1; r>=0; r--){ for(let c=0;c<COLS;c++) if(rows[r][c]) return r; }
+    return -1;
+  }
+  function floodFill(seeds, matchFn){
+    const visited = new Set();
+    const stack = [];
+    const result = [];
+    for(const s of seeds){
+      const k = s.col+','+s.row;
+      if(visited.has(k) || !matchFn(s)) continue;
+      visited.add(k); stack.push(s);
+    }
+    while(stack.length){
+      const c = stack.pop();
+      result.push(c);
+      for(const n of hexNeighbors(c.col, c.row)){
+        const k = n.col+','+n.row;
+        if(visited.has(k) || !inBounds(n.col,n.row) || !matchFn(n)) continue;
+        visited.add(k); stack.push(n);
+      }
+    }
+    return result;
+  }
+  function ceilingConnected(){
+    const seeds = [];
+    for(let c=0;c<COLS;c++) if(rows[0] && rows[0][c]) seeds.push({col:c,row:0});
+    return floodFill(seeds, (cell)=> !!orbAt(cell.col,cell.row));
+  }
+  return {
+    rowOffset, inBounds, orbAt, setOrb, removeOrb, hexNeighbors,
+    init, descend, setRows, forEachOrb, liveColors, bottomOccupiedRow, floodFill, ceilingConnected,
+    get rows(){ return rows; },
+  };
+})();
+
+/* =====================================================================
+   QUEUE — queue-color fairness guarantee (this genre's analogue to Sigil
+   Chain's board-solvability guarantee, see GAME_3_PILLARS.md §2): a
+   newly queued color may only be drawn from colors currently present in
+   the live cluster, enforced at generation time, never as a later
+   swap of a color already shown to the player. Built as a plain rescan
+   per shot (not incremental O(1) bookkeeping) — Engineer's review flag:
+   Sigil Chain already pays this same order of cost once per event on a
+   comparable board size, so there's no evidence an incremental version
+   is worth its stale-state risk here.
+===================================================================== */
+const Queue = (function(){
+  function colorPoolForPhase(phase){
+    return COLOR_KEYS.slice(0, PHASE_COLOR_COUNT[phase] || PHASE_COLOR_COUNT[PHASE_COLOR_COUNT.length-1]);
+  }
+  function nextColor(phase){
+    const live = Grid.liveColors();
+    const pool = live.size ? Array.from(live) : colorPoolForPhase(phase);
+    return pool[randInt(pool.length)];
+  }
+  function nextItem(phase){
+    const bombP = PHASE_BOMB_CHANCE[phase] || 0;
+    const rainbowP = PHASE_RAINBOW_CHANCE[phase] || 0;
+    const r = Math.random();
+    if(r < bombP) return { special:'bomb' };
+    if(r < bombP + rainbowP) return { special:'rainbow' };
+    return { color: nextColor(phase) };
+  }
+  return { colorPoolForPhase, nextItem };
+})();
+
+/* =====================================================================
+   GAME — loop, layout, aim/trajectory shooter, match resolution,
+   scoring, difficulty. Shooter+Match concerns live inside this module
+   for single-file cohesion (same pragmatic choice Sigil Chain makes by
+   keeping its drag-chain logic inside Game rather than a separate
+   module) while Grid/Queue stay split out as distinct-responsibility
+   modules per GAME_3_PILLARS.md §7. Fixed-timestep accumulator loop is
+   the same SIM_DT/MAX_STEPS/spiral-of-death convention as
+   wonderland.html:3468-3487 / sigilchain.html:833-845.
+===================================================================== */
+const Game = (function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W=0, H=0, dpr=1;
+  let CELL_W=40, ROW_H=34.6, boardX=0, topY=90, leftWall=0, rightWall=0;
+  let cannonX=0, cannonY=0, dangerLineY=0;
+
+  function layout(){
+    const sidePad = 16;
+    const availW = W - sidePad*2;
+    CELL_W = clamp(Math.floor(availW / (COLS+0.5)), 26, 52);
+    ROW_H = CELL_W * 0.866;
+    const boardWidth = CELL_W * (COLS+0.5);
+    boardX = (W - boardWidth)/2;
+    leftWall = boardX; rightWall = boardX + boardWidth;
+    topY = 90;
+    cannonX = W/2; cannonY = H - 70;
+    dangerLineY = cannonY - CELL_W*1.3;
+  }
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    layout();
+  }
+  window.addEventListener('resize', resize);
+
+  function cellCenter(col,row){
+    const offset = Grid.rowOffset(row) * CELL_W;
+    return { x: boardX + offset + col*CELL_W + CELL_W/2, y: topY + row*ROW_H + CELL_W/2 };
+  }
+  function nearestCell(x,y){
+    const approxRow = Math.max(0, Math.round((y - topY - CELL_W/2) / ROW_H));
+    let best=null, bestD=Infinity;
+    for(let dr=-1; dr<=1; dr++){
+      const row = approxRow+dr;
+      if(row<0) continue;
+      const offset = Grid.rowOffset(row) * CELL_W;
+      const approxCol = Math.round((x - boardX - offset - CELL_W/2)/CELL_W);
+      for(let dc=-1; dc<=1; dc++){
+        const col = approxCol+dc;
+        if(col<0 || col>=COLS) continue;
+        const p = cellCenter(col,row);
+        const d = (p.x-x)*(p.x-x)+(p.y-y)*(p.y-y);
+        if(d<bestD){ bestD=d; best={col,row}; }
+      }
+    }
+    return best;
+  }
+  function ensureRow(row){ while(Grid.rows.length <= row) Grid.rows.push(new Array(COLS).fill(null)); }
+  function nearestEmptyCell(x,y){
+    const c = nearestCell(x,y);
+    if(!c) return {col:Math.floor(COLS/2), row:0};
+    ensureRow(c.row);
+    if(!Grid.orbAt(c.col,c.row)) return c;
+    let best=null, bestD=Infinity;
+    for(const n of Grid.hexNeighbors(c.col,c.row)){
+      if(n.row<0 || n.col<0 || n.col>=COLS) continue;
+      ensureRow(n.row);
+      if(Grid.orbAt(n.col,n.row)) continue;
+      const p = cellCenter(n.col,n.row);
+      const d = (p.x-x)*(p.x-x)+(p.y-y)*(p.y-y);
+      if(d<bestD){ bestD=d; best=n; }
+    }
+    return best || c;
+  }
+  function findCollisionOrb(x,y,threshold){
+    const approxRow = Math.round((y - topY - CELL_W/2) / ROW_H);
+    for(let dr=-2; dr<=2; dr++){
+      const row = approxRow+dr;
+      if(row<0 || row>=Grid.rows.length) continue;
+      for(let c=0;c<COLS;c++){
+        const o = Grid.orbAt(c,row);
+        if(!o) continue;
+        const p = cellCenter(c,row);
+        if((p.x-x)*(p.x-x)+(p.y-y)*(p.y-y) < threshold*threshold) return true;
+      }
+    }
+    return false;
+  }
+
+  // ── raymarch — single implementation used for both the rendered aim
+  // preview (capped bounces) and the real committed shot (high cap,
+  // always resolves since aim is clamped to an upward arc). See
+  // GAME_3_PILLARS.md §2 "Aim & fire".
+  function raymarch(x0,y0,dirX,dirY,maxBounces){
+    let x=x0, y=y0, dx=dirX, dy=dirY, bounces=0;
+    const points=[{x,y}];
+    const STEP=6, MAXDIST=3200;
+    let dist=0;
+    while(dist<MAXDIST){
+      x += dx*STEP; y += dy*STEP; dist += STEP;
+      if(x<=leftWall+CELL_W/2){ x=leftWall+CELL_W/2; dx=-dx; bounces++; points.push({x,y}); if(bounces>maxBounces) return {points, landingCell:null, resolved:false}; }
+      else if(x>=rightWall-CELL_W/2){ x=rightWall-CELL_W/2; dx=-dx; bounces++; points.push({x,y}); if(bounces>maxBounces) return {points, landingCell:null, resolved:false}; }
+      if(y<=topY+CELL_W/2){
+        points.push({x, y:topY+CELL_W/2});
+        return {points, landingCell:nearestEmptyCell(x, topY+CELL_W/2), resolved:true};
+      }
+      if(findCollisionOrb(x,y,CELL_W*0.92)){
+        points.push({x,y});
+        return {points, landingCell:nearestEmptyCell(x,y), resolved:true};
+      }
+    }
+    return {points, landingCell:null, resolved:false};
+  }
+
+  // ── run state ──
+  let running=false, paused=false, roundEnded=false;
+  let totalScore=0, comboStreak=0;
+  let shotsFired=0, shotsSinceDescent=0, phase=0;
+  let currentItem=null, nextItem=null;
+  let flight=null; // { points, idx, landingCell, item, traveled, segLen }
+  let aimAngle=-Math.PI/2;
+  const MAX_SPREAD = 80*Math.PI/180;
+  let roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
+    usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
+  let lastEventType = null;
+  const frameTimes = [];
+
+  let wakeLockSentinel = null;
+  async function requestWakeLock(){
+    if(!navigator.wakeLock) return;
+    try{ wakeLockSentinel = await navigator.wakeLock.request('screen'); }catch(e){}
+  }
+  function releaseWakeLock(){
+    if(wakeLockSentinel){ try{ wakeLockSentinel.release(); }catch(e){} wakeLockSentinel = null; }
+  }
+
+  function setAimFromPoint(px,py){
+    let a = Math.atan2(py-cannonY, px-cannonX);
+    const lo = -Math.PI/2 - MAX_SPREAD, hi = -Math.PI/2 + MAX_SPREAD;
+    if(a > 0) a -= Math.PI*2; // normalize so comparisons against the up-centered range are monotonic
+    aimAngle = clamp(a, lo, hi);
+  }
+  let dragCaptured = false;
+  canvas.addEventListener('pointermove', (e)=>{
+    if(!running || paused || roundEnded) return;
+    if(e.pointerType==='mouse' || dragCaptured) setAimFromPoint(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('pointerdown', (e)=>{
+    if(!running || paused || roundEnded) return;
+    if(e.pointerType!=='mouse'){
+      dragCaptured = true;
+      try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+      setAimFromPoint(e.clientX, e.clientY);
+    }
+  });
+  canvas.addEventListener('pointerup', (e)=>{
+    if(e.pointerType!=='mouse' && dragCaptured){ dragCaptured=false; fire(); }
+  });
+  canvas.addEventListener('pointercancel', ()=>{ dragCaptured=false; });
+  canvas.addEventListener('click', (e)=>{
+    if(e.pointerType==='mouse' || e.pointerType===undefined) fire();
+  });
+
+  let gpFireWasDown = false;
+  function pollGamepad(dt){
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for(const p of pads){ if(p){ gp = p; break; } }
+    if(!gp) return;
+    const stick = gp.axes[0] || 0;
+    if(Math.abs(stick) > 0.15) aimAngle = clamp(aimAngle + stick*2.2*dt, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD);
+    const down = !!(gp.buttons[0] && gp.buttons[0].pressed);
+    if(down && !gpFireWasDown) fire();
+    gpFireWasDown = down;
+  }
+
+  function canFire(){ return running && !paused && !roundEnded && !flight; }
+  function fire(){
+    if(!canFire()) return;
+    const dirX = Math.cos(aimAngle), dirY = Math.sin(aimAngle);
+    const path = raymarch(cannonX, cannonY, dirX, dirY, 20);
+    let landingCell = path.landingCell;
+    if(!landingCell){
+      const last = path.points[path.points.length-1];
+      landingCell = nearestEmptyCell(last.x, Math.max(last.y, topY+CELL_W/2));
+    }
+    let segLen = 0;
+    for(let i=1;i<path.points.length;i++){ const a=path.points[i-1], b=path.points[i]; segLen += Math.hypot(b.x-a.x,b.y-a.y); }
+    const totalLen = Math.max(segLen,1);
+    // speed scales up for long shallow-angle bounce paths so no shot ever
+    // takes noticeably longer to resolve than a short one — a flat px/sec
+    // speed made a heavily-bounced shallow shot take 5+ real seconds, which
+    // reads as broken/stuck rather than "just a long path"
+    const speed = Math.max(1700, totalLen / 0.5);
+    flight = { points: path.points, idx:0, traveled:0, totalLen, speed, landingCell, item: currentItem };
+    Music.shotClick();
+    Juice.cannonRecoil();
+    currentItem = nextItem;
+    nextItem = Queue.nextItem(phase);
+  }
+
+  function stoneAdjacentTo(cells){
+    const found = new Map();
+    for(const cell of cells){
+      for(const n of Grid.hexNeighbors(cell.col,cell.row)){
+        const o = Grid.orbAt(n.col,n.row);
+        if(o && o.special==='stone'){ found.set(n.col+','+n.row, n); }
+      }
+    }
+    return Array.from(found.values());
+  }
+
+  function resolveAttach(){
+    const { landingCell, item } = flight;
+    ensureRow(landingCell.row);
+    let nPopped=0, nFallen=0, nBomb=0, nHazard=0, scored=false;
+    const poppedCenters = [];
+
+    if(item.special==='bomb'){
+      const cluster = [landingCell, ...Grid.hexNeighbors(landingCell.col,landingCell.row)]
+        .filter(c => c.row>=0 && c.col>=0 && c.col<COLS && Grid.orbAt(c.col,c.row));
+      for(const c of cluster){ poppedCenters.push(cellCenter(c.col,c.row)); Grid.removeOrb(c.col,c.row); }
+      nBomb = cluster.length;
+      scored = nBomb>0;
+      if(scored) roundStats.usedBomb = true;
+    } else if(item.special==='rainbow'){
+      Grid.setOrb(landingCell.col, landingCell.row, { special:'rainbow' });
+      const neighborColors = new Set();
+      for(const n of Grid.hexNeighbors(landingCell.col,landingCell.row)){
+        const o = Grid.orbAt(n.col,n.row);
+        if(o && o.color) neighborColors.add(o.color);
+      }
+      const union = new Map();
+      union.set(landingCell.col+','+landingCell.row, landingCell);
+      for(const color of neighborColors){
+        const group = Grid.floodFill([landingCell], (cell)=>{ const o=Grid.orbAt(cell.col,cell.row); return o && (o.color===color || o.special==='rainbow'); });
+        for(const c of group) union.set(c.col+','+c.row, c);
+      }
+      const groupCells = Array.from(union.values());
+      if(groupCells.length >= MIN_GROUP){
+        const hazards = stoneAdjacentTo(groupCells);
+        for(const c of groupCells){ poppedCenters.push(cellCenter(c.col,c.row)); Grid.removeOrb(c.col,c.row); }
+        nPopped = groupCells.length;
+        nHazard = crackHazards(hazards);
+        scored = true;
+        roundStats.usedRainbow = true;
+      }
+    } else {
+      Grid.setOrb(landingCell.col, landingCell.row, { color: item.color });
+      const group = Grid.floodFill([landingCell], (cell)=>{ const o=Grid.orbAt(cell.col,cell.row); return o && (o.color===item.color || o.special==='rainbow'); });
+      if(group.length >= MIN_GROUP){
+        const hazards = stoneAdjacentTo(group);
+        for(const c of group){ poppedCenters.push(cellCenter(c.col,c.row)); Grid.removeOrb(c.col,c.row); }
+        nPopped = group.length;
+        nHazard = crackHazards(hazards);
+        scored = true;
+      }
+    }
+
+    // orphan drop — cells no longer reachable from the ceiling after a
+    // clear, run once (single-wave by construction, see
+    // GAME_3_PILLARS.md §2 "Grid & matching")
+    if(scored){
+      const connected = new Set(Grid.ceilingConnected().map(c=>c.col+','+c.row));
+      const orphans = [];
+      Grid.forEachOrb((o,c,r)=>{ if(!connected.has(c+','+r)) orphans.push({col:c,row:r}); });
+      for(const o of orphans){ poppedCenters.push(cellCenter(o.col,o.row)); Grid.removeOrb(o.col,o.row); }
+      nFallen = orphans.length;
+    }
+
+    if(scored){
+      comboStreak += 1;
+      roundStats.missCount = roundStats.missCount; // unchanged
+    } else {
+      comboStreak = 0;
+      roundStats.missCount += 1;
+    }
+    const gained = scored ? shotScore(nPopped, nFallen, nBomb, nHazard, comboStreak) : 0;
+    totalScore += gained;
+    roundStats.longestGroupPopped = Math.max(roundStats.longestGroupPopped, nPopped);
+    roundStats.longestComboStreak = Math.max(roundStats.longestComboStreak, comboStreak);
+    roundStats.totalOrbsPoppedRun += nPopped + nFallen + nBomb;
+    updateHudScore();
+
+    if(scored) Events.emit('wardBroken', { centers: poppedCenters, n: nPopped+nFallen+nBomb+nHazard, streak: comboStreak, colorKey: item.color });
+    else Events.emit('orbMiss', {});
+    lastEventType = scored ? 'wardBroken' : 'orbMiss';
+
+    shotsFired += 1; shotsSinceDescent += 1;
+    const newPhase = phaseForShots(shotsFired);
+    if(newPhase !== phase){ phase = newPhase; roundStats.phaseReached = Math.max(roundStats.phaseReached, phase); Events.emit('phaseChange', {phase}); }
+    const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
+    if(shotsSinceDescent >= spd){
+      Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase, PHASE_STONE_CHANCE.length-1)]);
+      shotsSinceDescent = 0;
+      Events.emit('descend', {});
+    }
+    flight = null;
+    checkGameOver();
+  }
+  function crackHazards(hazardCells){
+    let cleared = 0;
+    for(const h of hazardCells){
+      const o = Grid.orbAt(h.col,h.row);
+      if(!o || o.special!=='stone') continue;
+      o.crack = (o.crack||0) + 1;
+      if(o.crack >= 2){ Grid.removeOrb(h.col,h.row); cleared++; roundStats.clearedStone = true; }
+    }
+    return cleared;
+  }
+  function checkGameOver(){
+    const bottom = Grid.bottomOccupiedRow();
+    if(bottom < 0) return;
+    const y = topY + bottom*ROW_H + CELL_W/2;
+    if(y >= dangerLineY) endRound();
+  }
+
+  function updateHudScore(){
+    tweenCountUp('scoreVal', totalScore);
+    const el = document.getElementById('comboVal');
+    el.textContent = comboStreak>1 ? ('×'+comboMult(comboStreak).toFixed(2)+' combo') : '';
+  }
+  function updateHudPhase(){
+    const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
+    document.getElementById('descentVal').textContent = Math.max(0, spd - shotsSinceDescent);
+    document.getElementById('phaseVal').textContent = 'Phase '+(phase+1);
+  }
+
+  const SIM_DT = 1/60, MAX_STEPS = 5;
+  let acc=0, lastTs=0;
+  function update(dt){
+    if(!running || paused || roundEnded) return;
+    if(flight){
+      flight.traveled += flight.speed*dt;
+      const t = flight.traveled/flight.totalLen;
+      if(t>=1) resolveAttach();
+    }
+    pollGamepad(dt);
+    Juice.update(dt);
+    const bottom = Grid.bottomOccupiedRow();
+    const bottomY = bottom>=0 ? topY + bottom*ROW_H + CELL_W/2 : topY;
+    const proximity = clamp((bottomY - topY) / Math.max(1, dangerLineY - topY), 0, 1);
+    Music.updateDrone(proximity);
+    updateHudPhase();
+  }
+  function flightPos(){
+    if(!flight) return null;
+    const targetDist = flight.traveled;
+    let acc2 = 0;
+    for(let i=1;i<flight.points.length;i++){
+      const a = flight.points[i-1], b = flight.points[i];
+      const segLen = Math.hypot(b.x-a.x, b.y-a.y);
+      if(acc2+segLen >= targetDist || i===flight.points.length-1){
+        const t = segLen>0 ? clamp((targetDist-acc2)/segLen,0,1) : 1;
+        return { x: a.x+(b.x-a.x)*t, y: a.y+(b.y-a.y)*t };
+      }
+      acc2 += segLen;
+    }
+    return flight.points[flight.points.length-1];
+  }
+  function render(){
+    ctx.clearRect(0,0,W,H);
+    const shake = Juice.getShake();
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
+    ctx.save();
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(boardX-10, topY-40, rightWall-leftWall+20, H-topY-70, 16);
+    else ctx.rect(boardX-10, topY-40, rightWall-leftWall+20, H-topY-70);
+    ctx.fillStyle = 'rgba(35,20,66,0.4)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,203,92,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+
+    for(let r=0;r<Grid.rows.length;r++){
+      const y0 = topY + r*ROW_H;
+      if(y0 > H+SPRITE_SIZE) break;
+      if(y0 < -SPRITE_SIZE) continue;
+      for(let c=0;c<COLS;c++){
+        const o = Grid.orbAt(c,r);
+        if(!o) continue;
+        const p = cellCenter(c,r);
+        const sprite = spriteFor(o);
+        const scale = (CELL_W*0.92)/SPRITE_SIZE * Juice.comboPulseScale();
+        ctx.save(); ctx.translate(p.x,p.y);
+        ctx.drawImage(sprite, -SPRITE_SIZE*scale/2, -SPRITE_SIZE*scale/2, SPRITE_SIZE*scale, SPRITE_SIZE*scale);
+        ctx.restore();
+      }
+    }
+
+    if(running && !paused && !roundEnded && !flight){
+      const dirX = Math.cos(aimAngle), dirY = Math.sin(aimAngle);
+      const preview = raymarch(cannonX, cannonY, dirX, dirY, 2);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(244,236,255,0.4)'; ctx.lineWidth = 2;
+      ctx.setLineDash([5,7]);
+      ctx.beginPath();
+      preview.points.forEach((p,i)=> i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if(preview.landingCell){
+        const p = cellCenter(preview.landingCell.col, preview.landingCell.row);
+        ctx.strokeStyle = 'rgba(255,215,107,0.7)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(p.x,p.y,CELL_W*0.46,0,Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if(flight){
+      const p = flightPos();
+      if(p){
+        const sprite = spriteFor(flight.item.special ? {special:flight.item.special} : {color:flight.item.color});
+        const scale = (CELL_W*0.92)/SPRITE_SIZE;
+        ctx.save(); ctx.translate(p.x,p.y);
+        ctx.drawImage(sprite, -SPRITE_SIZE*scale/2, -SPRITE_SIZE*scale/2, SPRITE_SIZE*scale, SPRITE_SIZE*scale);
+        ctx.restore();
+      }
+    }
+
+    // censer (cannon) — small hand-drawn urn silhouette with recoil offset
+    const recoil = Juice.getRecoil();
+    ctx.save();
+    ctx.translate(cannonX, cannonY + recoil);
+    ctx.rotate(aimAngle + Math.PI/2);
+    ctx.fillStyle = shadeHex('#3a2a5c', 4, 2);
+    ctx.beginPath();
+    ctx.moveTo(-16,18); ctx.lineTo(-10,-14); ctx.lineTo(10,-14); ctx.lineTo(16,18); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,215,107,0.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.restore();
+    if(!flight && currentItem){
+      const sprite = spriteFor(currentItem.special ? {special:currentItem.special} : {color:currentItem.color});
+      const scale = (CELL_W*0.8)/SPRITE_SIZE;
+      ctx.save(); ctx.translate(cannonX, cannonY);
+      ctx.drawImage(sprite, -SPRITE_SIZE*scale/2, -SPRITE_SIZE*scale/2, SPRITE_SIZE*scale, SPRITE_SIZE*scale);
+      ctx.restore();
+    }
+    if(nextItem){
+      const sprite = spriteFor(nextItem.special ? {special:nextItem.special} : {color:nextItem.color});
+      const scale = (CELL_W*0.5)/SPRITE_SIZE;
+      ctx.save(); ctx.globalAlpha = 0.75; ctx.translate(cannonX+CELL_W*1.1, cannonY+8);
+      ctx.drawImage(sprite, -SPRITE_SIZE*scale/2, -SPRITE_SIZE*scale/2, SPRITE_SIZE*scale, SPRITE_SIZE*scale);
+      ctx.restore();
+    }
+
+    Juice.render(ctx, W, H);
+    ctx.restore();
+  }
+  function loop(ts){
+    let frameDt = (ts-lastTs)/1000;
+    lastTs = ts;
+    if(frameDt>0.25) frameDt=0.25;
+    acc += frameDt;
+    let steps=0;
+    while(acc>=SIM_DT && steps<MAX_STEPS){ update(SIM_DT); acc-=SIM_DT; steps++; }
+    frameTimes.push(frameDt*1000);
+    if(frameTimes.length>120) frameTimes.shift();
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  function startRound(){
+    running=true; paused=false; roundEnded=false;
+    totalScore=0; comboStreak=0; shotsFired=0; shotsSinceDescent=0; phase=0;
+    aimAngle=-Math.PI/2; flight=null;
+    roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
+      usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
+    Grid.init(INITIAL_ROWS, Queue.colorPoolForPhase(0), PHASE_STONE_CHANCE[0]);
+    currentItem = Queue.nextItem(0); nextItem = Queue.nextItem(0);
+    document.getElementById('menuOverlay').classList.remove('show');
+    document.getElementById('roundEndOverlay').classList.remove('show');
+    document.getElementById('pauseOverlay').classList.remove('show');
+    document.getElementById('newBestBadge').style.display = 'none';
+    document.getElementById('hud').classList.add('show');
+    Music.ensureCtx(); Music.setDroneActive(true);
+    updateHudScore(); updateHudPhase();
+    requestWakeLock();
+  }
+  function togglePause(){
+    if(!running || roundEnded) return;
+    paused = !paused;
+    document.getElementById('pauseOverlay').classList.toggle('show', paused);
+    Music.setDroneActive(!paused);
+    if(paused) releaseWakeLock(); else requestWakeLock();
+  }
+  function showMenu(){
+    running=false; roundEnded=false; paused=false;
+    releaseWakeLock();
+    Music.setDroneActive(false);
+    document.getElementById('hud').classList.remove('show');
+    document.getElementById('roundEndOverlay').classList.remove('show');
+    document.getElementById('pauseOverlay').classList.remove('show');
+    document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+    document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  function endRound(){
+    running=false; roundEnded=true;
+    releaseWakeLock();
+    Music.setDroneActive(false);
+    const best = Persist.data.best;
+    const newBest = totalScore > best.score;
+    if(newBest) best.score = totalScore;
+    best.longestGroupPopped = Math.max(best.longestGroupPopped, roundStats.longestGroupPopped);
+    best.longestComboStreak = Math.max(best.longestComboStreak, roundStats.longestComboStreak);
+    best.totalOrbsPoppedLifetime += roundStats.totalOrbsPoppedRun;
+    Persist.data.totalRounds += 1;
+    const shardsEarned = Math.floor(totalScore/50);
+    Persist.data.shards += shardsEarned;
+    Persist.save();
+    const noMiss = roundStats.missCount===0 && shotsFired>0;
+    Achievements.checkAll({ score: totalScore, longestGroupPopped: roundStats.longestGroupPopped,
+      longestComboStreak: roundStats.longestComboStreak, usedBomb: roundStats.usedBomb,
+      usedRainbow: roundStats.usedRainbow, clearedStone: roundStats.clearedStone,
+      phaseReached: roundStats.phaseReached, noMiss, totalOrbsPoppedRun: roundStats.totalOrbsPoppedRun });
+    Events.emit('roundEnd', { score: totalScore, best: best.score, newBest });
+    lastEventType = 'roundEnd';
+    document.getElementById('hud').classList.remove('show');
+    document.getElementById('finalScoreVal').textContent = totalScore;
+    document.getElementById('bestScoreVal').textContent = best.score;
+    document.getElementById('shardsEarnedVal').textContent = shardsEarned;
+    document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
+    document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
+    document.getElementById('roundEndOverlay').classList.add('show');
+  }
+
+  const _test = {
+    state: () => ({ running, paused, roundEnded, score: totalScore, comboStreak, shotsFired,
+      shotsSinceDescent, phase, flying: !!flight, aimAngle, currentItem, nextItem,
+      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length }),
+    setAim: (angle) => { aimAngle = clamp(angle, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD); },
+    fire: () => fire(),
+    forceItem: (item) => { currentItem = item; },
+    forceDescend: () => { Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase,PHASE_STONE_CHANCE.length-1)]); },
+    setGrid: (pattern) => { Grid.setRows(pattern); },
+    setComboStreak: (n) => { comboStreak = n; },
+    fireAt: (col,row,item) => {
+      // deterministic test path: skip the flight animation, resolve
+      // directly against a specific landing cell.
+      currentItem = item;
+      ensureRow(row);
+      flight = { landingCell:{col,row}, item };
+      resolveAttach();
+    },
+    liveColors: () => Array.from(Grid.liveColors()),
+    lastEvent: () => lastEventType,
+    avgFrameMs: () => frameTimes.length ? frameTimes.reduce((a,b)=>a+b,0)/frameTimes.length : 0,
+    cellCenter: (col,row) => cellCenter(col,row),
+    layoutInfo: () => ({ CELL_W, ROW_H, boardX, leftWall, rightWall, topY, cannonX, cannonY, dangerLineY }),
+  };
+
+  resize();
+  requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
+
+  return { startRound, togglePause, showMenu, _test };
+})();
+
+/* =====================================================================
+   JUICE — pure Events subscriber, same "simulation emits / presentation
+   subscribes" split as sigilchain.html's Juice module. Adds a censer
+   recoil on fire (visual-art-director's flag: the censer's own firing
+   moment needs its own signature-action juice, not just the orb-landing
+   pop — the direct analogue of the enemy-attack-anticipation gap
+   Wonderland shipped without, see GAME_3_PILLARS.md §3).
+===================================================================== */
+const Juice = (function(){
+  let pops = [];
+  let comboPulse = 0;
+  let shakeMag = 0;
+  let recoil = 0;
+
+  function addShake(mag){
+    if(Settings.reducedMotion()) mag *= 0.15;
+    shakeMag = Math.min(shakeMag + mag, 14);
+  }
+  function vibrate(pattern){ if(navigator.vibrate) navigator.vibrate(pattern); }
+  function getShake(){ return shakeMag>0 ? { x:(Math.random()*2-1)*shakeMag, y:(Math.random()*2-1)*shakeMag } : { x:0, y:0 }; }
+  function getRecoil(){ return recoil; }
+  function cannonRecoil(){ recoil = Settings.reducedMotion() ? 4 : 10; }
+  function comboPulseScale(){ return 1 + comboPulse*0.3; }
+
+  Events.on('wardBroken', (p)=>{
+    for(const c of p.centers) pops.push({x:c.x,y:c.y,t:0,dur:0.32});
+    comboPulse = 1;
+    addShake(Math.min(3 + p.n*0.4, 14));
+    vibrate(Settings.reducedMotion() ? [] : [16, 24]);
+  });
+
+  function update(dt){
+    for(const p of pops) p.t += dt;
+    pops = pops.filter(p=>p.t < p.dur);
+    comboPulse = Math.max(0, comboPulse - dt*2.5);
+    if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
+    if(recoil > 0){ recoil *= Math.max(0, 1 - dt*14); if(recoil < 0.2) recoil = 0; }
+  }
+  function render(ctx, W, H){
+    for(const p of pops){
+      const t = p.t/p.dur;
+      const s = Ease.popSettle(t) * (1-t*0.4) * (SPRITE_SIZE*0.5);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.fillStyle = 'rgba(255,246,220,0.85)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+  return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil,
+    _test: { shakeMag: () => shakeMag } };
+})();
+
+/* =====================================================================
+   MUSIC — Sigil Chain's scoped-down graph (master -> compressor ->
+   destination, rampGain/bell()/shared convolution reverb, no duck bus,
+   no distortion, no sequencer) plus exactly one deliberate addition: a
+   continuous ceiling-proximity drone, per the audio-designer review in
+   GAME_3_PILLARS.md §4. isDroneActive gates every per-frame .value write
+   so a live update can never clobber the game-over rampGain fade —
+   this is the one place in the design with a persistent per-frame
+   AudioParam, the exact shape of the studio's "dying sticks the music"
+   incident (wonderland.html:4287-4295) if left unguarded.
+===================================================================== */
+const Music = (function(){
+  let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
+  let droneGain, droneActive=false;
+  let muted = false, started = false;
+
+  function ensureCtx(){
+    if(ctx) return;
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value = muted?0:0.5;
+    compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value=-20; compressor.knee.value=12; compressor.ratio.value=4;
+    compressor.attack.value=0.003; compressor.release.value=0.25;
+    master.connect(compressor); compressor.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = Persist.data.settings.musicVol; musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = Persist.data.settings.sfxVol; sfxGain.connect(master);
+    reverb = ctx.createConvolver();
+    const irLen = Math.floor(ctx.sampleRate*0.9);
+    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for(let ch=0; ch<2; ch++){ const d=irBuf.getChannelData(ch); for(let i=0;i<irLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/irLen,2.2); }
+    reverb.buffer = irBuf;
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.35;
+    reverb.connect(reverbSend); reverbSend.connect(master);
+
+    droneGain = ctx.createGain(); droneGain.gain.value = 0;
+    droneGain.connect(musicGain);
+    const d1 = ctx.createOscillator(); d1.type='sine'; d1.frequency.value=60;
+    const d2 = ctx.createOscillator(); d2.type='sine'; d2.frequency.value=60.7;
+    d1.connect(droneGain); d2.connect(droneGain);
+    d1.start(); d2.start();
+    started = true;
+  }
+  function rampGain(param, target, seconds){
+    const t = ctx.currentTime;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(target, t+seconds);
+  }
+  function bell(freq, dur, vol){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol||0.22, t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+(dur||1.0));
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2.01;
+    const g2 = ctx.createGain(); g2.gain.value=0.28;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    const wet = ctx.createGain(); wet.gain.value=0.4;
+    g.connect(wet); wet.connect(reverb);
+    o1.start(t); o2.start(t);
+    o1.stop(t+(dur||1.0)+0.05); o2.stop(t+(dur||1.0)+0.05);
+  }
+  function shotClick(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.09, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.05);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type='square'; o.frequency.setValueAtTime(500,t); o.frequency.exponentialRampToValueAtTime(180,t+0.04);
+    o.connect(g); o.start(t); o.stop(t+0.06);
+  }
+  const COLOR_ROOT = { sapphire: 300, amethyst: 340, teal: 260 };
+  function orbBell(colorKey){ ensureCtx(); bell(COLOR_ROOT[colorKey]||300, 0.5, 0.18); }
+  function missBell(){ ensureCtx(); bell(220, 0.35, 0.08); }
+  function comboBell(streak){
+    ensureCtx();
+    const step = Math.min(streak-1, COMBO_CAP-1);
+    const root = 300 * Math.pow(2, step/12);
+    bell(root, 0.55, 0.16 + step*0.01);
+  }
+  function descentWarning(){ ensureCtx(); bell(260, 0.4, 0.14); bell(200, 0.4, 0.1); }
+  function roundEndCue(){ ensureCtx(); bell(220,1.0,0.2); bell(180,1.1,0.18); bell(140,1.3,0.22); if(droneActive) setDroneActive(false); }
+  function achieveFlourish(){ ensureCtx(); bell(660,0.3,0.16); setTimeout(()=>bell(880,0.3,0.16), 80); }
+
+  function setDroneActive(active){
+    droneActive = active && !!ctx;
+    if(!ctx) return;
+    if(!active) rampGain(droneGain.gain, 0, 0.4);
+  }
+  function updateDrone(proximity){
+    if(!droneActive || !ctx) return;
+    droneGain.gain.value = 0.18 * clamp(proximity,0,1);
+  }
+  function toggleMute(){
+    muted = !muted;
+    if(master) rampGain(master.gain, muted?0:0.5, 0.15);
+    return muted;
+  }
+  function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
+  function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
+
+  Events.on('wardBroken', (p)=>{ orbBell(p.colorKey); if(p.streak>1) comboBell(p.streak); });
+  Events.on('orbMiss', ()=> missBell());
+  Events.on('descend', ()=> descentWarning());
+  Events.on('roundEnd', ()=> roundEndCue());
+
+  return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
+    _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive } };
+})();
+
+/* =====================================================================
+   SETTINGS — built in from the start, not appended late (Wonderland/
+   Sigil Chain's own recorded lesson). Adds a colorblind-safe alternate
+   palette toggle per GAME_3_PILLARS.md §3.
+===================================================================== */
+const Settings = (function(){
+  let systemReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e)=>{
+    systemReducedMotion = e.matches;
+    applyReducedMotionClass();
+  });
+  function reducedMotion(){
+    const override = Persist.data.settings.reducedMotion;
+    return override === null ? systemReducedMotion : override;
+  }
+  function colorblind(){ return !!Persist.data.settings.colorblind; }
+  function applyReducedMotionClass(){
+    document.body.classList.toggle('reduced-motion', reducedMotion());
+  }
+  let openedFromMenu = false;
+  function open(){
+    openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
+    if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
+    else {
+      const st = Game._test.state();
+      if(st.running && !st.paused && !st.roundEnded) Game.togglePause();
+    }
+    document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
+    document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
+    document.getElementById('reducedMotionToggle').checked = reducedMotion();
+    document.getElementById('colorblindToggle').checked = colorblind();
+    document.getElementById('settingsOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('settingsOverlay').classList.remove('show');
+    if(openedFromMenu){
+      document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+      document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+      document.getElementById('menuOverlay').classList.add('show');
+    }
+  }
+  function setMusicVol(v){ Persist.data.settings.musicVol = Number(v); Persist.save(); if(typeof Music.setMusicVolume==='function') Music.setMusicVolume(Number(v)); }
+  function setSfxVol(v){ Persist.data.settings.sfxVol = Number(v); Persist.save(); if(typeof Music.setSfxVolume==='function') Music.setSfxVolume(Number(v)); }
+  function setReducedMotion(checked){ Persist.data.settings.reducedMotion = checked; Persist.save(); applyReducedMotionClass(); }
+  function setColorblind(checked){ Persist.data.settings.colorblind = checked; Persist.save(); }
+  applyReducedMotionClass();
+  return { open, close, setMusicVol, setSfxVol, setReducedMotion, setColorblind, reducedMotion, colorblind };
+})();
+
+/* =====================================================================
+   ACHIEVEMENTS — same DEFS/checkAll/toast shape as
+   sigilchain.html:1234-1251, first-class from day one per
+   GAME_3_PILLARS.md §5 (meta-progression lesson from Game 2).
+===================================================================== */
+const Achievements = (function(){
+  const DEFS = [
+    { id:'first_wardfall', name:'First Wardfall', desc:'Pop your first group of ward-orbs.', check:d=>d.totalOrbsPoppedRun>=3 },
+    { id:'big_break', name:'Big Break', desc:'Pop a group of 8 or more in one shot.', check:d=>d.longestGroupPopped>=8 },
+    { id:'combo_keeper', name:'Combo Keeper', desc:'Reach a 5-shot combo streak.', check:d=>d.longestComboStreak>=5 },
+    { id:'demolitionist', name:'Demolitionist', desc:'Clear orbs with a bomb orb.', check:d=>d.usedBomb },
+    { id:'prism_touch', name:'Prism Touch', desc:'Score a match with a rainbow orb.', check:d=>d.usedRainbow },
+    { id:'unbind_the_stone', name:'Unbind the Stone', desc:'Fully clear a stone hazard.', check:d=>d.clearedStone },
+    { id:'deep_descent', name:'Deep Descent', desc:'Survive to the final phase.', check:d=>d.phaseReached>=4 },
+    { id:'high_ward', name:'High Ward', desc:'Score 1500 or more in one run.', check:d=>d.score>=1500 },
+    { id:'steady_hand', name:'Steady Hand', desc:'Clear a run without a single miss.', check:d=>d.noMiss },
+  ];
+  function checkAll(roundSummary){
+    if(!Persist.data.achievements) Persist.data.achievements = {};
+    const unlocked = [];
+    for(const a of DEFS){
+      if(!Persist.data.achievements[a.id] && a.check(roundSummary)){
+        Persist.data.achievements[a.id] = { at: Date.now() };
+        unlocked.push(a);
+      }
+    }
+    if(unlocked.length){ Persist.save(); unlocked.forEach((a,i)=>setTimeout(()=>{ toast(a); Music.achieveFlourish(); }, i*900)); }
+    if(document.getElementById('achieveOverlay').classList.contains('show')) render();
+    return unlocked;
+  }
+  function toast(a){
+    const el = document.createElement('div');
+    el.className = 'achieve-toast';
+    el.innerHTML = `<div class="achieve-toast-icon">✦</div><div><div class="achieve-toast-title">Achievement Unlocked</div><div class="achieve-toast-name">${escapeHtml(a.name)}</div></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>el.classList.add('show'));
+    setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(), 500); }, 3600);
+  }
+  function render(){
+    const d = Persist.data;
+    const unlockedCount = DEFS.filter(a=>d.achievements && d.achievements[a.id]).length;
+    document.getElementById('achProgress').textContent = `${unlockedCount} / ${DEFS.length} unlocked`;
+    document.getElementById('achRows').innerHTML = DEFS.map(a=>{
+      const on = !!(d.achievements && d.achievements[a.id]);
+      return `<div class="ach-row ${on?'unlocked':''}">
+        <div class="ach-icon">${on?'✦':'?'}</div>
+        <div class="ach-info">
+          <div class="ach-name">${escapeHtml(a.name)}</div>
+          <div class="ach-desc">${on ? escapeHtml(a.desc) : '???'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('achieveOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('achieveOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, checkAll, render, DEFS };
+})();
+
+/* =====================================================================
+   SHOP — cosmetics only, never gameplay-affecting, per
+   GAME_3_PILLARS.md §5: this is what keeps the scoring formula's
+   boundedness proof (§6) valid regardless of how deep the shop grows.
+===================================================================== */
+const Shop = (function(){
+  const ITEMS = [
+    { id:'palette_ember', name:'Ember Censer Trim', desc:'A warm cosmetic recolor of the censer frame.', cost:40 },
+    { id:'palette_frost', name:'Frost Censer Trim', desc:'A cool cosmetic recolor of the censer frame.', cost:40 },
+    { id:'pop_sparkle', name:'Sparkle Burst', desc:'Extra sparkle flecks on every ward-break.', cost:60 },
+    { id:'victory_chime', name:'Victory Chime', desc:'An alternate round-end musical flourish.', cost:80 },
+  ];
+  function buy(id){
+    const item = ITEMS.find(i=>i.id===id);
+    if(!item || Persist.data.cosmetics.owned[id] || Persist.data.shards < item.cost) return;
+    Persist.data.shards -= item.cost;
+    Persist.data.cosmetics.owned[id] = true;
+    Persist.save();
+    render();
+  }
+  function render(){
+    document.getElementById('shopShardsVal').textContent = Persist.data.shards;
+    document.getElementById('shopRows').innerHTML = ITEMS.map(item=>{
+      const owned = !!Persist.data.cosmetics.owned[item.id];
+      const affordable = Persist.data.shards >= item.cost;
+      return `<div class="shop-row ${owned?'owned':''}">
+        <div><div style="font-weight:700;">${escapeHtml(item.name)}</div><div style="color:var(--ink-soft);font-size:.75rem;">${escapeHtml(item.desc)}</div></div>
+        ${owned ? '<span style="color:var(--ok);font-family:var(--mono);font-size:.75rem;">OWNED</span>'
+                : `<button class="shop-buy" ${affordable?'':'disabled'} onclick="Shop.buy('${item.id}')">${item.cost} ✦</button>`}
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('shopOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('shopOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, buy, ITEMS };
+})();
+
+/* =====================================================================
+   FULLSCREEN
+===================================================================== */
+const FullscreenCtrl = (function(){
+  function toggle(){
+    try{
+      if(!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(()=>{});
+      else document.exitFullscreen && document.exitFullscreen().catch(()=>{});
+    }catch(e){}
+  }
+  return { toggle };
+})();
+
+document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+
+// PWA registration — see the pwa-offline-games skill. Built in from the
+// first commit this time (Games 1-2 both retrofitted this). Explicit
+// scope keeps this service worker from ever intercepting fetches for the
+// other games sharing this same repo-root directory.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./wardfall-sw.js', { scope: './wardfall.html' }).catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
