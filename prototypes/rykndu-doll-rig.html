@@ -11,6 +11,34 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.8 — 2026-07-09 — Feel pass: visual/art polish, prompted by a live
+                          playtest re-raising the pre-v0.1.6 complaint ("the
+                          dot is so small") and a follow-up visual-art-
+                          director audit. Fixed a real bug (the #debug,
+                          #hud, and .version-marker overlays all shared the
+                          same top strip with no reserved lanes and rendered
+                          garbled overlapping text -- #debug is now gated
+                          behind ?debug=1, .version-marker moved to the
+                          bottom). Enemies are now a hand-authored, oriented
+                          arrowhead shape with a distinct pulsing "about to
+                          strike" telegraph state, not a plain ctx.arc()
+                          circle. missFlash's peak alpha and decay were both
+                          reduced -- it used to wash out the player's own
+                          rig at the worst possible moment (a potential game
+                          over). The kill death-flash now uses easeOutBack
+                          for a snap instead of a linear fade. A miss now
+                          triggers a brief player recoil pose (previously
+                          only screen-level shake/flash reacted, never the
+                          rig itself). Added ground-contact shadows and a
+                          subtle background gradient to reduce the large
+                          dead space above/below the rig. Added
+                          prefers-reduced-motion gating for screen shake and
+                          missFlash (OS-level signal only -- no settings
+                          menu exists yet to layer a manual override on).
+                          The GAME OVER retry text is now backed by a card
+                          instead of bare fillText, which used to render
+                          straight through the frozen character's head.
+
   v0.1.7 — 2026-07-08 — Phase 3 of the plan of action: real stakes. Up to
                           this point every build had verified-solid combat
                           but no actual way to lose -- an unanswered enemy
@@ -224,8 +252,16 @@
 <style>
   html, body { margin: 0; padding: 0; background: #12141c; overflow: hidden; height: 100%; }
   #stage { display: block; touch-action: none; }
+  /* v0.1.8 feel pass: #debug, #hud, and .version-marker used to all sit in
+     the same top ~8px strip with no reserved lanes, so their text visibly
+     overlapped ("Do♥♥♥♥Prototype — v0.1.7") -- the audit's top-severity
+     finding, since it corrupted the player-facing HUD's own legibility.
+     .version-marker moves to its own row above #hint at the bottom (it's a
+     dev/internal marker, not something a player needs top-of-screen); #debug
+     is hidden by default and only shown via ?debug=1 (see the JS init below)
+     since it was never meant to compete with the HUD for the same pixels. */
   .version-marker {
-    position: fixed; top: 8px; right: 10px; font-size: 10px; color: #888;
+    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
     opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
     pointer-events: none;
   }
@@ -234,7 +270,8 @@
     color: #666; font-family: monospace; font-size: 12px; pointer-events: none;
   }
   #debug {
-    position: fixed; top: 8px; left: 10px; font-size: 11px; color: #5c6;
+    display: none;
+    position: fixed; top: 30px; left: 10px; font-size: 11px; color: #5c6;
     font-family: monospace; opacity: 0.7; pointer-events: none; white-space: pre;
   }
   #hud {
@@ -251,7 +288,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.7</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.8</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -264,10 +301,22 @@
   const ctx = canvas.getContext('2d');
   const debugEl = document.getElementById('debug');
   const hudEl = document.getElementById('hud');
+  if (new URLSearchParams(location.search).has('debug')) debugEl.style.display = 'block';
 
+  let bgGradient = null;
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    // Subtle vertical gradient instead of a flat fill (v0.1.8): the large
+    // empty canvas above/below the rig (roughly half the viewport at a
+    // typical phone aspect ratio) read as literally nothing against a flat
+    // single color, compounding the "generic prototype" feel. Cached here
+    // rather than rebuilt every frame -- a gradient only needs to change
+    // when the canvas itself resizes.
+    bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGradient.addColorStop(0, '#0d0e15');
+    bgGradient.addColorStop(0.78, '#12141c');
+    bgGradient.addColorStop(1, '#181a24');
   }
   window.addEventListener('resize', resize);
   resize();
@@ -359,6 +408,20 @@
   POSES.kickL_windup = mirror(POSES.kickR_windup);
   POSES.kickL_strike = mirror(POSES.kickR_strike);
 
+  // v0.1.8 feel-pass finding: a miss produced screen-level feedback (shake,
+  // flash, buzz) but the player's own body never reacted -- the rig just
+  // kept idling under the flash. Symmetric (a hit's direction/side isn't
+  // meaningful here, unlike the kick poses), a slight crouch-back recoil:
+  // pelvis dips and drops back, spine leans back further, arms pull in
+  // tighter to the body instead of staying out at idle's wide T-pose.
+  POSES.flinch = {
+    pelvisDX: 0, pelvisDY: 6, spineA: -DOWN + 0.18,
+    hipL: DOWN + 0.30, kneeL: DOWN + 0.22,
+    hipR: DOWN - 0.30, kneeR: DOWN - 0.22,
+    shoulderL: DOWN + 1.55, elbowL: DOWN + 1.9,
+    shoulderR: DOWN - 1.55, elbowR: DOWN - 1.9
+  };
+
   function lerp(a, b, t) { return a + (b - a) * t; }
   function lerpPose(a, b, t) {
     const out = {};
@@ -397,6 +460,9 @@
   let fromPose = POSES.idle;
   let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
   let attackSide = null; // which side the currently-playing (or most recent) attack was on
+  let flinchStart = -Infinity; // performance.now() of the last miss -- drives the idle-branch recoil overlay below
+  const FLINCH_DUR = 180;
+  function triggerFlinch() { flinchStart = performance.now(); }
 
   // Convention: the LAST phase of any attackSequence is recovery — cosmetic
   // follow-through with no remaining gameplay function (the hit has already
@@ -436,11 +502,28 @@
       // (amplitude scaled with the 0.8x rig resize, same as LEN)
       const bob = Math.sin(performance.now() / 450) * 2.4;
       const sway = Math.sin(performance.now() / 900) * 0.04;
-      return Object.assign({}, POSES.idle, {
+      const base = Object.assign({}, POSES.idle, {
         pelvisDY: POSES.idle.pelvisDY + bob,
         shoulderL: POSES.idle.shoulderL + sway,
         shoulderR: POSES.idle.shoulderR - sway
       });
+      // Player hit-reaction (v0.1.8): a plain additive blend toward
+      // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
+      // a real attack uses -- reusing that machinery here would risk
+      // resolveHits() misreading a stale attackSide during the flinch's own
+      // transition-back-to-idle (its seqIdx would pass through 1, the exact
+      // index resolveHits() checks for a live strike). A miss is independent
+      // of the player's own attack state, and this is only ever read here in
+      // the idle branch, so if the player is still mid-attack when a miss
+      // lands, the 180ms flinch window can fully elapse before they return
+      // to idle and it simply won't show for that miss -- an accepted
+      // tradeoff against touching the attack state machine's committed-phase
+      // guarantee.
+      const flinchElapsed = performance.now() - flinchStart;
+      if (flinchElapsed < FLINCH_DUR) {
+        return lerpPose(base, POSES.flinch, 1 - easeOutQuad(flinchElapsed / FLINCH_DUR));
+      }
+      return base;
     }
     const step = seq[seqIdx];
     const t = Math.min(1, (performance.now() - seqStart) / step.dur);
@@ -718,6 +801,16 @@
   let shakeMag = 0;   // decaying px magnitude, applied as a random canvas offset
   let missFlash = 0;  // 0..1, decaying -- translucent full-canvas danger-tint on a miss
 
+  // prefers-reduced-motion (v0.1.8): OS-level signal only -- this file has no
+  // settings menu/Persist module to layer a manual override on the way
+  // wonderland.html/sigilchain.html's Settings module does, and building one
+  // is out of scope for a rendering/feel pass. Still closes a real gap: this
+  // was the one file in the studio with zero handling for it, despite being
+  // the most shake/flash-heavy of the three. Gates screen shake and the
+  // full-bleed missFlash, the two motion-heavy effects here.
+  let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => { reducedMotion = e.matches; });
+
   function spawnBurst(x, y) {
     const count = 10;
     for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
@@ -840,8 +933,9 @@
         // Reached melee range with no correct-side hit landed in time.
         missedCount++;
         SFX.missBuzz();
-        missFlash = 1;
-        shakeMag = Math.min(20, shakeMag + 3); // weaker tier than a kill's +6 -- distinct weight, not just a color
+        missFlash = reducedMotion ? 0.4 : 1;
+        shakeMag = Math.min(20, shakeMag + (reducedMotion ? 1 : 3)); // weaker tier than a kill's +6 -- distinct weight, not just a color
+        triggerFlinch();
         enemies.splice(i, 1);
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
         if (missedCount >= MAX_MISSES) sessionState = 'lose';
@@ -868,19 +962,53 @@
         killCount++;
         SFX.strikeImpact();
         spawnBurst(e.x, e.y);
-        shakeMag = Math.min(20, shakeMag + 6);
+        shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
       }
     }
   }
 
+  // v0.1.8 feel-pass finding: growth + color-lerp made the enemy telegraph
+  // its approach, but it never stopped being a plain ctx.arc() circle -- the
+  // producer's original "the dot is so small" complaint was really "it's a
+  // dot, period," and sizing/coloring a dot better doesn't change that. This
+  // draws a small asymmetric arrowhead/chevron instead: a shape with a nose
+  // and a concave back notch, canonically pointing left (-x). Side 'R'
+  // enemies travel leftward toward the player, so they use this orientation
+  // directly; side 'L' enemies travel rightward, so drawEnemies() mirrors it
+  // with ctx.scale(-1,1) rather than hand-authoring a second shape that could
+  // drift out of sync (same reasoning as mirror() for the player's own
+  // kick poses).
+  function drawEnemyShape(radius) {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 1.3, 0);        // nose
+    ctx.lineTo(radius * 0.6, -radius * 0.9);  // upper back corner
+    ctx.lineTo(radius * 0.15, 0);        // concave back notch -- what makes it read as an arrow, not a kite
+    ctx.lineTo(radius * 0.6, radius * 0.9);   // lower back corner
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // A distinct "about to strike" state, not just a further point on the
+  // continuous grow/color gradient -- the gradient alone reads as "getting
+  // closer," not "about to hit." Fires only in the enemy's final approach
+  // stretch, well after ENEMY_GROW_START but before contact.
+  const ENEMY_STRIKE_WARN_T = 0.85;
+
   function drawEnemies() {
     for (const e of enemies) {
       if (e.dying) {
+        // Punchier kill flash (v0.1.8): the old version was a raw linear
+        // alpha/radius falloff and read as a fade, not an impact. Reuses the
+        // studio's own "give it weight" easeOutBack idiom (already used for
+        // the recovery-phase pose) for a snap-then-settle radius pop, and a
+        // fast easeInQuad alpha drop so it stays bright before cutting out
+        // sharply, closer to a flash than a fade.
         const dt2 = e.deathT / ENEMY_DEATH_DUR; // 0..1
-        ctx.globalAlpha = Math.max(0, 1 - dt2);
+        const growEased = easeOutBack(Math.min(1, dt2 * 1.4));
+        ctx.globalAlpha = Math.max(0, 1 - easeInQuad(dt2));
         ctx.beginPath();
-        ctx.arc(e.x, e.y, ENEMY_RADIUS_PEAK * (1 + 0.3 * (1 - dt2)), 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, ENEMY_RADIUS_PEAK * (1 + 0.4 * growEased), 0, Math.PI * 2);
         ctx.fillStyle = '#ffffff';
         ctx.fill();
         ctx.globalAlpha = 1;
@@ -889,10 +1017,46 @@
       const growT = Math.max(0, Math.min(1, (e.t - ENEMY_GROW_START) / (1 - ENEMY_GROW_START)));
       const eased = easeOutQuad(growT);
       const radius = lerp(ENEMY_RADIUS_BASE, ENEMY_RADIUS_PEAK, eased);
-      ctx.beginPath();
-      ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      if (e.side === 'L') ctx.scale(-1, 1); // mirror the canonical points-left shape for rightward-traveling enemies
       ctx.fillStyle = lerpColor(ENEMY_COLOR_BASE, ENEMY_COLOR_PEAK, eased);
-      ctx.fill();
+      drawEnemyShape(radius);
+      ctx.restore();
+
+      if (e.t >= ENEMY_STRIKE_WARN_T) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 60);
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, radius + 5 + pulse * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 + pulse * 0.4).toFixed(2) + ')';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Contact shadows (v0.1.8): nothing in this file ever cast a shadow, so
+  // the player and every enemy looked like they were floating slightly above
+  // the ground line rather than standing on it. Kept deliberately simple --
+  // flat ellipses anchored to the ground line, not real projected geometry.
+  function drawShadow(x, rx, ry) {
+    const groundY = canvas.height * 0.78;
+    ctx.beginPath();
+    ctx.ellipse(x, groundY + 4, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+  }
+  function drawShadows(joints) {
+    // One shadow centered under the pelvis, not per-foot -- the feet move
+    // too fast during a kick for a per-foot shadow to read as anything but
+    // noise; a single anchored shadow reads as "planted on the ground."
+    drawShadow(joints.pelvis.x, 34, 8);
+    for (const e of enemies) {
+      if (e.dying) continue;
+      const growT = Math.max(0, Math.min(1, (e.t - ENEMY_GROW_START) / (1 - ENEMY_GROW_START)));
+      const r = lerp(ENEMY_RADIUS_BASE, ENEMY_RADIUS_PEAK, easeOutQuad(growT));
+      drawShadow(e.x, r * 0.8, r * 0.28);
     }
   }
 
@@ -986,7 +1150,7 @@
       ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
     }
 
-    ctx.fillStyle = '#12141c';
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.strokeStyle = '#2a2d3a';
@@ -1010,22 +1174,43 @@
       updateEnemies(now, dt);
     }
     updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
+    drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
     drawEnemies();
     drawParticles();
     renderRig(joints);
     ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
 
     if (missFlash > 0.01) {
-      ctx.fillStyle = 'rgba(255,77,112,' + (missFlash * 0.4).toFixed(3) + ')';
+      // v0.1.8: peak alpha was 0.4 and painted directly over the player's
+      // own white rig lines (drawn just above, inside the same shake-offset
+      // save/restore) at the exact moment -- a possible game over -- they
+      // most needed to still read clearly. Lower peak, faster decay: still a
+      // clear hit-pulse, no longer a wash.
+      ctx.fillStyle = 'rgba(255,77,112,' + (missFlash * (reducedMotion ? 0.12 : 0.22)).toFixed(3) + ')';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     shakeMag = Math.max(0, shakeMag - dt * 90);
-    missFlash = Math.max(0, missFlash - dt * 5);
+    missFlash = Math.max(0, missFlash - dt * 7);
 
     if (sessionState === 'lose') {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Backing card for the text block -- v0.1.8 fix: the retry hint used to
+      // be a bare fillText directly over the frozen rig, and at this
+      // viewport size it rendered right through the character's head. A card
+      // guarantees legibility regardless of what's underneath it.
+      const cardW = Math.min(280, canvas.width - 40), cardH = 120;
+      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 70;
+      ctx.fillStyle = 'rgba(18,20,28,0.92)';
+      ctx.strokeStyle = 'rgba(255,77,112,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 10); else ctx.rect(cardX, cardY, cardW, cardH);
+      ctx.fill();
+      ctx.stroke();
+
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ff4d70';
       ctx.font = 'bold 32px monospace';
