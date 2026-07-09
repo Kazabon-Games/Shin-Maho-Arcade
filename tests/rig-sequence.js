@@ -33,6 +33,16 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined');
+  // Freeze the autonomous spawner from the very start. Sections 1-6 don't
+  // exercise enemies/spawning at all, but they still sum to several seconds
+  // of nominal waits -- long enough for the real spawn timer to complete
+  // several full spawn-approach-miss cycles in the background, quietly
+  // inflating missedCount before section 7 even begins. Once Phase 3 made
+  // missedCount load-bearing (5 misses flips sessionState to 'lose', which
+  // freezes updateEnemies() and hangs any later test polling enemy.t), that
+  // stopped being harmless. Sections that actually want the real spawner
+  // re-freeze it explicitly right before they need it.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
 
   console.log('1. Crash safety under heavy mashing');
   await page.evaluate(() => {
@@ -109,10 +119,12 @@ function ok(cond, label) {
   ok(kickReach > 20, 'kicking foot (footR) has moved meaningfully from idle during strike (moved ' + kickReach.toFixed(1) + 'px)');
 
   console.log('7. Real hit detection and autonomous enemies (v0.1.5)');
-  await page.waitForTimeout(700); // settle to idle
   // Isolate from the autonomous spawn timer for these deterministic checks —
   // the timer firing mid-test is correct product behavior, not something
-  // these specific assertions are trying to exercise.
+  // these specific assertions are trying to exercise. Frozen BEFORE the
+  // settle wait, not just after, so nothing can spawn during it.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
+  await page.waitForTimeout(700); // settle to idle
   await page.evaluate(() => window.Rig._test.freezeSpawns());
 
   // A well-timed, matching-side kick should kill. Trigger and spawn happen
@@ -139,6 +151,7 @@ function ok(cond, label) {
   ok(settled.enemies.length === 0, 'dying enemy is fully removed once its death animation ends');
 
   // A mismatched-side kick must not kill it, even at the same timing.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
   await page.waitForTimeout(700);
   await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); window.Rig._test.spawnEnemy('L', 460); });
   before = await page.evaluate(() => window.Rig._test.state());
@@ -151,6 +164,7 @@ function ok(cond, label) {
 
   // A whiff -- correct side, but thrown too early while the enemy is still
   // far away -- must not kill either. Timing alone isn't enough; position matters.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
   await page.waitForTimeout(700);
   await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); window.Rig._test.spawnEnemy('R', 0); });
   before = await page.evaluate(() => window.Rig._test.state());
@@ -163,6 +177,7 @@ function ok(cond, label) {
 
   // An enemy that's never answered should register as missed once it
   // reaches melee range, not silently vanish or hang around forever.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
   await page.waitForTimeout(700);
   await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
   before = await page.evaluate(() => window.Rig._test.state());
@@ -185,17 +200,79 @@ function ok(cond, label) {
   // (trigger_time solved to satisfy trigger_time+110 <= 600 <= trigger_time+180,
   // i.e. trigger_time in [420,490]; 455 is the midpoint, for margin against
   // real timer jitter -- the same discipline as every other timing test in
-  // this file).
+  // this file). The preceding test's natural miss un-froze nextSpawnAt (every
+  // kill/miss resolution rearms it), so freeze again BEFORE this settle wait,
+  // not just after -- this was the exact gap that let the spawner accumulate
+  // extra unanswered misses here and push missedCount to MAX_MISSES,
+  // flipping sessionState to 'lose' and permanently freezing updateEnemies(),
+  // which hung the race-condition poll below forever.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
   await page.waitForTimeout(700);
   await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); });
   before = await page.evaluate(() => window.Rig._test.state());
-  await page.evaluate(() => window.Rig._test.spawnEnemy('R', 0)); // fresh enemy, natural approach
-  await page.waitForTimeout(455);
-  await page.evaluate(() => window.Rig._test.trigger('R')); // strike begins ~110ms from now, enemy's t crosses 1 during that window
-  await page.waitForTimeout(250);
-  after = await page.evaluate(() => window.Rig._test.state());
+  // The whole wait-until-t-crosses-0.758-then-trigger sequence runs INSIDE
+  // the browser via its own rAF loop, not as repeated page.evaluate() round
+  // trips from Node — an earlier version of this test polled from Node
+  // using the full state() object (including solveRig()) per check, and
+  // under this sandbox's occasional load spikes the round-trip overhead let
+  // the enemy sail past the ~145ms-wide valid window entirely before a poll
+  // ever caught it, hanging the test rather than just flaking. Reading only
+  // enemy.t directly (not the full state) and polling via rAF from inside
+  // the same context updateEnemies() runs in avoids both problems.
+  const raceResult = await page.evaluate(() => new Promise((resolve) => {
+    window.Rig._test.spawnEnemy('R', 0); // fresh enemy, natural approach
+    function poll() {
+      const e = (window.Rig._test.state().enemies || [])[0];
+      if (e && e.t >= 0.758) {
+        window.Rig._test.trigger('R'); // strike begins ~110ms from now, enemy's t crosses 1 during that window
+        setTimeout(() => resolve(window.Rig._test.state()), 250);
+        return;
+      }
+      if (!e) { resolve(null); return; } // enemy vanished before reaching the target -- report and let the test fail informatively, not hang
+      requestAnimationFrame(poll);
+    }
+    requestAnimationFrame(poll);
+    setTimeout(() => resolve(undefined), 5000); // hard backstop so a real regression fails fast instead of hanging the suite
+  }));
+  ok(raceResult !== undefined, 'race-condition scenario resolved within 5s (not hung)');
+  ok(raceResult !== null, 'enemy was still present when its t crossed the target threshold');
+  after = raceResult || before;
   ok(after.killCount === before.killCount + 1 && after.missedCount === before.missedCount,
     'a hit whose timing coincides with the enemy\'s own melee-timeout still registers as a kill, not a stolen miss');
+
+  console.log('9. Session: real stakes (v0.1.7) -- lives, game over, restart');
+  await page.evaluate(() => window.Rig._test.resetSession());
+  let s = await page.evaluate(() => window.Rig._test.state());
+  ok(s.sessionState === 'playing' && s.livesRemaining === 5 && s.killCount === 0 && s.missedCount === 0,
+    'resetSession() starts clean: playing, 5 lives, 0/0');
+
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
+  // Let exactly MAX_MISSES (5) real enemies time out unanswered, one at a
+  // time -- the real path, not a test-only counter override, so this
+  // exercises the same code the miss branch/session-over transition in
+  // updateEnemies() actually runs.
+  for (let i = 0; i < 5; i++) {
+    // Re-freeze each iteration -- a miss resolution re-arms nextSpawnAt
+    // (the same interaction that bit the section-7 tests originally), so
+    // the freeze from before the loop only holds until the first miss.
+    await page.evaluate(() => { window.Rig._test.clearEnemies(); window.Rig._test.freezeSpawns(); window.Rig._test.spawnEnemy('L', 0); });
+    await page.waitForTimeout(900); // full ~600ms travel plus generous margin, same as the section-7 miss test
+  }
+  s = await page.evaluate(() => window.Rig._test.state());
+  ok(s.missedCount === 5 && s.livesRemaining === 0, '5 misses exhausts the lives pool (missedCount=' + s.missedCount + ')');
+  ok(s.sessionState === 'lose', 'sessionState flips to lose once lives reach 0');
+
+  console.log('10. Gameplay freezes during game over, then restarts on next input');
+  // While lost, spawning is meaningless (no enemy should be checked/created)
+  // -- confirm the array stays empty rather than silently accumulating.
+  await page.evaluate(() => window.Rig._test.freezeSpawns());
+  await page.waitForTimeout(300);
+  s = await page.evaluate(() => window.Rig._test.state());
+  ok(s.enemies.length === 0, 'no enemies exist/spawn while the session is over');
+  await page.evaluate(() => window.Rig._test.trigger('R')); // any input while lost restarts, per handleInput()
+  s = await page.evaluate(() => window.Rig._test.state());
+  ok(s.sessionState === 'playing' && s.killCount === 0 && s.missedCount === 0 && s.livesRemaining === 5,
+    'an input during game over restarts: back to playing, 0/0, full lives');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();

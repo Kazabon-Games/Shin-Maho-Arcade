@@ -11,6 +11,24 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.7 — 2026-07-08 — Phase 3 of the plan of action: real stakes. Up to
+                          this point every build had verified-solid combat
+                          but no actual way to lose -- an unanswered enemy
+                          just incremented a counter forever. Added a
+                          gauntlet session: MAX_MISSES=5 lives (the plan's
+                          suggested 3-5-miss "winnable but threatening"
+                          pool), a real GAME OVER state once they're spent,
+                          and a restart on the next input -- not a
+                          health-bar boss fight, which the studio never
+                          built toward. A player-facing #hud (kill count +
+                          heart pips) replaces reading kills/missed off the
+                          dev-only #debug overlay. Session freeze on loss:
+                          updateSeq()/resolveHits()/updateEnemies() stop
+                          running, but particles/shake/currentPose()'s own
+                          eased-to-1 settle still finish naturally, so the
+                          rig holds its last pose under the overlay instead
+                          of snapping or continuing to animate.
+
   v0.1.6 — 2026-07-08 — First quality pass against five named pillars
                           (Threat Readability, Rig Animation Quality, Combat
                           Feedback/Juice, Input Fairness & Responsiveness,
@@ -219,6 +237,13 @@
     position: fixed; top: 8px; left: 10px; font-size: 11px; color: #5c6;
     font-family: monospace; opacity: 0.7; pointer-events: none; white-space: pre;
   }
+  #hud {
+    position: fixed; top: 8px; left: 0; right: 0; text-align: center;
+    color: #e8e8f0; font-family: monospace; font-size: 14px; letter-spacing: 0.04em;
+    pointer-events: none; z-index: 40;
+  }
+  #hud .lives-full { color: #ff4d70; }
+  #hud .lives-spent { color: #4a3038; }
   .tapzone { position: fixed; top: 0; bottom: 0; width: 50%; }
   #zoneL { left: 0; }
   #zoneR { right: 0; }
@@ -226,8 +251,9 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.6</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.7</div>
 <div id="debug"></div>
+<div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
 <div class="tapzone" id="zoneL"></div>
 <div class="tapzone" id="zoneR"></div>
@@ -237,6 +263,7 @@
   const canvas = document.getElementById('stage');
   const ctx = canvas.getContext('2d');
   const debugEl = document.getElementById('debug');
+  const hudEl = document.getElementById('hud');
 
   function resize() {
     canvas.width = window.innerWidth;
@@ -757,6 +784,25 @@
   let killCount = 0;
   let missedCount = 0;
 
+  // ---- Session ----
+  // Phase 3 of the plan of action: the previous builds had real hit
+  // detection and real feedback but no actual stakes -- an unanswered
+  // enemy just incremented a counter forever. MAX_MISSES is the plan's
+  // suggested 3-5-miss "winnable but threatening" pool, first-guess like
+  // every other number here. A "gauntlet": endless single-enemy encounters,
+  // scored by kill count, ending on the lives pool running out -- not a
+  // health-bar boss fight, which the studio explicitly didn't build toward.
+  const MAX_MISSES = 5;
+  let sessionState = 'playing'; // 'playing' | 'lose'
+
+  function resetSession() {
+    seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle; queuedSide = null; attackSide = null;
+    enemies = []; nextSpawnAt = performance.now() + 1000;
+    killCount = 0; missedCount = 0;
+    particles = []; shakeMag = 0; missFlash = 0;
+    sessionState = 'playing';
+  }
+
   function makeEnemy(spawnAt, side) {
     const pelvisX = canvas.width / 2; // idle pelvisDX is 0; small attack-time offsets are ignored here
     const spawnX = side === 'R' ? canvas.width + 50 : -50;
@@ -798,6 +844,7 @@
         shakeMag = Math.min(20, shakeMag + 3); // weaker tier than a kill's +6 -- distinct weight, not just a color
         enemies.splice(i, 1);
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
+        if (missedCount >= MAX_MISSES) sessionState = 'lose';
       }
     }
   }
@@ -852,13 +899,20 @@
   // ---- Input ----
   // ensureCtx() must be called from a real user-gesture handler (a browser
   // AudioContext starts suspended until one fires) — keydown/pointerdown are
-  // exactly that, so it's called here rather than at load time.
+  // exactly that, so it's called here rather than at load time. Any input
+  // while sessionState is 'lose' restarts instead of attacking — there's
+  // nothing to strike at on the game-over screen.
+  function handleInput(side) {
+    SFX.ensureCtx();
+    if (sessionState === 'lose') { resetSession(); return; }
+    triggerAttack(side);
+  }
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') { SFX.ensureCtx(); triggerAttack('L'); }
-    if (e.key === 'ArrowRight') { SFX.ensureCtx(); triggerAttack('R'); }
+    if (e.key === 'ArrowLeft') handleInput('L');
+    if (e.key === 'ArrowRight') handleInput('R');
   });
-  document.getElementById('zoneL').addEventListener('pointerdown', () => { SFX.ensureCtx(); triggerAttack('L'); });
-  document.getElementById('zoneR').addEventListener('pointerdown', () => { SFX.ensureCtx(); triggerAttack('R'); });
+  document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
+  document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
 
   // ---- Test hook (mirrors this studio's Game._test convention) ----
   // Read-only state introspection plus a direct trigger, so QA/tests can set
@@ -881,10 +935,16 @@
         audioStarted: SFX._test.isStarted(),
         particleCount: particles.length,
         shakeMag,
-        missFlash
+        missFlash,
+        sessionState,
+        livesRemaining: MAX_MISSES - missedCount
       }),
       sfxGainValue: () => SFX._test.sfxGainValue(),
-      trigger: (side) => triggerAttack(side),
+      // Routes through handleInput(), the same entry point real keyboard/tap
+      // input uses — so a trigger call while sessionState is 'lose' restarts
+      // instead of attacking, exactly like a real player's next tap would.
+      trigger: (side) => handleInput(side),
+      resetSession: () => resetSession(),
       // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
       // path production spawning does, just backdating spawnAt so the enemy
       // is already partway (or fully) through its approach on the very next
@@ -910,7 +970,11 @@
     const dt = lastFrameTime ? Math.min(0.05, (now - lastFrameTime) / 1000) : 0.016; // seconds, capped so a tab-switch stall can't fling particles
     lastFrameTime = now;
 
-    updateSeq(now);
+    // Gameplay logic freezes once the session ends -- the rig settles into
+    // whatever pose it was heading toward (currentPose()'s eased t clamps at
+    // 1) and holds there under the game-over overlay, rather than continuing
+    // to animate or letting enemies keep spawning behind it.
+    if (sessionState === 'playing') updateSeq(now);
     const pose = currentPose();
     const joints = solveRig(pose); // solved once per frame; rendering and hit detection both read from this
 
@@ -941,9 +1005,11 @@
     // but one-directional (only ever cost the player) and worse on lower
     // frame rates. Whichever function removes an enemy first, the other
     // simply won't find it in the array, so this can't double-count.
-    resolveHits(now, joints);
-    updateEnemies(now, dt);
-    updateParticles(dt);
+    if (sessionState === 'playing') {
+      resolveHits(now, joints);
+      updateEnemies(now, dt);
+    }
+    updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
     drawEnemies();
     drawParticles();
     renderRig(joints);
@@ -956,8 +1022,30 @@
     shakeMag = Math.max(0, shakeMag - dt * 90);
     missFlash = Math.max(0, missFlash - dt * 5);
 
+    if (sessionState === 'lose') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff4d70';
+      ctx.font = 'bold 32px monospace';
+      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+      ctx.fillStyle = '#e8e8f0';
+      ctx.font = '16px monospace';
+      ctx.fillText('Kills: ' + killCount, canvas.width / 2, canvas.height / 2 + 15);
+      ctx.fillStyle = '#888';
+      ctx.font = '13px monospace';
+      ctx.fillText('tap or press a key to try again', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.restore();
+    }
+
+    hudEl.innerHTML = 'KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
+      '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
+      '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>';
+
     debugEl.textContent = 'state: ' + (seq ? ('attacking [' + seqIdx + '/' + seq.length + ']') : 'idle') +
       (queuedSide ? '\nbuffered: ' + queuedSide : '') +
+      '\nsession: ' + sessionState +
       '\nkills: ' + killCount + '  missed: ' + missedCount +
       (enemies.length ? '\nenemy: ' + enemies[0].side + ' @ ' + enemies[0].x.toFixed(0) : '');
 
