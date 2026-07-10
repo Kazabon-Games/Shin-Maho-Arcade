@@ -590,6 +590,9 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
 // PWA registration — see the pwa-offline-games skill. Root-scoped
 // deliberately (this is the site's entry point); its PORTAL_PATHS
 // allow-list keeps it from claiming ownership of the other games' pages.
+// REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
+// requires bumping portal-sw.js's CACHE_NAME in the same commit, or
+// returning visitors keep seeing the old page indefinitely.
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./portal-sw.js', { scope: './' }).catch(()=>{});

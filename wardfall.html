@@ -1554,6 +1554,9 @@ document.getElementById('menuShardsVal').textContent = Persist.data.shards;
 // first commit this time (Games 1-2 both retrofitted this). Explicit
 // scope keeps this service worker from ever intercepting fetches for the
 // other games sharing this same repo-root directory.
+// REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
+// requires bumping wardfall-sw.js's CACHE_NAME in the same commit, or
+// returning visitors keep seeing the old page indefinitely.
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./wardfall-sw.js', { scope: './wardfall.html' }).catch(()=>{});

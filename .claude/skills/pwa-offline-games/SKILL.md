@@ -20,6 +20,27 @@ exempted for dev testing only). Confirm actual deployment status via the
 host's own API/dashboard before assuming this is unblocked — don't infer
 it from "we pushed the repo."
 
+## The rule that matters most, and that already got missed once
+
+**Every edit to a file a service worker precaches requires bumping that
+worker's `CACHE_NAME` in the same commit.** This applies forever, on every
+future deploy, not just the one where PWA support was first added — read
+this section even if you're only making a routine content edit and think
+this skill doesn't apply to you.
+
+The real incident this rule exists because of (full detail in
+`STUDIO_BIBLE.md` §13): Wardfall's portal card was added to `index.html`,
+the deploy to GitHub Pages genuinely succeeded, and the founder still saw
+the old page — because `portal-sw.js`'s `CACHE_NAME` wasn't bumped, so any
+browser that had already visited kept serving its already-cached old
+`index.html` forever. The deploy log showing success and a real user seeing
+the update are two different claims; a missed cache-version bump breaks
+only the second one, silently, with no error anywhere. Automated tests
+that always start from a clean browser profile won't catch this either —
+they never exercise the "returning visitor with an already-installed
+service worker" case. See the Verification section below for how to
+actually check for it.
+
 ## Per-game file set (repo root, alongside `<game>.html`)
 
 - **`<game>.webmanifest`** — `name`, `short_name`, `start_url`, `scope`,
@@ -133,6 +154,14 @@ slow/blocked connection today. No new fallback logic needed.
   the same as working offline.
 - Bump `CACHE_NAME`, reload, confirm the *old*-version cache key is gone
   from `caches.keys()`, not just that a new one was added alongside it.
+  To test this reliably and fast (a plain reload's implicit update check
+  can be throttled/deferred by the browser and won't reliably fire within
+  a short automated test): register the *old* worker against the *old*
+  content first (reproducing a real returning visitor), then swap in the
+  new files and call `await registration.update()` explicitly — this
+  bypasses HTTP caching for the SW script fetch per spec, and is what
+  actually caught the Wardfall incident (`STUDIO_BIBLE.md` §13) when a
+  plain-reload test had missed it.
 - After adding a service worker, re-run this game's existing adversarial
   test suite in full — a fetch-intercepting SW is exactly the kind of
   change that can silently interact with test harness patterns that also

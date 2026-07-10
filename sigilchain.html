@@ -1303,6 +1303,9 @@ document.getElementById('menuBestVal').textContent = Persist.data.best.score;
 // PWA registration — see the pwa-offline-games skill. Explicit scope keeps
 // this service worker from ever intercepting fetches for the other games
 // sharing this same repo-root directory (index.html, wonderland.html).
+// REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
+// requires bumping sigilchain-sw.js's CACHE_NAME in the same commit, or
+// returning visitors keep seeing the old page indefinitely.
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sigilchain-sw.js', { scope: './sigilchain.html' }).catch(()=>{});

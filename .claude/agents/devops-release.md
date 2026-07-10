@@ -26,6 +26,18 @@ deploy actually works, not just that it was configured.
   fetch the live URL and confirm it serves the expected content — don't
   report success from "the settings were saved," confirm the artifact is
   actually reachable and correct.
+- **PWA cache-version check, every deploy that touches a cached file:** a
+  green Pages Actions run is not the same claim as "a returning visitor
+  actually sees the update" — see `STUDIO_BIBLE.md` §13, written after
+  exactly this gap shipped once (Wardfall's portal card was live on the
+  server while `portal-sw.js`'s un-bumped `CACHE_NAME` kept every returning
+  visitor on the old cached page indefinitely). If a commit changes any
+  file inside a service worker's precached set (check `PRECACHE_URLS` /
+  `PORTAL_PATHS` in the relevant `<game>-sw.js`), confirm that same commit
+  also bumped that worker's `CACHE_NAME` — a quick `git show <commit> --
+  <game>-sw.js` grep for the version string is sufficient. If it wasn't
+  bumped, flag it before calling the deploy verified, regardless of what
+  the Actions log or the live-fetch check above says.
 - **History rewrites:** if a history scrub is needed (internal docs
   previously committed to a repo that's now public or about to be), you're
   the one who runs `git filter-repo` (or equivalent), re-adds the remote
