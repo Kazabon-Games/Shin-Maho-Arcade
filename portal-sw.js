@@ -11,7 +11,7 @@
 // cache name; it explicitly passes anything outside its own precache list
 // straight to the network instead, so the games' own workers stay the
 // sole owner of their own caches once visited directly.
-const CACHE_NAME = 'portal-v1';
+const CACHE_NAME = 'portal-v2'; // bumped: index.html gained the Wardfall card — see the activate handler below, which is what actually evicts 'portal-v1' from returning visitors' caches
 const PORTAL_PATHS = ['/', '/index.html'];
 const PRECACHE_URLS = ['./'];
 
