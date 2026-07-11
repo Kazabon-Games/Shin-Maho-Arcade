@@ -368,7 +368,7 @@ function shotScore(nPopped, nFallen, nBomb, nHazard, streak){
 
 /* =====================================================================
    FACETED RENDERING — shadeHex copied verbatim from
-   sigilchain.html:362-380 (itself copied from wonderland.html:1867-1885).
+   sigilchain.html:362-380 (itself copied from iridescentcosmology.html:1888-1906).
    Regular color orbs use the radial-gradient round-pickup variant the
    faceted-gem-rendering skill specifies for round shapes; special orbs
    use the hand-authored asymmetric-polygon variant, each its own
@@ -658,7 +658,7 @@ const Queue = (function(){
    module) while Grid/Queue stay split out as distinct-responsibility
    modules per GAME_3_PILLARS.md §7. Fixed-timestep accumulator loop is
    the same SIM_DT/MAX_STEPS/spiral-of-death convention as
-   wonderland.html:3468-3487 / sigilchain.html:833-845.
+   iridescentcosmology.html:3489-3508 / sigilchain.html:833-845.
 ===================================================================== */
 const Game = (function(){
   const canvas = document.getElementById('gameCanvas');
@@ -1271,7 +1271,7 @@ const Juice = (function(){
    so a live update can never clobber the game-over rampGain fade —
    this is the one place in the design with a persistent per-frame
    AudioParam, the exact shape of the studio's "dying sticks the music"
-   incident (wonderland.html:4287-4295) if left unguarded.
+   incident (iridescentcosmology.html:4308-4316) if left unguarded.
 ===================================================================== */
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
