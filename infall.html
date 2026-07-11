@@ -1199,11 +1199,15 @@ const Game = (function(){
 
   function populateMenuBest(){
     const d = Persist.data;
+    // escapeHtml() here even though these are normally numbers this game's
+    // own code writes — Persist.load() does an unvalidated Object.assign
+    // from parsed localStorage JSON, so a tampered/malformed save file
+    // shouldn't be able to turn this innerHTML site into a DOM XSS vector.
     document.getElementById('menuBest').innerHTML = `
-      <div class="stat-box"><div class="v">${d.best.score}</div><div class="k">best score</div></div>
-      <div class="stat-box"><div class="v">${d.deepestPhase}</div><div class="k">deepest phase</div></div>
-      <div class="stat-box"><div class="v">${d.longestComboStreak}</div><div class="k">best combo</div></div>
-      <div class="stat-box"><div class="v gold">${d.flux}</div><div class="k">flux</div></div>
+      <div class="stat-box"><div class="v">${escapeHtml(String(d.best.score))}</div><div class="k">best score</div></div>
+      <div class="stat-box"><div class="v">${escapeHtml(String(d.deepestPhase))}</div><div class="k">deepest phase</div></div>
+      <div class="stat-box"><div class="v">${escapeHtml(String(d.longestComboStreak))}</div><div class="k">best combo</div></div>
+      <div class="stat-box"><div class="v gold">${escapeHtml(String(d.flux))}</div><div class="k">flux</div></div>
     `;
   }
 
