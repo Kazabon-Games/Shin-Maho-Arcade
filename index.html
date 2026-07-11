@@ -278,6 +278,29 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-art">
+        <canvas id="infallArt" width="640" height="280" aria-hidden="true"></canvas>
+        <div class="card-badge">Stage IV · Live Now</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Infall</div>
+        <div class="card-genre">Physics · Gravity-Slingshot</div>
+        <p class="card-desc">
+          Fly the Cinder through an open field of loose gravitational debris. Place wells
+          to pull it into orbit and pin it down before it reaches you — time the capture
+          right and a whole cluster infalls into your own trap in one irreversible commit;
+          mistime it and the same pull flings everything straight back at your hull. Every
+          throw runs on a real gravitational simulation, not a scripted arc, so no two
+          wells placed the same way pull quite the same — and neither do you.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="infall.html">✦&nbsp; Trigger the Infall</a>
+          <span class="card-meta">3 simultaneous wells · 2 hazard types · 5-phase difficulty curve</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card soon">
       <div class="glyph">✦</div>
       <div class="card-title">More Worlds</div>
@@ -585,6 +608,97 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     }
   }, { threshold: 0.05 });
   io3.observe(cv);
+})();
+
+// Infall's card preview is the fourth genuinely distinct visual language in
+// this grid — no filled shapes at all, unlike the other three cards: loose
+// point-particles on curved trails orbiting a well-core rendered as a thin
+// tightening ring, not a disc. Reuses the real game's own pull law verbatim
+// (infall.html's Game module: pullForce(distance) = WELL_PULL /
+// max(distance, MIN_DIST)) rather than faking a generic spiral animation.
+// Same offscreen-pause IntersectionObserver pattern as the other three cards.
+(function(){
+  const cv = document.getElementById('infallArt');
+  if(!cv) return;
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  const WELL_PULL = 26000, MIN_DIST = 20; // same constants as infall.html's Game module
+  const well = { x: W*0.52, y: H*0.5 };
+  const N = 14;
+  const particles = [];
+  for(let i=0;i<N;i++){
+    const ang = (Math.PI*2/N)*i + Math.random()*0.3;
+    const r = 60 + Math.random()*90;
+    const speed = Math.sqrt(WELL_PULL / Math.max(r, MIN_DIST)) * 0.16; // rough orbital speed for a stable-looking loop
+    particles.push({
+      x: well.x + Math.cos(ang)*r, y: well.y + Math.sin(ang)*r,
+      vx: -Math.sin(ang)*speed, vy: Math.cos(ang)*speed,
+      trail: [], color: i%3===0 ? '#5e6f92' : (i%3===1 ? '#8674b8' : '#4ea8ff'),
+    });
+  }
+
+  function step(dt){
+    for(const p of particles){
+      const dx = well.x-p.x, dy = well.y-p.y;
+      const d = Math.max(Math.hypot(dx,dy), MIN_DIST);
+      const f = WELL_PULL/d;
+      p.vx += (dx/d)*f*dt; p.vy += (dy/d)*f*dt;
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.trail.push({x:p.x, y:p.y});
+      if(p.trail.length > 14) p.trail.shift();
+      // recycle a particle that has fallen in or wandered off, so the loop
+      // never visibly empties out over a long-open tab
+      if(d < MIN_DIST*1.4 || p.x<-40||p.x>W+40||p.y<-40||p.y>H+40){
+        const ang = Math.random()*Math.PI*2, r = 90 + Math.random()*70;
+        const speed = Math.sqrt(WELL_PULL / Math.max(r, MIN_DIST)) * 0.16;
+        p.x = well.x + Math.cos(ang)*r; p.y = well.y + Math.sin(ang)*r;
+        p.vx = -Math.sin(ang)*speed; p.vy = Math.cos(ang)*speed;
+        p.trail.length = 0;
+      }
+    }
+  }
+
+  function draw(t, pullStrength){
+    c.clearRect(0,0,W,H);
+    for(const p of particles){
+      for(let i=1;i<p.trail.length;i++){
+        const a = (i/p.trail.length) * 0.5;
+        c.strokeStyle = p.color; c.globalAlpha = a;
+        c.lineWidth = 1 + (i/p.trail.length)*1.6;
+        c.beginPath(); c.moveTo(p.trail[i-1].x, p.trail[i-1].y); c.lineTo(p.trail[i].x, p.trail[i].y); c.stroke();
+      }
+      c.globalAlpha = 1;
+      c.beginPath(); c.arc(p.x, p.y, 2.6, 0, Math.PI*2); c.fillStyle = p.color; c.fill();
+    }
+    // well-core: a thin ring, tightening as pull strengthens (pulses 0-1)
+    const ringR = 30 - pullStrength*10;
+    c.beginPath();
+    c.arc(well.x, well.y, ringR, 0, Math.PI*2);
+    c.strokeStyle = '#4ea8ff'; c.globalAlpha = 0.85; c.lineWidth = 2;
+    c.stroke();
+    c.globalAlpha = 1;
+  }
+
+  const t0 = performance.now();
+  let raf, lastTs = null;
+  function loop(ts){
+    if(lastTs === null) lastTs = ts;
+    const dt = Math.min((ts-lastTs)/1000, 0.05);
+    lastTs = ts;
+    step(dt);
+    const t = (ts-t0)/1000;
+    draw(t, (Math.sin(t*0.7)+1)/2);
+    raf = requestAnimationFrame(loop);
+  }
+  raf = requestAnimationFrame(loop);
+  const io4 = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf){ lastTs = null; raf = requestAnimationFrame(loop); }
+      else if(!e.isIntersecting && raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+  }, { threshold: 0.05 });
+  io4.observe(cv);
 })();
 
 // PWA registration — see the pwa-offline-games skill. Root-scoped

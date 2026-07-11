@@ -11,7 +11,7 @@
 // cache name; it explicitly passes anything outside its own precache list
 // straight to the network instead, so the games' own workers stay the
 // sole owner of their own caches once visited directly.
-const CACHE_NAME = 'portal-v3'; // bumped: index.html's Stage I card renamed Wonderland -> Iridescent Cosmology (new href, canvas id, copy) — see the activate handler below, which is what actually evicts 'portal-v2' from returning visitors' caches
+const CACHE_NAME = 'portal-v4'; // bumped: index.html's "More Worlds" placeholder replaced with the real Infall (Stage IV) card + its own canvas preview loop — see the activate handler below, which is what actually evicts 'portal-v3' from returning visitors' caches
 const PORTAL_PATHS = ['/', '/index.html'];
 const PRECACHE_URLS = ['./'];
 

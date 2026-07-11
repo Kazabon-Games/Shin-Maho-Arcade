@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Infall — Shin Mahou Arcade</title>
+
+<!-- portal-readiness metadata from the first commit, per this studio's own
+     established convention (Iridescent Cosmology shipped without this,
+     Sigil Chain/Wardfall both build it in). Favicon: a thin gold ring
+     (a well) with a small pale dot (the Cinder) off-center inside it —
+     inline SVG data URI, no external asset. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0620'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%234ea8ff' stroke-width='1.6' opacity='0.85'/%3E%3Ccircle cx='11' cy='19' r='2.1' fill='%23f4ecff'/%3E%3Ccircle cx='22' cy='11' r='1.6' fill='%235e6f92'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icons/infall-192.png">
+<link rel="manifest" href="infall.webmanifest">
+<meta name="description" content="Fly the Cinder through an open field of loose gravitational debris. Place wells to pull it into orbit and pin it down before it reaches you. A gravity-manipulation physics arcade from Kazabon Game Studio.">
+<meta property="og:title" content="Infall">
+<meta property="og:description" content="Place wells, pull debris into orbit, and trigger the infall before it reaches you. Every throw runs on a real gravitational simulation.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#140b30;
+  --bg-deep:#0a0620;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --danger:#ff4d70;
+  --ok:#5eff9c;
+  --border:rgba(255,203,92,0.25);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg-deep);color:var(--ink);
+  font-family:var(--body-font);user-select:none;-webkit-user-select:none;}
+
+#gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg-deep);touch-action:none;}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:none;
+  align-items:flex-start;justify-content:space-between;pointer-events:none;z-index:10;
+  font-family:var(--mono);}
+#hud.show{display:flex;}
+.hud-left{display:flex;flex-direction:column;gap:2px;}
+#scoreVal{font-size:28px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
+#comboVal{font-size:13px;color:var(--neon);min-height:16px;}
+.hud-right{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end;}
+#phaseVal{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
+#hullBarWrap{width:120px;height:8px;border-radius:4px;background:rgba(255,255,255,0.08);
+  border:1px solid var(--border);overflow:hidden;}
+#hullBar{height:100%;background:var(--ok);width:100%;transition:width .25s ease, background .25s ease;}
+#hullBar.warn{background:var(--danger);}
+
+/* touch joystick — reused pattern for continuous thrust */
+#joystick{position:fixed;bottom:30px;left:30px;width:110px;height:110px;border-radius:50%;
+  border:1px solid var(--border);background:rgba(255,255,255,0.04);display:none;z-index:20;touch-action:none;}
+#joyKnob{position:absolute;width:46px;height:46px;border-radius:50%;background:rgba(78,168,255,0.3);
+  border:1px solid rgba(78,168,255,0.6);left:30px;top:30px;pointer-events:none;transition:left .05s,top .05s;}
+body.touch-mode #joystick{display:block;}
+
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.86);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.overlay.show{display:flex;animation:ovfade .2s ease;}
+@keyframes ovfade{from{opacity:0;}to{opacity:1;}}
+@keyframes panelPop{0%{opacity:0;transform:scale(.92) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
+.overlay .panel{animation:panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;}
+@keyframes deathFade{0%{opacity:0;filter:grayscale(70%) brightness(.6);}100%{opacity:1;filter:grayscale(0%) brightness(1);}}
+#deathOverlay .panel{animation:deathFade .5s ease both;}
+@keyframes newBestPop{0%{opacity:0;transform:scale(.85) translateY(-4px);filter:brightness(1.6);}60%{transform:scale(1.04);}100%{opacity:1;transform:scale(1) translateY(0);filter:brightness(1);}}
+#deathOverlay .panel.new-best-entrance{animation:newBestPop .5s cubic-bezier(.2,.9,.3,1.3) both;}
+body.reduced-motion .overlay.show,
+body.reduced-motion .panel{ animation:none!important; }
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:26px 24px;max-width:420px;width:100%;max-height:92vh;overflow-y:auto;
+  box-shadow:0 0 60px -18px rgba(78,168,255,0.25);}
+.panel h1{font-size:2rem;letter-spacing:.16em;text-align:center;color:var(--neon2);
+  text-shadow:0 0 26px rgba(185,138,255,0.5);margin-bottom:4px;font-family:var(--display);font-weight:600;}
+.panel h2{font-size:1.2rem;letter-spacing:.1em;color:var(--neon2);text-align:center;margin-bottom:16px;font-family:var(--display);font-weight:600;}
+.tagline{text-align:center;color:var(--ink-soft);font-size:.85rem;margin-bottom:18px;font-family:var(--display);font-style:italic;}
+.stage-badge{text-align:center;font-family:var(--mono);font-size:.65rem;letter-spacing:.14em;
+  color:var(--ink-soft);text-transform:uppercase;margin-bottom:10px;}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.stat-box{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;text-align:center;}
+.stat-box .v{font-family:var(--mono);font-size:1.15rem;font-weight:700;color:var(--ink);}
+.stat-box .k{font-size:.68rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;}
+.hint{text-align:center;color:var(--ink-soft);font-size:.78rem;margin:10px 0;line-height:1.5;}
+.btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
+  margin-bottom:10px;transition:all .15s;font-family:inherit;letter-spacing:.04em;}
+.btn:hover{border-color:var(--neon2);color:var(--neon2);box-shadow:0 0 18px -6px var(--neon2);}
+.btn:active{transform:scale(.98);}
+.btn.primary{background:linear-gradient(135deg,var(--panel2),rgba(78,168,255,0.18));border-color:#4ea8ff;color:#bcdcff;}
+.btn.gold{border-color:var(--gold);color:var(--gold);}
+.settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 14px;margin-bottom:10px;font-size:.85rem;font-family:var(--body-font);}
+.settings-row input[type="range"]{width:120px;accent-color:var(--neon2);}
+.settings-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--neon2);}
+
+.ach-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--border);
+  border-radius:12px;padding:12px 14px;margin-bottom:10px;opacity:.45;transition:opacity .2s;}
+.ach-row.unlocked{opacity:1;border-color:var(--gold);box-shadow:0 0 14px -8px var(--gold);}
+.ach-icon{width:34px;height:34px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);color:var(--ink-soft);font-size:1rem;}
+.ach-row.unlocked .ach-icon{border-color:var(--gold);color:var(--gold);}
+.ach-info{flex:1;}
+.ach-name{font-weight:700;font-size:.9rem;font-family:var(--body-font);}
+.ach-desc{font-size:.74rem;color:var(--ink-mid);margin-top:2px;font-family:var(--body-font);}
+.ach-progress{text-align:center;font-family:var(--mono);color:var(--ink-mid);font-size:.85rem;margin-bottom:14px;}
+.achieve-toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-140%);
+  display:flex;align-items:center;gap:10px;background:rgba(10,11,20,0.94);border:1px solid var(--gold);
+  border-radius:12px;padding:10px 16px;box-shadow:0 0 24px -6px var(--gold);z-index:999;
+  transition:transform .4s cubic-bezier(.2,.9,.3,1.3);pointer-events:none;}
+.achieve-toast.show{transform:translateX(-50%) translateY(0);}
+.achieve-toast-icon{font-size:1.3rem;color:var(--gold);}
+.achieve-toast-title{font-size:.65rem;letter-spacing:.1em;color:var(--ink-mid);text-transform:uppercase;font-family:var(--mono);}
+.achieve-toast-name{font-size:.9rem;font-weight:700;color:var(--gold);font-family:var(--body-font);}
+
+.shop-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel2);
+  border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:.85rem;}
+.shop-row.owned{border-color:var(--ok);}
+.shop-row.active{box-shadow:0 0 14px -8px var(--neon2);}
+.shop-buy{font-family:var(--mono);font-size:.72rem;padding:.4em .8em;border-radius:8px;border:1px solid var(--gold);
+  background:transparent;color:var(--gold);cursor:pointer;}
+.shop-buy:disabled{opacity:.35;cursor:default;}
+.shard-count{text-align:center;font-family:var(--mono);color:var(--gold);font-size:1rem;margin-bottom:14px;}
+
+.meta-row{position:fixed;bottom:8px;right:10px;z-index:60;display:flex;align-items:center;gap:6px;font-family:var(--mono);}
+.icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
+  display:flex;align-items:center;justify-content:center;position:relative;}
+.icon-btn:hover{opacity:1;border-color:var(--neon2);}
+.bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;
+  font-size:9px;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;}
+.bugrep-badge:empty,.bugrep-badge[data-zero]{display:none;}
+
+.bugcat{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.bugcat .btn{width:auto;flex:1;padding:.5rem;font-size:.78rem;margin-bottom:0;}
+.bugcat .btn.sel{border-color:var(--neon2);color:var(--neon2);}
+.form-input{width:100%;padding:.7rem;border-radius:8px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-family:inherit;font-size:.85rem;margin-bottom:10px;}
+textarea.form-input{min-height:70px;resize:vertical;}
+.bug-item{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;
+  margin-bottom:8px;font-size:.8rem;position:relative;}
+.bug-item .del{position:absolute;top:6px;right:8px;color:var(--danger);font-size:.7rem;cursor:pointer;opacity:.7;}
+.bug-item .cat{font-family:var(--mono);font-size:.65rem;color:var(--neon2);text-transform:uppercase;margin-bottom:2px;}
+
+@media (prefers-reduced-motion: reduce){
+  .overlay.show, .panel, .achieve-toast{ animation:none!important; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="joystick"><div id="joyKnob"></div></div>
+
+<div id="hud">
+  <div class="hud-left">
+    <div id="scoreVal">0</div>
+    <div id="comboVal"></div>
+  </div>
+  <div class="hud-right">
+    <div id="hullBarWrap"><div id="hullBar"></div></div>
+    <div id="phaseVal">PHASE 1</div>
+  </div>
+</div>
+
+<div class="achieve-toast" id="achieveToast">
+  <div class="achieve-toast-icon">✦</div>
+  <div>
+    <div class="achieve-toast-title">Achievement Unlocked</div>
+    <div class="achieve-toast-name" id="achieveToastName"></div>
+  </div>
+</div>
+
+<!-- MENU -->
+<div class="overlay show" id="menuOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Main menu">
+    <h1>INFALL</h1>
+    <div class="stage-badge">STAGE IV</div>
+    <div class="tagline">place the wells · become what they pull</div>
+    <button class="btn primary" onclick="Game.start()">✦ &nbsp;TRIGGER THE INFALL</button>
+    <button class="btn gold" onclick="Shop.open()">◈ &nbsp;FLUX SHOP</button>
+    <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
+    <div class="stat-grid" id="menuBest"></div>
+    <div class="hint">WASD / arrows / joystick to fly · drag anywhere else to aim, release to launch a well<br>the Cinder is pulled by gravity too — including your own wells</div>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div class="overlay" id="pauseOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
+    <h2>PAUSED</h2>
+    <div class="tagline">the field holds still · nothing falls until you do</div>
+    <button class="btn primary" onclick="Game.togglePause()">RESUME</button>
+    <button class="btn" onclick="Game.abandonRun()">ABANDON RUN</button>
+  </div>
+</div>
+
+<!-- DEATH -->
+<div class="overlay" id="deathOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Run ended">
+    <h2 style="color:var(--danger)">HULL BREACHED</h2>
+    <div class="tagline">the field claimed what you didn't capture first</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="v" id="dTime">0:00</div><div class="k">survived</div></div>
+      <div class="stat-box"><div class="v" id="dCaptures">0</div><div class="k">captures</div></div>
+      <div class="stat-box"><div class="v" id="dScore">0</div><div class="k">score</div></div>
+      <div class="stat-box"><div class="v gold" id="dFlux">+0</div><div class="k">flux gathered</div></div>
+    </div>
+    <div class="hint" id="dRecord" style="color:var(--gold);"></div>
+    <button class="btn primary" onclick="Game.start()">↻ &nbsp;RUN AGAIN</button>
+    <button class="btn" onclick="Game.toMenu()">MENU</button>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="overlay" id="settingsOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
+    <h2>SETTINGS</h2>
+    <div class="settings-row">
+      <label for="musicVolSlider">Music volume</label>
+      <input type="range" id="musicVolSlider" min="0" max="1" step="0.01" oninput="Settings.setMusicVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="sfxVolSlider">Sound effects volume</label>
+      <input type="range" id="sfxVolSlider" min="0" max="1" step="0.01" oninput="Settings.setSfxVol(this.value)">
+    </div>
+    <div class="settings-row">
+      <label for="reducedMotionToggle">Reduce motion</label>
+      <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
+    </div>
+    <button class="btn" onclick="Settings.close()">BACK</button>
+  </div>
+</div>
+
+<!-- ACHIEVEMENTS -->
+<div class="overlay" id="achieveOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Achievements">
+    <h2>✦ WHAT THE FIELD REMEMBERS ✦</h2>
+    <div class="ach-progress" id="achProgress"></div>
+    <div id="achRows"></div>
+    <button class="btn" onclick="Achievements.close()">BACK</button>
+  </div>
+</div>
+
+<!-- SHOP -->
+<div class="overlay" id="shopOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Flux Shop — cosmetics only">
+    <h2>FLUX SHOP</h2>
+    <div class="tagline">cosmetic only · never changes what the wells do</div>
+    <div class="shard-count">◈ <span id="shopFlux">0</span> flux</div>
+    <div id="shopRows"></div>
+    <button class="btn" onclick="Shop.close()">BACK</button>
+  </div>
+</div>
+
+<!-- BUG REPORTER -->
+<div class="overlay" id="bugOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
+    <h2>REPORT ISSUE</h2>
+    <div class="bugcat">
+      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+    </div>
+    <input class="form-input" id="bugTitle" placeholder="Short title">
+    <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
+    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <div id="bugList"></div>
+    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+  </div>
+</div>
+
+<div class="meta-row">
+  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">INFALL v1.0.0</div>
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   INFALL — CHANGE LOG
+   (one line per change, most recent on top)
+
+   v1.0.0 — 2026-07-11 — Initial build, matching GAME_4_PILLARS.md exactly:
+                          Cinder/Well/debris pull-law physics (wells→
+                          particles only, no mutual N-body per the resolved
+                          engineering spike), fusion, Volatile/Swift
+                          hazards, staggered 5-phase difficulty curve,
+                          hull-integrity loss condition, the full scoring
+                          formula with every named compounding-risk
+                          guardrail implemented as specified, a
+                          hand-authored physics-driven Cinder rig (this
+                          studio's first continuous-motion rig), a
+                          four-parameter live mood engine (tempo/cutoff/
+                          density/tension off systemEnergy + hullMargin),
+                          Flux currency + cosmetics-only shop (wired to
+                          real rendering, not just tracked), 10
+                          achievements, PWA support and accessibility
+                          built in from this first commit, not retrofitted.
+===================================================================== */
+
+/* =====================================================================
+   UTILS — reused verbatim from this studio's own proven implementations
+===================================================================== */
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function dist2(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
+function rand(a,b){ return a + Math.random()*(b-a); }
+function fmtTime(s){ s=Math.floor(s); const m=Math.floor(s/60), r=s%60; return m+':'+String(r).padStart(2,'0'); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const Ease = {
+  popSettle(t){ t=clamp(t,0,1); return 1 + t*(1-t); },
+  easeOutCubic(t){ t=clamp(t,0,1); return 1 - Math.pow(1-t,3); },
+  easeOutBack(t){ t=clamp(t,0,1); const c1=1.70158,c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
+};
+
+// used to shade individual gem facets from one base color — reused verbatim
+// from the studio's proven implementation (iridescentcosmology.html/sigilchain.html/wardfall.html)
+function shadeHex(hex, dLight, dSat){
+  dSat = dSat || 0;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max+min)/2;
+  if(max===min){ h=s=0; }
+  else {
+    const d = max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d+(g<b?6:0); break;
+      case g: h=(b-r)/d+2; break;
+      case b: h=(r-g)/d+4; break;
+    }
+    h/=6;
+  }
+  h*=360; s=clamp(s*100+dSat,0,100); l=clamp(l*100+dLight,0,100);
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+}
+
+/* =====================================================================
+   PERSISTENCE
+===================================================================== */
+const SAVE_KEY = 'infall-save-v1';
+const Persist = (function(){
+  let data = {
+    flux: 0,
+    cosmetics: { trail: 'default', wellTheme: 'default', bgTheme: 'default' },
+    owned: {},
+    best: { score: 0, time: 0 },
+    totalRuns: 0,
+    lifetimeCaptures: 0,
+    largestMassCaptured: 0,
+    longestComboStreak: 0,
+    deepestPhase: 1,
+    flawlessRuns: 0,
+    maxWellsAtOnce: 0,
+    achievements: {},
+    settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
+  };
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(raw){
+        const p = JSON.parse(raw); Object.assign(data, p);
+        if(!data.cosmetics) data.cosmetics = { trail:'default', wellTheme:'default', bgTheme:'default' };
+        if(!data.owned) data.owned = {};
+        if(!data.best) data.best = { score:0, time:0 };
+        if(data.lifetimeCaptures === undefined) data.lifetimeCaptures = 0;
+        if(data.largestMassCaptured === undefined) data.largestMassCaptured = 0;
+        if(data.longestComboStreak === undefined) data.longestComboStreak = 0;
+        if(data.deepestPhase === undefined) data.deepestPhase = 1;
+        if(data.flawlessRuns === undefined) data.flawlessRuns = 0;
+        if(data.maxWellsAtOnce === undefined) data.maxWellsAtOnce = 0;
+        if(!data.achievements) data.achievements = {};
+        if(!data.settings) data.settings = { musicVol:0.5, sfxVol:0.5, reducedMotion:null };
+        if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
+        if(data.settings.sfxVol === undefined) data.settings.sfxVol = 0.5;
+        if(data.settings.reducedMotion === undefined) data.settings.reducedMotion = null;
+      }
+    }catch(e){}
+  }
+  function save(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }catch(e){} }
+  load();
+  return { data, save };
+})();
+
+/* =====================================================================
+   EVENTS — pub/sub bus, everything reactive subscribes here
+===================================================================== */
+const Events = (function(){
+  const subs = {};
+  function on(name, fn){ (subs[name] = subs[name]||[]).push(fn); }
+  function emit(name, payload){ (subs[name]||[]).forEach(fn=>fn(payload)); }
+  return { on, emit };
+})();
+
+/* =====================================================================
+   INPUT — keyboard + touch joystick, continuous thrust axis.
+   Reused near-verbatim from this studio's own proven Input module
+   (iridescentcosmology.html:1560-1641) — same WASD/arrow + joystick +
+   gamepad-axis precedent, gamepad dash-button logic removed (Infall has
+   no dash, the well-launch is the discrete action and lives on its own
+   pointer-drag input below, not on this module).
+===================================================================== */
+const Input = (function(){
+  const keys = {};
+  let joyX = 0, joyY = 0, joyActive = false;
+  let gamepadIndex = null;
+  window.addEventListener('gamepadconnected', (e) => { gamepadIndex = e.gamepad.index; });
+  window.addEventListener('gamepaddisconnected', (e) => { if(gamepadIndex === e.gamepad.index) gamepadIndex = null; });
+
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if(e.key === 'Escape' || e.key.toLowerCase() === 'p') Game.togglePause();
+    if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
+  });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+  const joyEl = document.getElementById('joystick');
+  const knob = document.getElementById('joyKnob');
+  function handleTouch(e){
+    const t = e.touches[0];
+    if(!t){ joyActive=false; joyX=0; joyY=0; knob.style.left='30px'; knob.style.top='30px'; return; }
+    const r = joyEl.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    let dx = t.clientX - cx, dy = t.clientY - cy;
+    const len = Math.hypot(dx,dy) || 1;
+    const max = r.width/2 - 10;
+    const cl = Math.min(len, max);
+    dx = dx/len*cl; dy = dy/len*cl;
+    knob.style.left = (r.width/2 - 23 + dx) + 'px';
+    knob.style.top  = (r.height/2 - 23 + dy) + 'px';
+    joyX = dx/max; joyY = dy/max;
+    joyActive = true;
+    e.preventDefault();
+  }
+  joyEl.addEventListener('touchstart', handleTouch, {passive:false});
+  joyEl.addEventListener('touchmove', handleTouch, {passive:false});
+  joyEl.addEventListener('touchend', ()=>{ joyActive=false; joyX=0; joyY=0; knob.style.left='30px'; knob.style.top='30px'; });
+  window.addEventListener('touchstart', function once(){ document.body.classList.add('touch-mode'); window.removeEventListener('touchstart', once); }, {passive:true});
+
+  function axis(){
+    let x = 0, y = 0;
+    if(keys['w']||keys['arrowup']) y -= 1;
+    if(keys['s']||keys['arrowdown']) y += 1;
+    if(keys['a']||keys['arrowleft']) x -= 1;
+    if(keys['d']||keys['arrowright']) x += 1;
+    if(joyActive){ x = joyX; y = joyY; }
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = (gamepadIndex !== null && pads[gamepadIndex]) ? pads[gamepadIndex] : (pads[0] || null);
+    if(pad){
+      const DEADZONE = 0.15;
+      let gx = pad.axes[0]||0, gy = pad.axes[1]||0;
+      if(Math.abs(gx) < DEADZONE) gx = 0;
+      if(Math.abs(gy) < DEADZONE) gy = 0;
+      if(gx !== 0 || gy !== 0){ x = gx; y = gy; }
+    }
+    const len = Math.hypot(x,y);
+    if(len > 1){ x/=len; y/=len; }
+    return {x,y};
+  }
+  return { axis, _test: { setKey:(k,v)=>{keys[k]=v;}, setJoy:(x,y,active)=>{joyX=x;joyY=y;joyActive=active;} } };
+})();
+
+/* =====================================================================
+   GAME — Cinder / Wells / debris: pull law, launch & control, fusion,
+   hazards, difficulty curve, scoring, win/loss. One module per §7's
+   "single-module cohesion over premature splitting" precedent.
+===================================================================== */
+const Game = (function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+
+  let stars = [];
+  function buildStars(){
+    stars = [];
+    // Starfall Background shop cosmetic (§5) — genuinely wired to the
+    // render, not just tracked: a denser field when equipped.
+    const density = Persist.data.cosmetics.bgTheme === 'starfall' ? 5500 : 9000;
+    const n = Math.floor((W * H) / density);
+    for(let i=0; i<n; i++){
+      stars.push({ x: Math.random()*W, y: Math.random()*H, r: rand(0.4,1.6), tw: Math.random()*Math.PI*2 });
+    }
+  }
+  function resize(){
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildStars();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- Tunables ---------------------------------------------------------
+  // Pull law per GAME_4_PILLARS.md §2's explicit pseudocode:
+  //   pullForce(distance) = WELL_PULL / max(distance, MIN_DIST)
+  // — LINEAR falloff, stated deliberately for legibility. NOTE: §3.1 of the
+  // same doc describes this as "the exact same inverse-square law" in prose.
+  // That's an internal contradiction in the spec, not resolved here — §2
+  // carries the actual formula + explicit rationale for linear falloff, so
+  // that's what's implemented. Flagging rather than silently picking a side.
+  const WELL_PULL = 26000;        // tunable — not numerically spec'd
+  const MIN_DIST = 20;            // §2
+  const WELL_LIFETIME = 6;        // §2 (seconds)
+  const MAX_WELLS = 3;            // §2
+  const WALL_BOUNCE_CAP = 1;      // §2
+  const MAX_DRAG_PX = 150;        // tunable — not numerically spec'd
+  const WELL_LAUNCH_SPEED = 900;  // tunable — not numerically spec'd
+  const WELL_TRAVEL_MAX_T = 2.5;  // tunable safety cap so a low-bounce
+                                   // trajectory can't fly indefinitely
+  const CAPTURE_RADIUS = 50;      // tunable — not numerically spec'd
+  const CAPTURE_TIME_BASE = 0.6;  // tunable — "double the normal time" (§2)
+                                   // implies a normal baseline; not itself spec'd
+  const FUSION_TOUCH_DIST = 18;   // tunable — not numerically spec'd
+  const MASS_MIN = 1, MASS_MAX = 8;       // §6
+  const MAX_DEBRIS_ONSCREEN = 60;         // §2 / §7
+  const HAZARD_IMPACT_MULT = 2;           // §2 / §6
+  const HULL_HP_MAX = 100;                // §2
+  const SWIFT_TIME_MULT = 2;              // §2
+  const THRUST_ACCEL = 900;               // tunable — not numerically spec'd
+  // Uniform velocity damping, applied identically to Cinder/debris/well
+  // projectiles — a single added constant, not a second force source, kept
+  // deliberately small. Not in GAME_4_PILLARS.md; a playability addition
+  // flagged here rather than silently folded into the "one rule" framing.
+  const DAMPING = 0.994;
+  const CINDER_COLLIDE_RADIUS = 14; // tunable — not numerically spec'd
+  const SYSTEM_ENERGY_EMA_ALPHA = 0.05; // tunable smoothing factor
+  const ENERGY_VEL_REF = 400;           // tunable normalization reference
+
+  // GOLD_REF mirrors var(--gold) into JS so the resonant/capturable-particle
+  // ring never hand-typed-literal-drifts from the CSS token (§3.4's
+  // drift-guard pattern, same convention as the sibling games).
+  const GOLD_REF = '#ffd76b';
+  const DANGER_REF = '#ff4d70';
+  const SWIFT_ACCENT = '#b98aff'; // reused --neon2 token; §3.3's palette
+                                   // audit table doesn't cover Swift
+                                   // specifically — this reuses an existing
+                                   // token rather than introducing a new hex,
+                                   // per §11's "reuse first" rule, flagged
+                                   // here since it's this build's own call.
+
+  // Hand-authored Cinder rig (§3.2) — pointed prow at a=0, blunt stern
+  // around a=0.5, deliberately asymmetric (no top/bottom mirror) for the
+  // off-axis mass concentration the pillars doc calls for. Same
+  // {a: angle-fraction, m: radiusMultiplier} convention as
+  // iridescentcosmology.html's RAMIEL_VERTS.
+  const CINDER_VERTS = [
+    { a:0.00, m:1.35 }, // prow tip
+    { a:0.06, m:0.62 },
+    { a:0.14, m:0.95 },
+    { a:0.24, m:0.68 },
+    { a:0.34, m:1.05 }, // off-axis mass concentration
+    { a:0.44, m:0.60 },
+    { a:0.50, m:0.58 }, // blunt stern
+    { a:0.58, m:0.72 },
+    { a:0.68, m:0.85 },
+    { a:0.78, m:0.66 },
+    { a:0.88, m:0.98 },
+    { a:0.94, m:0.66 },
+  ];
+
+  // Scoring — §6, exact
+  const CAPTURE_BASE = 15;
+  const WELL_STEP = 0.12, WELL_CAP = 10;
+  const COMBO_STEP = 0.15, COMBO_CAP = 8, COMBO_WINDOW = 2.5;
+  const FUSION_BONUS = 25;
+  function wellMult(n){ return 1 + WELL_STEP * (Math.min(n, WELL_CAP) - 1); }
+  function comboMult(streak){ return 1 + COMBO_STEP * Math.min(streak - 1, COMBO_CAP - 1); }
+
+  // Difficulty curve — §2, estimates pending playtest, per STUDIO_BIBLE.md §8
+  const PHASES = [
+    { t: 0,   spawnInterval: 2.2, massRange: [1,2], hazards: [] },
+    { t: 40,  spawnInterval: 1.8, massRange: [1,2], hazards: [] },
+    { t: 90,  spawnInterval: 1.8, massRange: [1,3], hazards: ['volatile'] },
+    { t: 150, spawnInterval: 1.4, massRange: [1,4], hazards: ['volatile','swift'] },
+    { t: 220, spawnInterval: 1.1, massRange: [1,4], hazards: ['volatile','swift'] },
+  ];
+  function phaseFor(t){
+    let idx = 0;
+    for(let i=0;i<PHASES.length;i++){ if(t >= PHASES[i].t) idx = i; }
+    return idx;
+  }
+
+  // ---- State --------------------------------------------------------
+  let cinder, wells, debris, run, state; // state: 'menu'|'playing'|'paused'|'ended'
+  let trail = [];   // Cinder motion trail, decorative
+  let bursts = [];  // capture/fusion/damage feedback bursts, decorative
+  let systemEnergyEMA = 0; // §4 mood-engine signal
+
+  function freshCinder(){
+    return { x: W/2, y: H/2, vx: 0, vy: 0, hull: HULL_HP_MAX, angle: 0, thrustMag: 0 };
+  }
+  function freshRun(){
+    return {
+      t: 0, score: 0, captures: 0, fusions: 0,
+      comboStreak: 0, comboTimer: 0,
+      phase: 0, spawnTimer: PHASES[0].spawnInterval,
+      flawless: true, maxWellsAtOnce: 0,
+      tookVolatileDamage: false, capturedSwift: false,
+    };
+  }
+  function reset(){
+    cinder = freshCinder();
+    wells = [];
+    debris = [];
+    run = freshRun();
+    trail = [];
+    bursts = [];
+    systemEnergyEMA = 0;
+  }
+
+  // ---- Accessibility: reduced-motion resolution -------------------------
+  // Mirrors Wardfall's split (§3.6): canvas juice amplitude-reduced, never
+  // zeroed; field-lines/well rings/aim telegraph stay fully untouched
+  // (drawn elsewhere, with no reduced-motion branching at all — see
+  // drawWell/drawAimTelegraph). null = follow the OS setting.
+  function reducedMotionActive(){
+    const s = Persist.data.settings.reducedMotion;
+    if(s === true) return true;
+    if(s === false) return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+  function motionScale(){ return reducedMotionActive() ? 0.35 : 1; }
+
+  // ---- Juice: camera shake, scaled by severity like addShake elsewhere in
+  // this studio's games; amplitude-reduced (never zeroed) under reduced motion.
+  let shakeMag = 0, shakeX = 0, shakeY = 0;
+  function addShake(mag){ shakeMag = Math.max(shakeMag, mag); }
+  function updateShake(){
+    if(shakeMag > 0.05){
+      const amp = shakeMag * motionScale();
+      shakeX = (Math.random()*2-1) * amp;
+      shakeY = (Math.random()*2-1) * amp;
+      shakeMag *= 0.88;
+    } else {
+      shakeMag = 0; shakeX = 0; shakeY = 0;
+    }
+  }
+
+  // Well-anchor gets its own distinct feedback (§3.5) — a "space bends"
+  // ripple, separate from capture/hazard reactions, plus a kick scaled like
+  // addShake elsewhere.
+  Events.on('well_settle', d => {
+    bursts.push({ x:d.x, y:d.y, color:'#4ea8ff', life:0, maxLife:0.55, r0:10, r1:CAPTURE_RADIUS*1.4 * (0.6+0.4*motionScale()), ripple:true });
+    addShake(4);
+  });
+  Events.on('capture', d => {
+    bursts.push({ x:d.x, y:d.y, color: GOLD_REF, life:0, maxLife:0.4, r0:4, r1:24 * (0.6+0.4*motionScale()) });
+    addShake(1.2);
+  });
+  Events.on('fusion', d => {
+    bursts.push({ x:d.x, y:d.y, color: '#ffffff', life:0, maxLife:0.5, r0:6, r1:32 * (0.6+0.4*motionScale()) });
+    addShake(2.5);
+  });
+  Events.on('well_expire', d => bursts.push({ x:d.x, y:d.y, color: '#4ea8ff', life:0, maxLife:0.45, r0:8, r1:CAPTURE_RADIUS*1.3 * (0.6+0.4*motionScale()) }));
+  Events.on('hull_damage', d => {
+    bursts.push({ x:cinder.x, y:cinder.y, color: DANGER_REF, life:0, maxLife:0.3, r0:8, r1:28 * (0.6+0.4*motionScale()) });
+    addShake(5 + (d.dmg||0)*0.4);
+  });
+
+  // ---- Pull law -------------------------------------------------------
+  function pullAt(px, py, exclude){
+    let fx = 0, fy = 0;
+    for(const w of wells){
+      if(w === exclude || w.state !== 'active') continue;
+      const dx = w.x - px, dy = w.y - py;
+      const d = Math.max(Math.hypot(dx, dy), MIN_DIST);
+      const f = WELL_PULL / d;
+      fx += (dx / d) * f;
+      fy += (dy / d) * f;
+    }
+    return { fx, fy };
+  }
+
+  // ---- Launch & control -------------------------------------------------
+  let aiming = false, aimPointerId = null, aimStart = {x:0,y:0}, aimCur = {x:0,y:0};
+
+  canvas.addEventListener('pointerdown', e => {
+    if(state !== 'playing') return;
+    aiming = true;
+    aimPointerId = e.pointerId;
+    canvas.setPointerCapture(e.pointerId);
+    aimStart.x = e.clientX; aimStart.y = e.clientY;
+    aimCur.x = e.clientX; aimCur.y = e.clientY;
+  });
+  canvas.addEventListener('pointermove', e => {
+    if(!aiming || e.pointerId !== aimPointerId) return;
+    aimCur.x = e.clientX; aimCur.y = e.clientY;
+  });
+  canvas.addEventListener('pointerup', e => {
+    if(!aiming || e.pointerId !== aimPointerId) return;
+    aiming = false;
+    launchWell();
+  });
+  canvas.addEventListener('pointercancel', e => {
+    if(e.pointerId !== aimPointerId) return;
+    aiming = false;
+  });
+
+  function activeOrFlyingCount(){
+    return wells.filter(w => w.state === 'active' || w.state === 'flying').length;
+  }
+
+  function launchWell(){
+    if(activeOrFlyingCount() >= MAX_WELLS) return;
+    let dx = aimCur.x - aimStart.x, dy = aimCur.y - aimStart.y;
+    const len = Math.hypot(dx, dy);
+    if(len < 4) return; // too small a drag to register as a launch
+    const cl = Math.min(len, MAX_DRAG_PX);
+    const nx = dx / len, ny = dy / len;
+    const speed = (cl / MAX_DRAG_PX) * WELL_LAUNCH_SPEED;
+    wells.push({
+      x: cinder.x, y: cinder.y,
+      vx: nx * speed, vy: ny * speed,
+      state: 'flying', bounces: 0,
+      spawnTime: run.t, settleT: undefined,
+      captureCount: 0,
+    });
+    if(activeOrFlyingCount() > run.maxWellsAtOnce) run.maxWellsAtOnce = activeOrFlyingCount();
+    Events.emit('well_launch', {x: cinder.x, y: cinder.y});
+  }
+
+  // ---- Debris spawn ---------------------------------------------------
+  function spawnDebris(){
+    const phase = PHASES[run.phase];
+    const mass = Math.floor(rand(phase.massRange[0], phase.massRange[1] + 1));
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    if(edge === 0){ x = Math.random()*W; y = -20; }
+    else if(edge === 1){ x = W+20; y = Math.random()*H; }
+    else if(edge === 2){ x = Math.random()*W; y = H+20; }
+    else { x = -20; y = Math.random()*H; }
+    const ang = Math.random() * Math.PI * 2;
+    const spd = rand(20, 60);
+    let type = 'normal';
+    if(phase.hazards.length){
+      const roll = Math.random();
+      if(roll < 0.16 && phase.hazards.includes('volatile')) type = 'volatile';
+      else if(roll < 0.30 && phase.hazards.includes('swift')) type = 'swift';
+    }
+    debris.push({ x, y, vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd, mass, type, timeInRadius: 0 });
+  }
+
+  // ---- Scoring / capture / fusion / damage ----------------------------
+  function awardScore(pts){
+    run.score += pts;
+    Events.emit('score', { pts, total: run.score });
+  }
+  function captureDebris(d, well){
+    d.consumed = true;
+    well.captureCount++;
+    run.captures++;
+    run.comboStreak++;
+    run.comboTimer = COMBO_WINDOW;
+    if(d.type === 'swift') run.capturedSwift = true;
+    Persist.data.lifetimeCaptures++;
+    if(d.mass > Persist.data.largestMassCaptured) Persist.data.largestMassCaptured = d.mass;
+    if(run.comboStreak > Persist.data.longestComboStreak) Persist.data.longestComboStreak = run.comboStreak;
+    const pts = Math.round(CAPTURE_BASE * d.mass * wellMult(well.captureCount) * comboMult(run.comboStreak));
+    awardScore(pts);
+    Events.emit('capture', { x: d.x, y: d.y, mass: d.mass, type: d.type, pts });
+  }
+  function damageCinder(dmg, hazardType){
+    cinder.hull = Math.max(0, cinder.hull - dmg);
+    run.flawless = false;
+    if(hazardType === 'volatile') run.tookVolatileDamage = true;
+    Events.emit('hull_damage', { dmg, hull: cinder.hull });
+  }
+  function expireWell(w){
+    for(const d of debris){
+      if(d.consumed) continue;
+      if(Math.hypot(d.x - w.x, d.y - w.y) < CAPTURE_RADIUS) captureDebris(d, w);
+    }
+    w.state = 'expired';
+    Events.emit('well_expire', { x: w.x, y: w.y });
+  }
+  function checkFusions(){
+    for(const w of wells){
+      if(w.state !== 'active') continue;
+      const inWell = debris.filter(d => !d.consumed && Math.hypot(d.x-w.x, d.y-w.y) < CAPTURE_RADIUS);
+      for(let i = 0; i < inWell.length; i++){
+        const a = inWell[i];
+        if(a.consumed) continue;
+        for(let j = i+1; j < inWell.length; j++){
+          const b = inWell[j];
+          if(b.consumed) continue;
+          if(Math.hypot(a.x-b.x, a.y-b.y) < FUSION_TOUCH_DIST){
+            a.mass = Math.min(a.mass + b.mass, MASS_MAX);
+            b.consumed = true;
+            a.timeInRadius = 0;
+            run.fusions++;
+            awardScore(FUSION_BONUS);
+            Events.emit('fusion', { x: a.x, y: a.y, mass: a.mass });
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // ---- Fixed-timestep physics step ------------------------------------
+  function stepPhysics(dt){
+    run.t += dt;
+    run.phase = phaseFor(run.t);
+
+    if(run.comboTimer > 0){
+      run.comboTimer -= dt;
+      if(run.comboTimer <= 0) run.comboStreak = 0;
+    }
+
+    // Wells: flight (projectile, pulled by other active wells, ≤1 bounce)
+    // then active (fixed pull source until WELL_LIFETIME elapses).
+    for(const w of wells){
+      if(w.state === 'flying'){
+        const { fx, fy } = pullAt(w.x, w.y, w);
+        w.vx += fx * dt; w.vy += fy * dt;
+        w.x += w.vx * dt; w.y += w.vy * dt;
+        if(w.x < 0){ w.x = 0; w.vx *= -1; w.bounces++; }
+        if(w.x > W){ w.x = W; w.vx *= -1; w.bounces++; }
+        if(w.y < 0){ w.y = 0; w.vy *= -1; w.bounces++; }
+        if(w.y > H){ w.y = H; w.vy *= -1; w.bounces++; }
+        if(w.bounces > WALL_BOUNCE_CAP || (run.t - w.spawnTime) > WELL_TRAVEL_MAX_T){
+          w.state = 'active'; w.vx = 0; w.vy = 0; w.settleT = run.t;
+          Events.emit('well_settle', { x: w.x, y: w.y });
+        }
+      } else if(w.state === 'active'){
+        if(w.settleT === undefined) w.settleT = w.spawnTime;
+        if(run.t - w.settleT > WELL_LIFETIME) expireWell(w);
+      }
+    }
+    wells = wells.filter(w => w.state !== 'expired');
+
+    // Cinder: pulled by every active well, exactly like debris — no
+    // special-cased player physics (§2).
+    {
+      const { fx, fy } = pullAt(cinder.x, cinder.y);
+      const inp = Input.axis();
+      cinder.thrustMag = Math.min(1, Math.hypot(inp.x, inp.y));
+      cinder.vx += (fx + inp.x * THRUST_ACCEL) * dt;
+      cinder.vy += (fy + inp.y * THRUST_ACCEL) * dt;
+      cinder.vx *= DAMPING; cinder.vy *= DAMPING;
+      if(cinder.thrustMag > 0.05 || Math.hypot(cinder.vx, cinder.vy) > 2){
+        cinder.angle = Math.atan2(cinder.vy, cinder.vx);
+      }
+      cinder.x = clamp(cinder.x + cinder.vx * dt, 0, W);
+      cinder.y = clamp(cinder.y + cinder.vy * dt, 0, H);
+      trail.push({ x: cinder.x, y: cinder.y, mag: cinder.thrustMag });
+      if(trail.length > 40) trail.shift();
+    }
+
+    // Debris spawn (survival-time-driven difficulty, §2)
+    if(debris.length < MAX_DEBRIS_ONSCREEN){
+      run.spawnTimer -= dt;
+      if(run.spawnTimer <= 0){
+        spawnDebris();
+        run.spawnTimer = PHASES[run.phase].spawnInterval;
+      }
+    }
+
+    // Debris physics + Cinder-collision + capture residency
+    for(const d of debris){
+      if(d.consumed) continue;
+      const { fx, fy } = pullAt(d.x, d.y);
+      d.vx += fx * dt; d.vy += fy * dt;
+      d.x += d.vx * dt; d.y += d.vy * dt;
+
+      if(d.x < -40 || d.x > W+40 || d.y < -40 || d.y > H+40){ d.offscreen = true; continue; }
+
+      const dc = Math.hypot(d.x - cinder.x, d.y - cinder.y);
+      if(dc < CINDER_COLLIDE_RADIUS){
+        const dmg = d.type === 'volatile' ? d.mass * HAZARD_IMPACT_MULT : d.mass;
+        damageCinder(dmg, d.type);
+        d.consumed = true;
+        continue;
+      }
+
+      let nearestWell = null, nearestD = Infinity;
+      for(const w of wells){
+        if(w.state !== 'active') continue;
+        const wd = Math.hypot(d.x - w.x, d.y - w.y);
+        if(wd < CAPTURE_RADIUS && wd < nearestD){ nearestD = wd; nearestWell = w; }
+      }
+      if(nearestWell){
+        const need = d.type === 'swift' ? CAPTURE_TIME_BASE * SWIFT_TIME_MULT : CAPTURE_TIME_BASE;
+        d.timeInRadius += dt;
+        if(d.timeInRadius >= need) captureDebris(d, nearestWell);
+      } else {
+        d.timeInRadius = 0;
+      }
+    }
+    debris = debris.filter(d => !d.consumed && !d.offscreen);
+
+    // systemEnergy — EMA-smoothed, normalized sum of squared particle
+    // velocities (§4's mood-engine signal), read straight off values the
+    // sim already computes, zero extra bookkeeping.
+    {
+      let sumSq = 0;
+      for(const d of debris) sumSq += d.vx*d.vx + d.vy*d.vy;
+      const norm = clamp(sumSq / (MAX_DEBRIS_ONSCREEN * ENERGY_VEL_REF * ENERGY_VEL_REF), 0, 1);
+      systemEnergyEMA += (norm - systemEnergyEMA) * SYSTEM_ENERGY_EMA_ALPHA;
+    }
+
+    checkFusions();
+
+    if(cinder.hull <= 0 && state === 'playing') endRun();
+  }
+
+  // ---- Loop / lifecycle -------------------------------------------------
+  const SIM_DT = 1/60, MAX_STEPS = 5;
+  let lastTime = 0, accumulator = 0;
+
+  function updateHud(){
+    document.getElementById('scoreVal').textContent = run.score;
+    document.getElementById('comboVal').textContent = run.comboStreak > 1 ? ('×' + run.comboStreak) : '';
+    const hullPct = Math.max(0, cinder.hull / HULL_HP_MAX * 100);
+    document.getElementById('hullBar').style.width = hullPct + '%';
+    document.getElementById('hullBarWrap').classList.toggle('warn', hullPct < 30 && hullPct > 0);
+    document.getElementById('phaseVal').textContent = 'PHASE ' + (run.phase + 1);
+  }
+
+  function updateEffects(dtReal){
+    for(const b of bursts){ b.life += dtReal; }
+    bursts = bursts.filter(b => b.life < b.maxLife);
+    for(const s of stars){ s.tw += dtReal * 0.6; }
+    updateShake();
+  }
+
+  function drawStars(){
+    const amp = 0.35 * motionScale();
+    for(const s of stars){
+      const a = 0.5 + amp * Math.sin(s.tw);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(226,220,255,${clamp(a,0.15,0.95).toFixed(2)})`;
+      ctx.fill();
+    }
+  }
+
+  function drawAimTelegraph(){
+    if(!aiming) return;
+    const dx = aimCur.x - aimStart.x, dy = aimCur.y - aimStart.y;
+    const len = Math.hypot(dx, dy);
+    if(len < 4) return;
+    const cl = Math.min(len, MAX_DRAG_PX);
+    const nx = dx/len, ny = dy/len;
+    const power = cl / MAX_DRAG_PX;
+    // Ghost-path prediction + charge telegraph — informational content,
+    // stays fully on regardless of reduced-motion (§3.6).
+    ctx.save();
+    ctx.setLineDash([6,6]);
+    ctx.strokeStyle = `rgba(255,215,107,${(0.35+power*0.4).toFixed(2)})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cinder.x, cinder.y);
+    ctx.lineTo(cinder.x + nx*180, cinder.y + ny*180);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(cinder.x, cinder.y, 14 + power*22, 0, Math.PI*2);
+    ctx.strokeStyle = GOLD_REF;
+    ctx.globalAlpha = 0.5 + power*0.3;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Ember/Void Trail shop cosmetics (§5) — genuinely wired to the render.
+  const TRAIL_COLORS = { default:'#b98aff', ember:'#ff9d4d', void:'#7d3fff' };
+  function drawTrail(){
+    if(trail.length < 2) return;
+    const trailColor = TRAIL_COLORS[Persist.data.cosmetics.trail] || TRAIL_COLORS.default;
+    for(let i=1; i<trail.length; i++){
+      const p0 = trail[i-1], p1 = trail[i];
+      const t = i / trail.length;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.strokeStyle = shadeHex(trailColor, 10, 10);
+      ctx.globalAlpha = t * 0.35 * (0.3 + p1.mag*0.7);
+      ctx.lineWidth = 1 + t * 2.5;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawWell(w){
+    if(w.state === 'flying'){
+      // comet-style projectile: short fading tail back toward its own path
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, 5, 0, Math.PI*2);
+      ctx.fillStyle = GOLD_REF;
+      ctx.shadowColor = GOLD_REF; ctx.shadowBlur = 14;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      return;
+    }
+    // active — parametric radial gradient (§3.4), reused sapphire (§3.3)
+    const core = '#4ea8ff';
+    const edge = shadeHex(core, -18, 0);
+    const center = shadeHex(core, 26, 10);
+    const grad = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, CAPTURE_RADIUS);
+    grad.addColorStop(0, center);
+    grad.addColorStop(0.5, core);
+    grad.addColorStop(1, edge);
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, CAPTURE_RADIUS, 0, Math.PI*2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // field lines — thin rotating arcs, told-apart-by-field-lines per §3.3
+    const life = clamp((run.t - (w.settleT||w.spawnTime)) / WELL_LIFETIME, 0, 1);
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.rotate(run.t * 0.6);
+    ctx.strokeStyle = shadeHex(core, 20, 0);
+    ctx.globalAlpha = 0.5 * (1 - life*0.5);
+    for(let i=0; i<3; i++){
+      const rr = CAPTURE_RADIUS * (0.4 + i*0.22);
+      ctx.beginPath();
+      ctx.arc(0, 0, rr, i*0.9, i*0.9 + Math.PI*1.1);
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // core dot, dims as lifetime runs out
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, 6, 0, Math.PI*2);
+    ctx.fillStyle = shadeHex(core, 20 * (1-life), 0);
+    ctx.shadowColor = core; ctx.shadowBlur = 12 * (1-life*0.6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawDebris(d){
+    let base = '#5e6f92';
+    let accent = null;
+    if(d.type === 'volatile') accent = DANGER_REF;
+    else if(d.type === 'swift') accent = SWIFT_ACCENT;
+    const r = 3 + d.mass * 1.6;
+
+    if(accent){
+      // danger/hazard-accent-on-near-black-base convention (§3.4) — the
+      // accent color never becomes the fill.
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r, 0, Math.PI*2);
+      ctx.fillStyle = '#0a0620';
+      ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = accent;
+      ctx.shadowColor = accent; ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r, 0, Math.PI*2);
+      ctx.fillStyle = base;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(d.x - r*0.3, d.y - r*0.3, r*0.4, 0, Math.PI*2);
+      ctx.fillStyle = shadeHex(base, 22, 8);
+      ctx.fill();
+    }
+
+    // resonant/capturable progress ring — var(--gold) directly at the draw
+    // call (§3.4's drift-guard, mirrored as GOLD_REF above)
+    if(d.timeInRadius > 0){
+      const need = d.type === 'swift' ? CAPTURE_TIME_BASE * SWIFT_TIME_MULT : CAPTURE_TIME_BASE;
+      const p = clamp(d.timeInRadius / need, 0, 1);
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, r + 4, -Math.PI/2, -Math.PI/2 + Math.PI*2*p);
+      ctx.strokeStyle = GOLD_REF;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  function drawCinder(){
+    const netForce = Math.hypot(cinder.vx, cinder.vy); // velocity as legible
+                                                         // proxy for net-force
+                                                         // magnitude — the sim
+                                                         // already computes it
+    const elong = 1 + clamp(netForce / 900, 0, 0.5);
+    const r = 13;
+    ctx.save();
+    ctx.translate(cinder.x, cinder.y);
+    ctx.rotate(cinder.angle);
+    ctx.scale(elong, 1/Math.sqrt(elong));
+
+    const bodyColor = '#f4ecff';
+    const n = CINDER_VERTS.length;
+    const vx = i => Math.cos(CINDER_VERTS[i].a * Math.PI*2) * r * CINDER_VERTS[i].m;
+    const vy = i => Math.sin(CINDER_VERTS[i].a * Math.PI*2) * r * CINDER_VERTS[i].m;
+
+    ctx.shadowColor = bodyColor; ctx.shadowBlur = 10 + cinder.thrustMag*10;
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){ const px=vx(i), py=vy(i); i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    for(let i=0;i<n;i++){
+      const j = (i+1) % n;
+      ctx.fillStyle = shadeHex(bodyColor, i%2===0 ? -10 : 6, 10);
+      ctx.beginPath();
+      ctx.moveTo(0,0); ctx.lineTo(vx(i),vy(i)); ctx.lineTo(vx(j),vy(j)); ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(20,11,48,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){ const px=vx(i), py=vy(i); i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBursts(){
+    for(const b of bursts){
+      const p = b.life / b.maxLife;
+      const r = b.r0 + (b.r1 - b.r0) * Ease.easeOutCubic(p);
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = b.color;
+      ctx.globalAlpha = 1 - p;
+      ctx.lineWidth = b.ripple ? 3 : 2;
+      ctx.stroke();
+      if(b.ripple){
+        // "space bends" double-ring, well-anchor's own signature feedback (§3.5)
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, r*0.6, 0, Math.PI*2);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function render(){
+    ctx.fillStyle = '#0a0620';
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    drawStars();
+    for(const w of wells) drawWell(w);
+    drawTrail();
+    for(const d of debris) drawDebris(d);
+    if(state === 'playing' || state === 'paused') drawCinder();
+    drawAimTelegraph();
+    drawBursts();
+    ctx.restore();
+  }
+
+  function frame(ts){
+    const dtReal = Math.min((ts - (lastTime||ts)) / 1000, 0.25);
+    if(state === 'playing'){
+      lastTime = ts;
+      accumulator += dtReal;
+      let steps = 0;
+      while(accumulator >= SIM_DT && steps < MAX_STEPS){
+        stepPhysics(SIM_DT);
+        accumulator -= SIM_DT;
+        steps++;
+      }
+      updateHud();
+    } else {
+      lastTime = ts;
+    }
+    updateEffects(dtReal);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function populateMenuBest(){
+    const d = Persist.data;
+    document.getElementById('menuBest').innerHTML = `
+      <div class="stat-box"><div class="v">${d.best.score}</div><div class="k">best score</div></div>
+      <div class="stat-box"><div class="v">${d.deepestPhase}</div><div class="k">deepest phase</div></div>
+      <div class="stat-box"><div class="v">${d.longestComboStreak}</div><div class="k">best combo</div></div>
+      <div class="stat-box"><div class="v gold">${d.flux}</div><div class="k">flux</div></div>
+    `;
+  }
+
+  function start(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    document.getElementById('deathOverlay').classList.remove('show');
+    resize();
+    reset();
+    state = 'playing';
+    lastTime = performance.now();
+    accumulator = 0;
+    Music.start();
+    Events.emit('run_start');
+  }
+  function togglePause(){
+    if(state === 'playing'){
+      state = 'paused';
+      document.getElementById('pauseOverlay').classList.add('show');
+    } else if(state === 'paused'){
+      state = 'playing';
+      document.getElementById('pauseOverlay').classList.remove('show');
+      lastTime = performance.now();
+    }
+  }
+  function abandonRun(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    Music.stop();
+    toMenu();
+  }
+  function toMenu(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    document.getElementById('deathOverlay').classList.remove('show');
+    state = 'menu';
+    populateMenuBest();
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  function endRun(){
+    state = 'ended';
+    const isRecord = run.score > (Persist.data.best.score || 0);
+    if(isRecord) Persist.data.best.score = run.score;
+    if(run.t > (Persist.data.best.time || 0)) Persist.data.best.time = run.t;
+    Persist.data.totalRuns++;
+    if(run.flawless) Persist.data.flawlessRuns++;
+    if(run.phase + 1 > Persist.data.deepestPhase) Persist.data.deepestPhase = run.phase + 1;
+    if(run.maxWellsAtOnce > Persist.data.maxWellsAtOnce) Persist.data.maxWellsAtOnce = run.maxWellsAtOnce;
+    // Flux = floor(finalScore/50), same Wardfall Shards formula, deliberately
+    // decoupled from in-run scoring multipliers (§5 / §6's boundedness proof).
+    const fluxEarned = Math.floor(run.score / 50);
+    Persist.data.flux += fluxEarned;
+    Persist.save();
+    Events.emit('run_end', { score: run.score, time: run.t, captures: run.captures, isRecord });
+
+    document.getElementById('dTime').textContent = fmtTime(run.t);
+    document.getElementById('dCaptures').textContent = run.captures;
+    document.getElementById('dScore').textContent = run.score;
+    document.getElementById('dFlux').textContent = '+' + fluxEarned;
+    document.getElementById('dRecord').textContent = isRecord ? '✦ NEW BEST SCORE ✦' : '';
+    const panel = document.querySelector('#deathOverlay .panel');
+    if(panel) panel.classList.toggle('new-best-entrance', isRecord);
+
+    Achievements.checkAll({
+      totalCaptures: run.captures,
+      largestMassCaptured: Persist.data.largestMassCaptured,
+      longestComboStreak: Persist.data.longestComboStreak,
+      score: run.score,
+      phaseReached: run.phase + 1,
+      flawless: run.flawless,
+      tookVolatileDamage: run.tookVolatileDamage,
+      capturedSwift: run.capturedSwift,
+      maxWellsAtOnce: run.maxWellsAtOnce,
+      lifetimeCaptures: Persist.data.lifetimeCaptures,
+    });
+    document.getElementById('deathOverlay').classList.add('show');
+  }
+  function init(){
+    resize();
+    cinder = freshCinder(); wells = []; debris = []; run = freshRun();
+    state = 'menu';
+    populateMenuBest();
+    requestAnimationFrame(frame);
+  }
+
+  return {
+    init, start, togglePause, endRun, abandonRun, toMenu,
+    refreshCosmetics: buildStars,
+    get state(){ return state; },
+    get run(){ return run; },
+    get cinder(){ return cinder; },
+    get wells(){ return wells; },
+    HULL_HP_MAX,
+    get systemEnergy(){ return systemEnergyEMA; },
+    get hullMargin(){ return cinder ? clamp(cinder.hull / HULL_HP_MAX, 0, 1) : 1; },
+    _test: {
+      pullAt, wellMult, comboMult, spawnDebris, launchWell, phaseFor, PHASES,
+      CAPTURE_BASE, WELL_STEP, WELL_CAP, COMBO_STEP, COMBO_CAP, FUSION_BONUS,
+      MASS_MAX, HAZARD_IMPACT_MULT,
+      get wells(){ return wells; },
+      get debris(){ return debris; },
+      setAim: (sx,sy,cx,cy) => { aimStart.x=sx; aimStart.y=sy; aimCur.x=cx; aimCur.y=cy; },
+    }
+  };
+})();
+
+/* =====================================================================
+   MUSIC — Sigil Chain's scoped base (master → compressor → destination,
+   rampGain/bell()/shared convolution reverb) plus §4's three additions:
+   a continuous filtered drone/pad, a look-ahead tempo-scheduler pulse
+   layer, and a sidechain duck bus. Two live mood-engine signals —
+   systemEnergy, hullMargin — both read straight off Game, zero extra
+   bookkeeping. No distortion (kept out of this game's identity per §4).
+===================================================================== */
+const Music = (function(){
+  let ctx, master, compressor, musicGain, sfxGain, duckBus, reverb, reverbSend;
+  let muted = false;
+
+  let droneOscs = null, droneFilter = null, droneGain = null;
+  let tensionOsc = null, tensionGain = null;
+  let pulseGain = null, overtoneGain = null, fullLayerGain = null;
+  let isDroneActive = false; // gates the one per-frame droneFilter.frequency
+                              // write (§4's bug-prevention note) — flipped
+                              // false in the same call that starts the
+                              // game-over fade.
+
+  const MAX_MERGE_STEP = 6;
+  let mergeStep = 0;
+  let energyTier = -1, hullTier = -1, hullWarned = false;
+  let lookaheadHandle = null, nextNoteTime = 0, subIdx = 0;
+  const SCHEDULE_AHEAD = 0.12, LOOKAHEAD_MS = 25;
+  const ROOT = 110; // "the void humming" register
+
+  function ensureCtx(){
+    if(ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.5;
+    compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -20; compressor.knee.value = 12; compressor.ratio.value = 4;
+    compressor.attack.value = 0.003; compressor.release.value = 0.25;
+    master.connect(compressor); compressor.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = Persist.data.settings.musicVol; musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = Persist.data.settings.sfxVol; sfxGain.connect(master);
+    duckBus = ctx.createGain(); duckBus.gain.value = 1; duckBus.connect(musicGain);
+    reverb = ctx.createConvolver();
+    const irLen = Math.floor(ctx.sampleRate * 0.9);
+    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for(let ch=0; ch<2; ch++){ const d=irBuf.getChannelData(ch); for(let i=0;i<irLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/irLen,2.2); }
+    reverb.buffer = irBuf;
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.3;
+    reverb.connect(reverbSend); reverbSend.connect(master);
+  }
+
+  // cancel-then-set-then-ramp — avoids the "dying sticks the music" footgun
+  // (an unqueued ramp silently losing to an already-scheduled one).
+  function rampGain(param, target, seconds){
+    const t = ctx.currentTime;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(target, t + seconds);
+  }
+  function duckPump(t){
+    duckBus.gain.cancelScheduledValues(t);
+    duckBus.gain.setValueAtTime(1, t);
+    duckBus.gain.linearRampToValueAtTime(0.3, t + 0.03);
+    duckBus.gain.exponentialRampToValueAtTime(1, t + 0.3);
+  }
+  function bell(freq, dur, vol){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    duckPump(t);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.22, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 1.0));
+    g.connect(sfxGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.22;
+    g.connect(wet); wet.connect(reverb);
+    const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq;
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.01;
+    const g2 = ctx.createGain(); g2.gain.value = 0.28;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    o1.start(t); o2.start(t);
+    o1.stop(t + (dur||1.0) + 0.05); o2.stop(t + (dur||1.0) + 0.05);
+  }
+  // heavier = lower, lighter = higher — the direct physical intuition (§4)
+  function massToFreq(mass){
+    const t = clamp((mass - 1) / 7, 0, 1);
+    const fHigh = 660, fLow = 165; // two-octave span
+    return fHigh * Math.pow(fLow / fHigh, t);
+  }
+  // three-note "infall" cell: descend a fourth, settle a step below —
+  // mirrors a particle's orbit decaying into a well (§4).
+  function motif(baseFreq, ascendingInverted){
+    const n1 = baseFreq;
+    const n2 = n1 * Math.pow(2, -5/12);
+    const n3 = n2 * Math.pow(2, -2/12);
+    const seq = ascendingInverted ? [n3, n2, n1] : [n1, n2, n3];
+    seq.forEach((f, i) => setTimeout(() => bell(f, 0.5, 0.2), i * 180));
+  }
+
+  function initDrone(){
+    if(droneOscs) return;
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 220;
+    droneGain = ctx.createGain(); droneGain.gain.value = 0;
+    droneFilter.connect(droneGain); droneGain.connect(duckBus);
+    droneOscs = [ROOT, ROOT*1.5].map(f => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const og = ctx.createGain(); og.gain.value = f === ROOT ? 0.6 : 0.35;
+      o.connect(og); og.connect(droneFilter); o.start();
+      return o;
+    });
+    // harmonic-tension layer — silent until hullMargin thresholds fade it in
+    tensionGain = ctx.createGain(); tensionGain.gain.value = 0;
+    tensionGain.connect(droneFilter);
+    tensionOsc = ctx.createOscillator(); tensionOsc.type = 'sine';
+    tensionOsc.frequency.value = ROOT * Math.pow(2, 1/12); // detuned minor 2nd above root
+    tensionOsc.connect(tensionGain); tensionOsc.start();
+
+    pulseGain = ctx.createGain(); pulseGain.gain.value = 0; pulseGain.connect(duckBus);
+    overtoneGain = ctx.createGain(); overtoneGain.gain.value = 0; overtoneGain.connect(duckBus);
+    fullLayerGain = ctx.createGain(); fullLayerGain.gain.value = 0; fullLayerGain.connect(duckBus);
+  }
+
+  function pulseNote(t, freq, vol, bus){
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    g.connect(bus);
+    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = freq;
+    o.connect(g); o.start(t); o.stop(t + 0.2);
+  }
+
+  function bpmFromEnergy(e){ return 84 + (132 - 84) * clamp(e, 0, 1); }
+
+  function scheduleTick(){
+    if(!ctx || !isDroneActive) return;
+    const energy = Game.systemEnergy, margin = Game.hullMargin;
+
+    // Filter cutoff — the one true continuous per-frame direct .value
+    // write in this design (§4), gated by isDroneActive.
+    droneFilter.frequency.value = 220 + (3200 - 220) * clamp(energy, 0, 1);
+
+    // Instrumentation density — discrete tier crossings only, one-shot
+    // rampGain per crossing (never a per-frame gain write).
+    const tier = energy < 0.35 ? 0 : energy < 0.65 ? 1 : energy < 0.9 ? 2 : 3;
+    if(tier !== energyTier){
+      energyTier = tier;
+      rampGain(pulseGain.gain, tier >= 1 ? 0.4 : 0, 0.6);
+      rampGain(overtoneGain.gain, tier >= 2 ? 0.3 : 0, 0.6);
+      rampGain(fullLayerGain.gain, tier >= 3 ? 0.3 : 0, 0.6);
+    }
+
+    // Harmonic tension — discrete thresholds on hullMargin (open 5th at
+    // margin ≥0.9, tension fades in as margin drops toward 0).
+    const ht = margin >= 0.9 ? 0 : margin >= 0.5 ? 1 : 2;
+    if(ht !== hullTier){
+      hullTier = ht;
+      rampGain(tensionGain.gain, ht === 0 ? 0 : ht === 1 ? 0.12 : 0.35, 1.2);
+      if(ht === 2 && !hullWarned){ hullWarned = true; bell(90, 1.1, 0.3); }
+      if(ht < 2) hullWarned = false;
+    }
+  }
+
+  function schedulerLoop(){
+    if(!ctx || !isDroneActive) return;
+    const beatDur = 60 / bpmFromEnergy(Game.systemEnergy);
+    const subDiv = energyTier <= 1 ? 1 : energyTier === 2 ? 2 : 4; // subdivision tightens with density
+    const noteDur = beatDur / subDiv;
+    while(nextNoteTime < ctx.currentTime + SCHEDULE_AHEAD){
+      if(energyTier >= 1) pulseNote(nextNoteTime, ROOT*2, 0.12, pulseGain);
+      if(energyTier >= 2 && subIdx % 2 === 0) pulseNote(nextNoteTime, ROOT*3, 0.08, overtoneGain);
+      if(energyTier >= 3) pulseNote(nextNoteTime, ROOT*4, 0.06, fullLayerGain);
+      subIdx++;
+      nextNoteTime += noteDur;
+    }
+  }
+
+  function startScheduler(){
+    if(lookaheadHandle) return;
+    nextNoteTime = ctx.currentTime;
+    subIdx = 0;
+    lookaheadHandle = setInterval(() => { scheduleTick(); schedulerLoop(); }, LOOKAHEAD_MS);
+  }
+  function stopScheduler(){
+    if(lookaheadHandle){ clearInterval(lookaheadHandle); lookaheadHandle = null; }
+  }
+
+  // ---- Stinger map (§4) --------------------------------------------------
+  function stingerWellSpawn(){ if(ctx && !muted) motif(330, true); }
+  function stingerWellDespawn(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.16, t + 0.6); // slow release, mirrors the spawn attack reversed
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 220;
+    o.connect(g); o.start(t); o.stop(t + 1.0);
+  }
+  function stingerCapture(mass){ bell(massToFreq(mass), 0.4, 0.22); }
+  function stingerFusion(){
+    mergeStep = Math.min(mergeStep + 1, MAX_MERGE_STEP);
+    bell(220 * Math.pow(2, mergeStep/12), 0.35, 0.18 + mergeStep*0.01);
+  }
+  function stingerGameOver(){
+    if(!ctx) return;
+    isDroneActive = false; // gate off in the same call that starts the fade
+    stopScheduler();
+    rampGain(droneGain.gain, 0, 1.4);
+    rampGain(pulseGain.gain, 0, 1.0);
+    rampGain(overtoneGain.gain, 0, 1.0);
+    rampGain(fullLayerGain.gain, 0, 1.0);
+    rampGain(tensionGain.gain, 0, 1.0);
+    motif(220, false); // full phrase resolves once, unhurried
+  }
+  // reused verbatim as a cross-game studio convention (Wardfall's
+  // established bright ascending two-note flourish, i*900 stagger).
+  function stingerAchievement(i){
+    setTimeout(() => {
+      bell(660, 0.35, 0.22);
+      setTimeout(() => bell(880, 0.4, 0.24), 140);
+    }, (i||0) * 900);
+  }
+
+  function start(){
+    ensureCtx();
+    if(ctx.state === 'suspended') ctx.resume();
+    initDrone();
+    isDroneActive = true;
+    mergeStep = 0; energyTier = -1; hullTier = -1; hullWarned = false;
+    rampGain(droneGain.gain, 0.4, 1.0);
+    startScheduler();
+  }
+  function stop(){
+    isDroneActive = false;
+    stopScheduler();
+    if(droneGain) rampGain(droneGain.gain, 0, 0.6);
+    if(pulseGain) rampGain(pulseGain.gain, 0, 0.6);
+    if(overtoneGain) rampGain(overtoneGain.gain, 0, 0.6);
+    if(fullLayerGain) rampGain(fullLayerGain.gain, 0, 0.6);
+    if(tensionGain) rampGain(tensionGain.gain, 0, 0.6);
+  }
+  function setMuted(m){ muted = m; if(master) master.gain.value = m ? 0 : 0.5; }
+  function isMuted(){ return muted; }
+  function toggleMute(){ setMuted(!muted); return muted; }
+  function setMusicVol(v){ v = +v; if(musicGain) musicGain.gain.value = v; Persist.data.settings.musicVol = v; Persist.save(); }
+  function setSfxVol(v){ v = +v; if(sfxGain) sfxGain.gain.value = v; Persist.data.settings.sfxVol = v; Persist.save(); }
+
+  Events.on('well_launch', stingerWellSpawn);
+  Events.on('well_expire', stingerWellDespawn);
+  Events.on('capture', d => stingerCapture(d.mass));
+  Events.on('fusion', stingerFusion);
+  Events.on('run_start', () => { mergeStep = 0; });
+  Events.on('run_end', stingerGameOver);
+
+  return {
+    start, stop, setMuted, isMuted, toggleMute, setMusicVol, setSfxVol, stingerAchievement,
+    ensureCtx,
+    _test: {
+      massToFreq, bpmFromEnergy, MAX_MERGE_STEP,
+      get energyTier(){return energyTier;}, get hullTier(){return hullTier;},
+      isDroneActive: () => isDroneActive,
+      droneGainValue: () => droneGain ? droneGain.gain.value : null,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+    },
+  };
+})();
+
+/* =====================================================================
+   SETTINGS — same shape as wardfall.html's Settings module: system
+   prefers-reduced-motion tracked live, an explicit override on top,
+   applied as a body class Game/CSS both key off.
+===================================================================== */
+const Settings = (function(){
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let systemReducedMotion = mq.matches;
+  mq.addEventListener('change', e => { systemReducedMotion = e.matches; applyReducedMotionClass(); });
+  function reducedMotion(){
+    const override = Persist.data.settings.reducedMotion;
+    return override === null ? systemReducedMotion : override;
+  }
+  function applyReducedMotionClass(){ document.body.classList.toggle('reduced-motion', reducedMotion()); }
+  let openedFromMenu = false;
+  function open(){
+    openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
+    if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
+    else if(Game.state === 'playing') Game.togglePause();
+    document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
+    document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
+    document.getElementById('reducedMotionToggle').checked = reducedMotion();
+    document.getElementById('settingsOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('settingsOverlay').classList.remove('show');
+    if(openedFromMenu) document.getElementById('menuOverlay').classList.add('show');
+  }
+  function setMusicVol(v){ Music.setMusicVol(v); }
+  function setSfxVol(v){ Music.setSfxVol(v); }
+  function setReducedMotion(checked){
+    Persist.data.settings.reducedMotion = checked;
+    Persist.save();
+    applyReducedMotionClass();
+  }
+  applyReducedMotionClass();
+  return { open, close, setMusicVol, setSfxVol, setReducedMotion, reducedMotion };
+})();
+
+/* =====================================================================
+   ACHIEVEMENTS — same DEFS/checkAll/toast shape as the sibling games
+   (wardfall.html:1433-1491), first-class from day one per §5.
+===================================================================== */
+const Achievements = (function(){
+  const DEFS = [
+    { id:'first_capture', name:'First Capture', desc:'Capture your first piece of debris.', check:d=>d.totalCaptures>=1 },
+    { id:'large_fusion', name:'Mass Cascade', desc:'Capture a fused particle at the mass cap (8).', check:d=>d.largestMassCaptured>=8 },
+    { id:'capture_streak', name:'Chain Reaction', desc:'Reach an 8-capture combo streak.', check:d=>d.longestComboStreak>=8 },
+    { id:'volatile_survived', name:'Close Call', desc:'Take a Volatile hit and finish the run anyway.', check:d=>d.tookVolatileDamage },
+    { id:'swift_captured', name:'Quick Hands', desc:'Capture a Swift particle.', check:d=>d.capturedSwift },
+    { id:'survival_phase', name:'Deep Field', desc:'Survive into Phase 5.', check:d=>d.phaseReached>=5 },
+    { id:'score_milestone', name:'High Infall', desc:'Score 3000 or more in one run.', check:d=>d.score>=3000 },
+    { id:'flawless_hull', name:'Untouched', desc:'Finish a run without taking hull damage.', check:d=>d.flawless },
+    { id:'well_master', name:'Triple Anchor', desc:'Have all 3 Wells active at once.', check:d=>d.maxWellsAtOnce>=3 },
+    { id:'lifetime_captures', name:'Field Veteran', desc:'Capture 500 debris across all runs.', check:d=>d.lifetimeCaptures>=500 },
+  ];
+  function checkAll(summary){
+    if(!Persist.data.achievements) Persist.data.achievements = {};
+    const unlocked = [];
+    for(const a of DEFS){
+      if(!Persist.data.achievements[a.id] && a.check(summary)){
+        Persist.data.achievements[a.id] = { at: Date.now() };
+        unlocked.push(a);
+      }
+    }
+    if(unlocked.length){
+      Persist.save();
+      unlocked.forEach((a,i) => setTimeout(() => { toast(a); Music.stingerAchievement(i); }, i*900));
+    }
+    if(document.getElementById('achieveOverlay').classList.contains('show')) render();
+    return unlocked;
+  }
+  function toast(a){
+    const el = document.getElementById('achieveToast');
+    document.getElementById('achieveToastName').textContent = a.name;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3600);
+  }
+  function render(){
+    const d = Persist.data;
+    const unlockedCount = DEFS.filter(a => d.achievements && d.achievements[a.id]).length;
+    document.getElementById('achProgress').textContent = `${unlockedCount} / ${DEFS.length} unlocked`;
+    document.getElementById('achRows').innerHTML = DEFS.map(a => {
+      const on = !!(d.achievements && d.achievements[a.id]);
+      return `<div class="ach-row ${on?'unlocked':''}">
+        <div class="ach-icon">${on?'✦':'?'}</div>
+        <div class="ach-info">
+          <div class="ach-name">${escapeHtml(a.name)}</div>
+          <div class="ach-desc">${on ? escapeHtml(a.desc) : '???'}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('achieveOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('achieveOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, checkAll, render, DEFS };
+})();
+
+/* =====================================================================
+   SHOP — cosmetics only, never gameplay-affecting, per §5: this is what
+   keeps §6's scoring-boundedness proof valid regardless of shop depth.
+===================================================================== */
+const Shop = (function(){
+  const ITEMS = [
+    { id:'trail_ember', name:'Ember Trail', desc:'Warm gold-orange Cinder trail.', cost:40, cosmeticKey:'trail', cosmeticValue:'ember' },
+    { id:'trail_void', name:'Void Trail', desc:'Violet Cinder trail.', cost:40, cosmeticKey:'trail', cosmeticValue:'void' },
+    { id:'bg_starfall', name:'Starfall Background', desc:'A denser field of background stars.', cost:60, cosmeticKey:'bgTheme', cosmeticValue:'starfall' },
+  ];
+  function buy(id){
+    const item = ITEMS.find(i => i.id === id);
+    if(!item || Persist.data.owned[id] || Persist.data.flux < item.cost) return;
+    Persist.data.flux -= item.cost;
+    Persist.data.owned[id] = true;
+    Persist.save();
+    render();
+  }
+  function equip(id){
+    const item = ITEMS.find(i => i.id === id);
+    if(!item || !Persist.data.owned[id]) return;
+    Persist.data.cosmetics[item.cosmeticKey] = item.cosmeticValue;
+    Persist.save();
+    Game.refreshCosmetics();
+    render();
+  }
+  function render(){
+    document.getElementById('shopFlux').textContent = Persist.data.flux;
+    document.getElementById('shopRows').innerHTML = ITEMS.map(item => {
+      const owned = !!Persist.data.owned[item.id];
+      const active = owned && Persist.data.cosmetics[item.cosmeticKey] === item.cosmeticValue;
+      const affordable = Persist.data.flux >= item.cost;
+      let action;
+      if(!owned) action = `<button class="shop-buy" ${affordable?'':'disabled'} onclick="Shop.buy('${item.id}')">${item.cost} ◈</button>`;
+      else if(active) action = '<span style="color:var(--ok);font-family:var(--mono);font-size:.75rem;">ACTIVE</span>';
+      else action = `<button class="shop-buy" onclick="Shop.equip('${item.id}')">EQUIP</button>`;
+      return `<div class="shop-row ${owned?'owned':''} ${active?'active':''}">
+        <div><div style="font-weight:700;">${escapeHtml(item.name)}</div><div style="color:var(--ink-soft);font-size:.75rem;">${escapeHtml(item.desc)}</div></div>
+        ${action}
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('shopOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('shopOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, buy, equip, ITEMS };
+})();
+
+/* =====================================================================
+   FULLSCREEN
+===================================================================== */
+const FullscreenCtrl = (function(){
+  function toggle(){
+    try{
+      if(!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(()=>{});
+      else document.exitFullscreen && document.exitFullscreen().catch(()=>{});
+    }catch(e){}
+  }
+  return { toggle };
+})();
+
+/* =====================================================================
+   BUG REPORTER — same shape as iridescentcosmology.html:5116-5184.
+   No prior-name migration needed (Infall is a new game, not a rename).
+   escapeHtml() on every rendered field (title/details are user-typed).
+===================================================================== */
+const Bugrep = (function(){
+  const KEY = 'bugreports-infall_v1';
+  let selCat = 'Bug';
+  function loadAll(){
+    try{ return JSON.parse(localStorage.getItem(KEY) || '[]'); }catch(e){ return []; }
+  }
+  function store(l){ try{ localStorage.setItem(KEY, JSON.stringify(l)); }catch(e){} }
+  function badge(){
+    const l = loadAll();
+    const b = document.getElementById('bugBadge');
+    b.style.display = l.length ? 'flex' : 'none';
+    b.textContent = l.length;
+  }
+  function open(){
+    if(Game.state === 'playing') Game.togglePause();
+    renderList();
+    document.getElementById('bugOverlay').classList.add('show');
+  }
+  function close(){ document.getElementById('bugOverlay').classList.remove('show'); }
+  function cat(btn){
+    document.querySelectorAll('.bugcat .btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    selCat = btn.dataset.cat;
+  }
+  function save(){
+    const title = document.getElementById('bugTitle').value.trim();
+    const details = document.getElementById('bugDetails').value.trim();
+    if(!title && !details){ alert('Add a title or details first.'); return; }
+    const l = loadAll();
+    l.push({ category:selCat, title:title||'(no title)', details, document:'infall_v1', timestamp:new Date().toISOString() });
+    store(l);
+    document.getElementById('bugTitle').value = '';
+    document.getElementById('bugDetails').value = '';
+    renderList(); badge();
+  }
+  function renderList(){
+    const l = loadAll();
+    document.getElementById('bugList').innerHTML = l.map((r,i) => `
+      <div class="bug-item"><span class="del" onclick="Bugrep.del(${i})">remove</span>
+        <div class="cat">${escapeHtml(r.category)}</div><strong>${escapeHtml(r.title)}</strong>
+        ${r.details ? `<div style="opacity:.75;margin-top:2px;">${escapeHtml(r.details)}</div>` : ''}
+      </div>`).join('');
+    document.getElementById('bugExportBtn').style.display = l.length ? 'block' : 'none';
+  }
+  function del(i){ const l = loadAll(); l.splice(i,1); store(l); renderList(); badge(); }
+  function exportAll(){
+    const l = loadAll();
+    if(!l.length) return;
+    const blob = new Blob([JSON.stringify({exportedFrom:'infall_v1', exportedAt:new Date().toISOString(), reports:l}, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bugreports_infall_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  }
+  badge();
+  return { open, close, cat, save, del, exportAll };
+})();
+
+Game.init();
+
+// PWA registration — see the pwa-offline-games skill. Built in from the
+// first commit (Games 1-2 both retrofitted this, Sigil Chain/Wardfall
+// build it in). Explicit scope keeps this service worker from ever
+// intercepting fetches for the other games sharing this repo root.
+// REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
+// requires bumping infall-sw.js's CACHE_NAME in the same commit, or
+// returning visitors keep seeing the old page indefinitely.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./infall-sw.js', { scope: './infall.html' }).catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
