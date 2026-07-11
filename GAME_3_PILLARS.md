@@ -158,11 +158,19 @@ Game over: ceiling reaches the cannon row. Score is the persisted best-run metri
 
 ## 3. Visual identity
 
-Full audit confirmed the existing cross-game `:root{}` token block
-(`--bg`, `--panel`, `--panel2`, `--ink`, `--ink-mid`, `--ink-soft`, `--neon`,
-`--neon2`, `--gold`, `--danger`, `--ok`, `--border`, font stacks) is byte-identical
-across `index.html`/`sigilchain.html`/`iridescentcosmology.html` — Wardfall adopts this set
-as-is, adds nothing that duplicates an existing value under a new name.
+**Correction, 2026-07-11**: this section previously claimed the full token
+block including `--danger`/`--ok` was byte-identical across all three files.
+Checked directly against the live files rather than re-asserted: `--danger`
+and `--ok` are **not** declared in `index.html` at all — only
+`sigilchain.html` and `iridescentcosmology.html` declare them.
+`index.html` also uniquely declares `--bg-deep`, and `iridescentcosmology.html`
+uniquely declares `--radius`. What's actually byte-identical across all
+three is a 13-token core: `--bg`, `--panel`, `--panel2`, `--ink`,
+`--ink-mid`, `--ink-soft`, `--neon`, `--neon2`, `--gold`, `--border`, and
+the three font-stack vars (`--mono`, `--display`, `--body-font`). Wardfall
+adopts that real shared core as-is, plus `--danger`/`--ok` from the two
+games that have them (Wardfall's own file declares both), adding nothing
+that duplicates an existing value under a new name.
 
 ### Regular-orb palette — the color-language rule is more load-bearing here than in either prior game
 A real RGB-distance audit (not eyeballing) found the safe zone clearing the
@@ -176,9 +184,12 @@ rather than inventing new hexes:
    band by 130+).
 2. **Amethyst** — reuse `var(--neon2)` / `#b98aff` directly.
 3. **Deep teal** — a new hex (`~#2d8f9e`), deliberately pushed further from `--ok`
-   (140+ units) than Sigil Chain's own existing rune-wind/rune-earth margin
+   (**122.3 units, independently recomputed 2026-07-11 — corrects this
+   section's original "140+" claim, which was asserted rather than
+   calculated**) than Sigil Chain's own existing rune-wind/rune-earth margin
    (72-94 units) — Wardfall should not import the studio's existing weak spot,
-   it should improve on it.
+   it should improve on it. 122.3 still clears that margin comfortably; the
+   number was wrong, the decision it supported wasn't.
 
 A 4th color (candidate: indigo `#5c6fe0`) is **not approved for initial ship** —
 it's numerically safe against the reward/danger/ok bands but too close to
