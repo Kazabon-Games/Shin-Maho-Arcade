@@ -95,7 +95,7 @@ studio's compounding-scale lesson, applied here to geometry instead of a stat.
 Landing cell resolved via pixel→nearest-hex-cell snap (new, bounded local search —
 no closed-form inverse exists for an offset hex grid).
 
-Gamepad: reuse Wonderland's poll-based `Input` pattern (`wonderland.html:1539-1620`,
+Gamepad: reuse Wonderland's poll-based `Input` pattern (`iridescentcosmology.html:1560-1641`,
 0.15 deadzone, rising-edge fire-button guard) for left-stick aim + fire button.
 **Decision**: pointer-aim and stick-aim are an explicit mode switch (whichever
 device last produced input owns the aim state), not blended per-frame the way
@@ -161,7 +161,7 @@ Game over: ceiling reaches the cannon row. Score is the persisted best-run metri
 Full audit confirmed the existing cross-game `:root{}` token block
 (`--bg`, `--panel`, `--panel2`, `--ink`, `--ink-mid`, `--ink-soft`, `--neon`,
 `--neon2`, `--gold`, `--danger`, `--ok`, `--border`, font stacks) is byte-identical
-across `index.html`/`sigilchain.html`/`wonderland.html` — Wardfall adopts this set
+across `index.html`/`sigilchain.html`/`iridescentcosmology.html` — Wardfall adopts this set
 as-is, adds nothing that duplicates an existing value under a new name.
 
 ### Regular-orb palette — the color-language rule is more load-bearing here than in either prior game
@@ -240,7 +240,7 @@ animations for win/level-clear vs. loss/board-overflow (the `panelPop` vs.
 animation for both emotional registers. The censer itself needs its own
 recoil/muzzle-punch juice on fire, separate from the orb-landing pop — the direct
 analogue of the enemy-attack-anticipation gap Wonderland shipped without and had
-to retrofit (`wonderland.html:3333-3341`); this game's one "attack" is the censer
+to retrofit (`iridescentcosmology.html:3354-3362`); this game's one "attack" is the censer
 firing, and it needs its own signature-action feedback, not just a landing-impact
 reaction. Bomb detonation gets its own shockwave/flash distinct from a plain
 3-match pop; stone's crack-progression visibly reacts on *each* of its two hits,
@@ -248,7 +248,7 @@ not just the final clear.
 
 ### Accessibility (designed in, not retrofitted this time)
 `prefers-reduced-motion` split exactly as already proven
-(`sigilchain.html:73-78`, `wonderland.html:3346-3347`): CSS-level reduction only
+(`sigilchain.html:73-78`, `iridescentcosmology.html:3367-3368`): CSS-level reduction only
 touches overlay/panel entrance; canvas-drawn juice gets **amplitude-reduced**, not
 zeroed or delayed; anything informational — the trajectory/aim-guide line, stone
 crack visibility, bomb-radius telegraph — stays **completely untouched** by the
@@ -272,7 +272,7 @@ between threshold crossings and can't carry that ongoing tension. No duck bus
 
 **Stinger map** (all via the shared `bell()` primitive except where noted):
 - Shot fire — a short percussive click/noise burst (Wonderland's `playKick`-click
-  style, `wonderland.html:4364-4384`), *not* `bell()` — it's a repeated action tick,
+  style, `iridescentcosmology.html:4385-4405`), *not* `bell()` — it's a repeated action tick,
   not an accent event, and would wear out fast if melodic.
 - Orb attach, no match — soft, deliberately low-key `bell()`, minimal reverb send,
   so a miss reads as neutral, not an accidental mini-reward.
@@ -388,7 +388,7 @@ real code exists**:
 - Module shape mirrors Sigil Chain's IIFE convention: `Persist`, `Events`,
   `Grid`, `Shooter`, `Match`, `Queue`, `Game` (fixed-timestep loop, same
   `SIM_DT=1/60`/`MAX_STEPS=5` spiral-of-death-guard convention as
-  `wonderland.html:3468-3487`/`sigilchain.html:833-845`), `Juice`, `Music`,
+  `iridescentcosmology.html:3489-3508`/`sigilchain.html:833-845`), `Juice`, `Music`,
   `Settings`, `Achievements`, `FullscreenCtrl`.
 - **Watch scope**: this module list (11) is closer to Wonderland's count (13)
   than Sigil Chain's (9) — worth tracking as a soft ceiling, since "expand

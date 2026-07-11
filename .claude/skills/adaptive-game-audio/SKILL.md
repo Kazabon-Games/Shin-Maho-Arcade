@@ -7,7 +7,7 @@ description: Building, extending, or debugging synthesized (no audio-file-asset)
 
 This studio's games are 100% synthesized — no audio file assets, no
 samples, everything built from oscillators/noise buffers/filters at
-runtime. Reference implementation: `wonderland.html`'s `Music` module
+runtime. Reference implementation: `iridescentcosmology.html`'s `Music` module
 (the full technique) and `sigilchain.html`'s `Music` module (the same
 primitives, deliberately reduced graph — see "How much do you actually
 need" below). Read both before writing new audio code; don't invent a
@@ -35,7 +35,7 @@ already-scheduled future one is undefined behavior; in practice the fade
 was silently dropped and the drone never actually stopped.
 
 **The fix, and the mandatory idiom for every gain change in either game's
-`Music` module** (`wonderland.html:4287-4301` / near-identical in
+`Music` module** (`iridescentcosmology.html:4308-4322` / near-identical in
 `sigilchain.html`'s `rampGain`):
 
 ```js
@@ -52,7 +52,7 @@ skips this is the exact bug class that already shipped once.
 
 ## Reference techniques (both proven in production, cite line numbers when reusing)
 
-**Sidechain duck-bus** (`duckBus`/`duckPump`, `wonderland.html` Music
+**Sidechain duck-bus** (`duckBus`/`duckPump`, `iridescentcosmology.html` Music
 module) — the actual "pumping produced mix" trick: route the pad/drone
 through an extra gain node (`duckBus`) instead of straight to the music
 bus; on every kick hit, briefly duck that gain down and let it recover

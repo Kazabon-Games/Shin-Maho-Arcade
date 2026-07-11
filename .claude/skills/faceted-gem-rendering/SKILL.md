@@ -14,7 +14,7 @@ generating vertices for anything new.
 
 ## The technique itself — `shadeHex` + alternating-facet fill
 
-`shadeHex(hex, dLight, dSat)` (`wonderland.html:1867-1885`, copied verbatim
+`shadeHex(hex, dLight, dSat)` (`iridescentcosmology.html:1888-1906`, copied verbatim
 into `sigilchain.html`): converts a base hex color to HSL, shifts
 lightness/saturation, returns a new `hsl()` string. Pure, stateless,
 one line to call.
@@ -36,7 +36,7 @@ radial gradient: center → base color → `shadeHex(color, -18, 0)` at the
 edge, `shadeHex(color, +26, +10)` at the center — same lightness-shift
 tool, gradient stops instead of wedges.
 
-Reference implementations: `wonderland.html`'s `buildEnemySprite` (enemies)
+Reference implementations: `iridescentcosmology.html`'s `buildEnemySprite` (enemies)
 and `RAMIEL_VERTS` rendering (the boss), `sigilchain.html`'s
 `buildRuneSprite`/`buildCursedSprite`.
 

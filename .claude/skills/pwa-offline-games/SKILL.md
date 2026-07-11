@@ -76,10 +76,10 @@ if('serviceWorker' in navigator){
 All of this studio's games live in the **same repo-root directory**, not
 separate subdirectories. A service worker's default scope is the directory
 containing its own script — registered with no `scope` override, a SW at
-`/wonderland-sw.js` would default to scope `/` and could intercept fetches
+`/iridescentcosmology-sw.js` would default to scope `/` and could intercept fetches
 for `sigilchain.html` and `index.html` too, silently breaking the other
 games. **Always pass an explicit `scope` naming the exact page** (e.g.
-`{ scope: './wonderland.html' }`) — Service Worker scope matching is a
+`{ scope: './iridescentcosmology.html' }`) — Service Worker scope matching is a
 URL-*prefix* match, not strictly a directory match, so scoping to a single
 HTML file's own path is valid and keeps each game's PWA fully independent
 of the others sharing its directory. Set the manifest's own `scope` field
