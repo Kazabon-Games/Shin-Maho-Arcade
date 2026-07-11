@@ -541,6 +541,15 @@ const Game = (function(){
   const HULL_HP_MAX = 100;                // §2
   const SWIFT_TIME_MULT = 2;              // §2
   const THRUST_ACCEL = 900;               // tunable — not numerically spec'd
+  // Real gap found via live screenshot verification (not spec'd, not caught
+  // by any of the earlier numeric/adversarial checks): with THRUST_ACCEL
+  // this high and DAMPING this gentle, sustained thrust in one direction
+  // had no terminal velocity — measured climbing 410 -> 1483 px/s over
+  // 2.6s of held input with no ceiling, crossing the whole arena in about
+  // a second and then sitting pinned against the wall. A uniform top-speed
+  // clamp on the Cinder (checked and applied every physics step, same as
+  // DAMPING) fixes this without adding a second force source.
+  const MAX_CINDER_SPEED = 420;           // tunable — not numerically spec'd
   // Uniform velocity damping, applied identically to Cinder/debris/well
   // projectiles — a single added constant, not a second force source, kept
   // deliberately small. Not in GAME_4_PILLARS.md; a playability addition
@@ -862,6 +871,11 @@ const Game = (function(){
       cinder.vx += (fx + inp.x * THRUST_ACCEL) * dt;
       cinder.vy += (fy + inp.y * THRUST_ACCEL) * dt;
       cinder.vx *= DAMPING; cinder.vy *= DAMPING;
+      const cinderSpeed = Math.hypot(cinder.vx, cinder.vy);
+      if(cinderSpeed > MAX_CINDER_SPEED){
+        const s = MAX_CINDER_SPEED / cinderSpeed;
+        cinder.vx *= s; cinder.vy *= s;
+      }
       if(cinder.thrustMag > 0.05 || Math.hypot(cinder.vx, cinder.vy) > 2){
         cinder.angle = Math.atan2(cinder.vy, cinder.vx);
       }
@@ -1026,7 +1040,11 @@ const Game = (function(){
     grad.addColorStop(0, center);
     grad.addColorStop(0.5, core);
     grad.addColorStop(1, edge);
-    ctx.globalAlpha = 0.22;
+    // Alpha bumped from an initial 0.22 (found via live screenshot to read
+    // as nearly invisible against --bg-deep at actual render size — a real
+    // legibility gap, not just an unlucky camera angle) up to a value that
+    // still reads as a translucent field, not a solid disc.
+    ctx.globalAlpha = 0.4;
     ctx.beginPath();
     ctx.arc(w.x, w.y, CAPTURE_RADIUS, 0, Math.PI*2);
     ctx.fillStyle = grad;
@@ -1052,9 +1070,9 @@ const Game = (function(){
 
     // core dot, dims as lifetime runs out
     ctx.beginPath();
-    ctx.arc(w.x, w.y, 6, 0, Math.PI*2);
+    ctx.arc(w.x, w.y, 9, 0, Math.PI*2);
     ctx.fillStyle = shadeHex(core, 20 * (1-life), 0);
-    ctx.shadowColor = core; ctx.shadowBlur = 12 * (1-life*0.6);
+    ctx.shadowColor = core; ctx.shadowBlur = 18 * (1-life*0.6);
     ctx.fill();
     ctx.shadowBlur = 0;
   }
@@ -1064,7 +1082,10 @@ const Game = (function(){
     let accent = null;
     if(d.type === 'volatile') accent = DANGER_REF;
     else if(d.type === 'swift') accent = SWIFT_ACCENT;
-    const r = 3 + d.mass * 1.6;
+    // Base radius/glow bumped from an initial 3+mass*1.6 with no shadowBlur
+    // — found via live screenshot to read as barely distinct from the
+    // background starfield at actual render size, a real legibility gap.
+    const r = 4.5 + d.mass * 1.8;
 
     if(accent){
       // danger/hazard-accent-on-near-black-base convention (§3.4) — the
@@ -1073,19 +1094,21 @@ const Game = (function(){
       ctx.arc(d.x, d.y, r, 0, Math.PI*2);
       ctx.fillStyle = '#0a0620';
       ctx.fill();
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = 2;
       ctx.strokeStyle = accent;
-      ctx.shadowColor = accent; ctx.shadowBlur = 8;
+      ctx.shadowColor = accent; ctx.shadowBlur = 12;
       ctx.stroke();
       ctx.shadowBlur = 0;
     } else {
+      ctx.shadowColor = shadeHex(base, 40, 10); ctx.shadowBlur = 6;
       ctx.beginPath();
       ctx.arc(d.x, d.y, r, 0, Math.PI*2);
       ctx.fillStyle = base;
       ctx.fill();
+      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.arc(d.x - r*0.3, d.y - r*0.3, r*0.4, 0, Math.PI*2);
-      ctx.fillStyle = shadeHex(base, 22, 8);
+      ctx.fillStyle = shadeHex(base, 32, 12);
       ctx.fill();
     }
 
