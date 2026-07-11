@@ -1,7 +1,7 @@
 // Wardfall service worker — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale. Bump CACHE_NAME on any
 // meaningful deploy.
-const CACHE_NAME = 'wardfall-v1';
+const CACHE_NAME = 'wardfall-v2'; // bumped: wardfall.html's citation comments were corrected (stale wonderland.html:LINE-RANGE pointers) — no runtime behavior change, but the precached file's bytes did change, so §13 applies regardless
 const PRECACHE_URLS = ['./wardfall.html'];
 
 self.addEventListener('install', (e) => {

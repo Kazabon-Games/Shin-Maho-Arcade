@@ -2,7 +2,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'sigilchain-v1';
+const CACHE_NAME = 'sigilchain-v2'; // bumped: sigilchain.html's citation comments were corrected (stale wonderland.html:LINE-RANGE pointers) — no runtime behavior change, but the precached file's bytes did change, so §13 applies regardless
 const PRECACHE_URLS = ['./sigilchain.html'];
 
 self.addEventListener('install', (e) => {
