@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>WONDERLAND v2.6.1</title>
+<title>IRIDESCENT COSMOLOGY v2.7.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -14,10 +14,10 @@
      it rather than block on producing a real screenshot; a missing tag
      looks broken in a link preview, a missing image just degrades. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0612'/%3E%3Cpolygon points='16,4 24,16 16,28 8,16' fill='%23ffd76b'/%3E%3Cpolygon points='16,4 24,16 16,16' fill='%23ffcb5c'/%3E%3Cpolygon points='16,16 24,16 16,28' fill='%23e2b855'/%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="icons/wonderland-192.png">
-<link rel="manifest" href="wonderland.webmanifest">
-<meta name="description" content="WONDERLAND — dodge a swarm, auto-cast spells, level up, and survive to a boss fight in this browser survivor-roguelite from Kazabon Game Studio. Free to play instantly, no install.">
-<meta property="og:title" content="WONDERLAND — Shin Mahou Arcade">
+<link rel="apple-touch-icon" href="icons/iridescentcosmology-192.png">
+<link rel="manifest" href="iridescentcosmology.webmanifest">
+<meta name="description" content="IRIDESCENT COSMOLOGY — dodge a swarm, auto-cast spells, level up, and survive to a boss fight in this browser survivor-roguelite from Kazabon Game Studio. Free to play instantly, no install.">
+<meta property="og:title" content="IRIDESCENT COSMOLOGY — Shin Mahou Arcade">
 <meta property="og:description" content="A browser survivor-roguelite: dodge a swarm, auto-cast spells, level up, and survive to a boss fight. Instant play, no install.">
 <meta property="og:type" content="website">
 
@@ -26,8 +26,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
 <!--
-  WONDERLAND — CHANGE LOG
+  IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.7.0 — 2026-07-11 — Renamed WONDERLAND → IRIDESCENT COSMOLOGY studio-wide,
+                          resolving a naming collision with a separate Kazabon
+                          project also called Wonderland (the TTRPG narrative-
+                          state engine, unrelated to this arcade). "Iridescent
+                          Cosmology" was already this game's own stage subtitle,
+                          so this reuses an existing name rather than inventing
+                          one. Scope: file/asset names, all in-fiction UI copy
+                          (menu, pause, death, victory, achievements, settings),
+                          the music module's identity comments, the share-card
+                          canvas text, and the localStorage save/bug-report keys
+                          — the latter two with a one-time migration from their
+                          wonderland-era keys so returning players don't lose
+                          progress. Historical changelog entries below are left
+                          as written; they're a record of what was true at the
+                          time, not live documentation.
 
   v2.6.1 — 2026-07-05 — First real balance feedback from an actual playtest
                           (finally closing the loop the roadmap has been
@@ -1231,10 +1247,10 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay show" id="menuOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Main menu">
     <canvas id="crestCanvas" width="150" height="150" style="display:block;margin:0 auto 4px;"></canvas>
-    <h1>WONDERLAND</h1>
-    <div class="stage-badge">STAGE I &middot; IRIDESCENT COSMOLOGY</div>
-    <div class="tagline">the wonderland is open · survive its hunger</div>
-    <button class="btn primary" onclick="Game.start()">✦ &nbsp;OPEN THE WONDERLAND</button>
+    <h1>IRIDESCENT COSMOLOGY</h1>
+    <div class="stage-badge">STAGE I</div>
+    <div class="tagline">the cosmology is open · survive its hunger</div>
+    <button class="btn primary" onclick="Game.start()">✦ &nbsp;OPEN THE COSMOLOGY</button>
     <button class="btn gold" onclick="Shop.open()">📖 &nbsp;GRIMOIRE</button>
     <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
     <div class="stat-grid" id="menuBest"></div>
@@ -1256,16 +1272,16 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay" id="pauseOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
-    <div class="tagline">the wonderland waits · nothing moves until you do</div>
+    <div class="tagline">the cosmology waits · nothing moves until you do</div>
     <button class="btn primary" onclick="Game.togglePause()">RESUME</button>
-    <button class="btn" onclick="Game.abandonRun()">CLOSE THE WONDERLAND</button>
+    <button class="btn" onclick="Game.abandonRun()">CLOSE THE COSMOLOGY</button>
   </div>
 </div>
 
 <!-- DEATH -->
 <div class="overlay" id="deathOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Run ended">
-    <h2 style="color:var(--danger)">THE WONDERLAND CLOSES</h2>
+    <h2 style="color:var(--danger)">THE COSMOLOGY CLOSES</h2>
     <div class="tagline">the hunger was patient tonight · it will wait again</div>
     <div class="stat-grid">
       <div class="stat-box"><div class="v" id="dTime">0:00</div><div class="k">survived</div></div>
@@ -1284,7 +1300,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay" id="stageClearOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Stage cleared">
     <h2 style="color:var(--neon)">✦ STAGE I CLEARED ✦</h2>
-    <div class="tagline" style="margin-bottom:16px;">Ramiel is shattered. The Wonderland exhales.</div>
+    <div class="tagline" style="margin-bottom:16px;">Ramiel is shattered. The cosmology exhales.</div>
     <div class="stat-grid">
       <div class="stat-box"><div class="v" id="clearTime">0:00</div><div class="k">time to victory</div></div>
       <div class="stat-box"><div class="v" id="clearKills">0</div><div class="k">Husks destroyed</div></div>
@@ -1310,7 +1326,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <!-- ACHIEVEMENTS -->
 <div class="overlay" id="achieveOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Achievements">
-    <h2>✦ MEMORIES OF THE WONDERLAND ✦</h2>
+    <h2>✦ MEMORIES OF THE COSMOLOGY ✦</h2>
     <div class="tagline">what the hunger remembers of you</div>
     <div class="ach-progress" id="achProgress"></div>
     <div id="achRows"></div>
@@ -1338,7 +1354,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">WONDERLAND v2.6.1</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.7.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -1350,7 +1366,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay" id="settingsOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
     <h2>SETTINGS</h2>
-    <div class="tagline">tune the wonderland to you</div>
+    <div class="tagline">tune the cosmology to you</div>
     <div class="settings-row">
       <label for="musicVolSlider">Music volume</label>
       <input type="range" id="musicVolSlider" min="0" max="1" step="0.01" oninput="Settings.setMusicVol(this.value)">
@@ -1372,8 +1388,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
 /* =====================================================================
    PERSISTENCE
 ===================================================================== */
-const SAVE_KEY = 'wonderland-save-v1';
-const OLD_SAVE_KEY = 'drift-save-v1'; // pre-rename saves migrate forward once
+const SAVE_KEY = 'iridescentcosmology-save-v1';
+const OLD_SAVE_KEYS = ['wonderland-save-v1', 'drift-save-v1']; // pre-rename saves migrate forward once, checked newest-first
 const Persist = (function(){
   let data = {
     shards: 0,
@@ -1391,9 +1407,14 @@ const Persist = (function(){
     try{
       let raw = localStorage.getItem(SAVE_KEY);
       if(!raw){
-        // one-time migration from the DRIFT-era key so earned essence carries over
-        const old = localStorage.getItem(OLD_SAVE_KEY);
-        if(old){ raw = old; localStorage.setItem(SAVE_KEY, old); }
+        // one-time migration from a pre-rename key so earned essence carries
+        // over — checks wonderland-save-v1 first (the most recent prior
+        // name), then drift-save-v1 (the original pre-Wonderland key), so a
+        // returning player never appears to have lost progress.
+        for(const oldKey of OLD_SAVE_KEYS){
+          const old = localStorage.getItem(oldKey);
+          if(old){ raw = old; localStorage.setItem(SAVE_KEY, old); break; }
+        }
       }
       if(raw){ const p = JSON.parse(raw); Object.assign(data, p);
         if(!data.upgrades) data.upgrades = { vitality:0, output:0, thrusters:0, magnet:0, greed:0, shadow:0 };
@@ -3662,7 +3683,7 @@ const Game = (function(){
     tweenCountUp('dKills', kills);
     tweenCountUp('dLevel', level);
     tweenCountUp('dShards', total, { prefix:'+' });
-    document.getElementById('dRecord').textContent = newRecord ? '✦ LONGEST THE WONDERLAND HAS HELD ✦' : '';
+    document.getElementById('dRecord').textContent = newRecord ? '✦ LONGEST THE COSMOLOGY HAS HELD ✦' : '';
     document.getElementById('deathOverlay').classList.add('show');
     // captured for ShareCard — same finalized values the overlay itself
     // just displayed, not re-derived from formatted DOM text.
@@ -4157,16 +4178,16 @@ const Music = (function(){
                p5: LEAD_ROOT*1.4983, b6: LEAD_ROOT*1.5874, b7: LEAD_ROOT*1.7818,
                oct: LEAD_ROOT*2 };
 
-  // ---- THEME MOTIF — Wonderland's actual signature, the thing genuinely
-  // missing from every pass so far. Everything up to now (sections, sidechain,
-  // stereo width, clap) was production craft on top of a generic trance
-  // instrumental — nothing about it said "this is specifically Wonderland."
-  // A five-note rising gesture (root → 4th → 5th → b6 → octave) — reads as
-  // "a halo lifting," matches the game's own gold-halo/ascension imagery.
-  // Used quietly at the menu (establishing it before a run even starts),
-  // quoted at the top of the victory phrase, and available anywhere else
-  // a moment needs to say "this is Wonderland" rather than just "this is
-  // energetic."
+  // ---- THEME MOTIF — Iridescent Cosmology's actual signature, the thing
+  // genuinely missing from every pass so far. Everything up to now (sections,
+  // sidechain, stereo width, clap) was production craft on top of a generic
+  // trance instrumental — nothing about it said "this is specifically this
+  // game." A five-note rising gesture (root → 4th → 5th → b6 → octave) —
+  // reads as "a halo lifting," matches the game's own gold-halo/ascension
+  // imagery. Used quietly at the menu (establishing it before a run even
+  // starts), quoted at the top of the victory phrase, and available anywhere
+  // else a moment needs to say "this is Iridescent Cosmology" rather than
+  // just "this is energetic."
   const THEME_MOTIF = [LN.r, LN.p4, LN.p5, LN.b6, LN.oct];
 
   const LEAD_PHRASE = [
@@ -4433,8 +4454,8 @@ const Music = (function(){
 
     // crystalline shimmer — the actual identity fix. Without this, the
     // lead is a generic trance supersaw that could belong to any game; a
-    // sine + slightly-sharp overtone "glass" layer gives it Wonderland's
-    // own gem/halo character. It's most present when calm and recedes as
+    // sine + slightly-sharp overtone "glass" layer gives it Iridescent
+    // Cosmology's own gem/halo character. It's most present when calm and recedes as
     // intensity rises and the supersaw takes over — sonically the same
     // arc as the game itself: iridescent wonder giving way to swarm chaos,
     // not just a cosmetic layer.
@@ -4568,7 +4589,7 @@ const Music = (function(){
   }
 
   // victory — quotes the theme motif first (so a win explicitly says "this
-  // was Wonderland"), then resolves with the real chord progression
+  // was Iridescent Cosmology"), then resolves with the real chord progression
   // (bVII → b6 → v → i, landing on a full chord).
   function playVictoryPhrase(){
     if(!ctx || muted) return;
@@ -4717,7 +4738,7 @@ const Music = (function(){
   // D Phrygian color tones) but calmer and sparser. Now states the actual
   // THEME_MOTIF quietly, one note at a time on a slow cycle, instead of
   // picking random notes from the scale — the menu is where a player
-  // should first hear "this is Wonderland," not just "this is calm."
+  // should first hear "this is Iridescent Cosmology," not just "this is calm."
   function startMenuAmbience(){
     ensureCtx();
     if(ctx.state === 'suspended') ctx.resume();
@@ -4857,8 +4878,11 @@ const ShareCard = (function(){
 
     c.textAlign = 'center';
     c.fillStyle = '#ffd76b';
-    c.font = "bold 38px 'Cormorant Garamond', Georgia, serif";
-    c.fillText('WONDERLAND', cv.width/2, 66);
+    // smaller than the old 10-char "WONDERLAND" fit at — "IRIDESCENT
+    // COSMOLOGY" is roughly twice as many characters, sized down to stay
+    // clear of the 600px canvas edges rather than risk clipping.
+    c.font = "bold 28px 'Cormorant Garamond', Georgia, serif";
+    c.fillText('IRIDESCENT COSMOLOGY', cv.width/2, 66);
     c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
     c.fillStyle = '#c9b98f';
     c.fillText(stats.cleared ? 'Stage I cleared — Ramiel is shattered' : 'the hunger was patient tonight', cv.width/2, 92);
@@ -4890,14 +4914,14 @@ const ShareCard = (function(){
     const cv = buildCanvas(stats);
     cv.toBlob(async (blob) => {
       if(!blob) return;
-      const file = new File([blob], 'wonderland-run.png', { type:'image/png' });
+      const file = new File([blob], 'iridescentcosmology-run.png', { type:'image/png' });
       if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
-        try{ await navigator.share({ files:[file], title:'WONDERLAND', text:'My Wonderland run' }); return; }
+        try{ await navigator.share({ files:[file], title:'IRIDESCENT COSMOLOGY', text:'My Iridescent Cosmology run' }); return; }
         catch(e){ /* user cancelled or share failed — fall through to download */ }
       }
       const a = document.createElement('a');
       a.href = cv.toDataURL('image/png');
-      a.download = 'wonderland-run.png';
+      a.download = 'iridescentcosmology-run.png';
       a.click();
     }, 'image/png');
   }
@@ -5090,9 +5114,19 @@ const Achievements = (function(){
    BUG REPORTER
 ===================================================================== */
 const Bugrep = (function(){
-  const KEY = 'bugreports-wonderland_v1';
+  const KEY = 'bugreports-iridescentcosmology_v1';
+  const OLD_KEY = 'bugreports-wonderland_v1'; // pre-rename reports migrate forward once
   let selCat = 'Bug';
-  function loadAll(){ try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; } }
+  function loadAll(){
+    try{
+      let raw = localStorage.getItem(KEY);
+      if(raw === null){
+        const old = localStorage.getItem(OLD_KEY);
+        if(old !== null){ raw = old; localStorage.setItem(KEY, old); }
+      }
+      return JSON.parse(raw||'[]');
+    }catch(e){ return []; }
+  }
   function store(l){ try{ localStorage.setItem(KEY, JSON.stringify(l)); }catch(e){} }
   function badge(){
     const l = loadAll();
@@ -5120,7 +5154,7 @@ const Bugrep = (function(){
     const details = document.getElementById('bugDetails').value.trim();
     if(!title && !details){ alert('Add a title or details first.'); return; }
     const l = loadAll();
-    l.push({ category:selCat, title:title||'(no title)', details, document:'wonderland_v1', timestamp:new Date().toISOString() });
+    l.push({ category:selCat, title:title||'(no title)', details, document:'iridescentcosmology_v1', timestamp:new Date().toISOString() });
     store(l);
     document.getElementById('bugTitle').value = '';
     document.getElementById('bugDetails').value = '';
@@ -5139,10 +5173,10 @@ const Bugrep = (function(){
   function exportAll(){
     const l = loadAll();
     if(!l.length) return;
-    const blob = new Blob([JSON.stringify({exportedFrom:'wonderland_v1', exportedAt:new Date().toISOString(), reports:l},null,2)],{type:'application/json'});
+    const blob = new Blob([JSON.stringify({exportedFrom:'iridescentcosmology_v1', exportedAt:new Date().toISOString(), reports:l},null,2)],{type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `bugreports_wonderland_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `bugreports_iridescentcosmology_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
   }
   badge();
@@ -5239,11 +5273,11 @@ const Bugrep = (function(){
 // this service worker from ever intercepting fetches for the other games
 // sharing this same repo-root directory (index.html, sigilchain.html).
 // REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
-// requires bumping wonderland-sw.js's CACHE_NAME in the same commit, or
-// returning visitors keep seeing the old page indefinitely.
+// requires bumping iridescentcosmology-sw.js's CACHE_NAME in the same commit,
+// or returning visitors keep seeing the old page indefinitely.
 if('serviceWorker' in navigator){
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./wonderland-sw.js', { scope: './wonderland.html' }).catch(()=>{});
+    navigator.serviceWorker.register('./iridescentcosmology-sw.js', { scope: './iridescentcosmology.html' }).catch(()=>{});
   });
 }
 </script>

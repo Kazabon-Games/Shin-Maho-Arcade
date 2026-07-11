@@ -1,4 +1,4 @@
-// Adversarial regression pass — drives WONDERLAND through its real UI with
+// Adversarial regression pass — drives IRIDESCENT COSMOLOGY through its real UI with
 // deliberately edge-case input (rapid overlay toggling, mashed dash/pause,
 // double-clicked level-up cards, a compressed boss fight, mocked gamepad
 // input, a dense enemy wave) at a real mobile viewport, and checks for
@@ -7,13 +7,14 @@
 // Game._test/Music._test hooks, same as the rest of this file's UI actions.
 //
 // Usage: serve the game (e.g. `npx http-server -p 8935` from the repo
-// root), then `node adversarial_final.js`. Set PLAYWRIGHT_CHROMIUM_PATH if
-// Chromium isn't on Playwright's default discovery path, and
-// WONDERLAND_URL if not serving on the default localhost:8935.
+// root), then `node iridescentcosmology-adversarial.js`. Set
+// PLAYWRIGHT_CHROMIUM_PATH if Chromium isn't on Playwright's default
+// discovery path, and IRIDESCENT_COSMOLOGY_URL if not serving on the
+// default localhost:8935.
 const { chromium } = require('playwright');
 
 const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
-const BASE_URL = process.env.WONDERLAND_URL || 'http://localhost:8935/wonderland.html';
+const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/iridescentcosmology.html';
 
 (async () => {
   const browser = await chromium.launch({
@@ -53,7 +54,7 @@ const BASE_URL = process.env.WONDERLAND_URL || 'http://localhost:8935/wonderland
   await page.waitForTimeout(200);
 
   console.log('--- start a run, mash dash (keyboard + mocked gamepad), rapid pause/settings/resume ---');
-  await page.click('text=OPEN THE WONDERLAND', { timeout: 2000 });
+  await page.click('text=OPEN THE COSMOLOGY', { timeout: 2000 });
   await page.waitForTimeout(200);
   for (let i = 0; i < 15; i++) await page.evaluate(() => Game.dash());
   await page.evaluate(() => {
@@ -169,7 +170,7 @@ const BASE_URL = process.env.WONDERLAND_URL || 'http://localhost:8935/wonderland
   console.log('--- repeated death/restart cycles, checking no state corruption ---');
   for (let i = 0; i < 3; i++) {
     const showing = await page.evaluate(() => document.getElementById('menuOverlay').classList.contains('show'));
-    if (showing) await page.click('text=OPEN THE WONDERLAND', { timeout: 2000 }).catch(()=>{});
+    if (showing) await page.click('text=OPEN THE COSMOLOGY', { timeout: 2000 }).catch(()=>{});
     await page.waitForTimeout(300);
     await page.evaluate(() => { if (Game._test.state().running) Game._test.hurt(999999); });
     await page.waitForTimeout(700);

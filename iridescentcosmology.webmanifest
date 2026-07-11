@@ -1,0 +1,15 @@
+{
+  "name": "Iridescent Cosmology",
+  "short_name": "Iridescent Cosmology",
+  "description": "Dodge a swarm, auto-cast spells drawn from a real operator schema, level up, and survive to a boss fight that actually escalates with you.",
+  "start_url": "./iridescentcosmology.html",
+  "scope": "./iridescentcosmology.html",
+  "display": "standalone",
+  "background_color": "#140b30",
+  "theme_color": "#ffcb5c",
+  "icons": [
+    { "src": "icons/iridescentcosmology-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/iridescentcosmology-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/iridescentcosmology-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

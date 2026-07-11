@@ -1,9 +1,10 @@
-// Wonderland service worker — cache-first, version-invalidated. See the
+// Iridescent Cosmology service worker (renamed from Wonderland, 2026-07-11
+// — see STUDIO_BIBLE.md §8) — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'wonderland-v1';
-const PRECACHE_URLS = ['./wonderland.html'];
+const CACHE_NAME = 'iridescentcosmology-v1';
+const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)));

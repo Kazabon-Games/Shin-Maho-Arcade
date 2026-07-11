@@ -5,13 +5,13 @@
 // Pages serves index.html for both "/" and "/index.html" and the portal
 // needs to control whichever URL the player actually landed on. Root scope
 // means this worker WOULD receive fetch events for navigations toward
-// wonderland.html/sigilchain.html too (before either page's own more-
+// iridescentcosmology.html/sigilchain.html too (before either page's own more-
 // specific service worker has ever registered on that device) — the
 // PORTAL_PATHS allow-list below stops it from caching those under its own
 // cache name; it explicitly passes anything outside its own precache list
 // straight to the network instead, so the games' own workers stay the
 // sole owner of their own caches once visited directly.
-const CACHE_NAME = 'portal-v2'; // bumped: index.html gained the Wardfall card — see the activate handler below, which is what actually evicts 'portal-v1' from returning visitors' caches
+const CACHE_NAME = 'portal-v3'; // bumped: index.html's Stage I card renamed Wonderland -> Iridescent Cosmology (new href, canvas id, copy) — see the activate handler below, which is what actually evicts 'portal-v2' from returning visitors' caches
 const PORTAL_PATHS = ['/', '/index.html'];
 const PRECACHE_URLS = ['./'];
 

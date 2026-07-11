@@ -219,11 +219,11 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
   <div class="grid">
     <div class="card">
       <div class="card-art">
-        <canvas id="wonderlandArt" width="640" height="280" aria-hidden="true"></canvas>
+        <canvas id="iridescentCosmologyArt" width="640" height="280" aria-hidden="true"></canvas>
         <div class="card-badge">Stage I · Live Now</div>
       </div>
       <div class="card-body">
-        <div class="card-title">Wonderland</div>
+        <div class="card-title">Iridescent Cosmology</div>
         <div class="card-genre">Survivor · Roguelite</div>
         <p class="card-desc">
           Dodge a swarm, auto-cast spells drawn from a real operator schema, level up, and
@@ -231,7 +231,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
           way to swarm chaos — one continuous arc, not a loop with a difficulty slider.
         </p>
         <div class="card-actions">
-          <a class="btn" href="wonderland.html">✦&nbsp; Open the Wonderland</a>
+          <a class="btn" href="iridescentcosmology.html">✦&nbsp; Open the Cosmology</a>
           <span class="card-meta">12 spells · 7 passives · 6 evolutions</span>
         </div>
       </div>
@@ -297,7 +297,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
 'use strict';
 // arcade sigil — a slowly turning magic circle, the platform's own mark
 // (distinct from any individual game's crest/branding). Same technique as
-// Wonderland's title crest (conic gradient sweep + Path2D rune ring), kept
+// Iridescent Cosmology's title crest (conic gradient sweep + Path2D rune ring), kept
 // deliberately simpler and more abstract since this represents the arcade
 // itself, not a specific game's lore.
 (function(){
@@ -360,12 +360,12 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
   requestAnimationFrame(loop);
 })();
 
-// Wonderland card art — a quiet preview loop reusing the same cut-gem
+// Iridescent Cosmology card art — a quiet preview loop reusing the same cut-gem
 // facet-shading technique as the game itself (drifting Husk-like shapes +
 // Charles's gold halo silhouette), so the card reads as a real window into
 // the game rather than a generic placeholder thumbnail.
 (function(){
-  const cv = document.getElementById('wonderlandArt');
+  const cv = document.getElementById('iridescentCosmologyArt');
   if(!cv) return;
   const c = cv.getContext('2d');
   const W = cv.width, H = cv.height;
@@ -442,7 +442,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
 // N-gon here at small scale) plus a faint rotating ring echoing the hero
 // sigil, so the card reads as a window into a live magic circle rather
 // than a generic thumbnail. Same offscreen-pause IntersectionObserver
-// pattern as the Wonderland card above — not optional, a previously-caught
+// pattern as the Iridescent Cosmology card above — not optional, a previously-caught
 // real perf/battery consideration.
 (function(){
   const cv = document.getElementById('sigilchainArt');
