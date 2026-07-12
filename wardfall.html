@@ -667,6 +667,18 @@ const Game = (function(){
   let CELL_W=40, ROW_H=34.6, boardX=0, topY=90, leftWall=0, rightWall=0;
   let cannonX=0, cannonY=0, dangerLineY=0;
 
+  // ROW_BUDGET — a fixed row count, not a CELL_W-scaled pixel margin off
+  // cannonY. The old `cannonY - CELL_W*1.3` formula meant the same descent
+  // schedule (PHASE_SHOTS_PER_DESCENT) gave a different amount of real
+  // buffer depending on screen size, since ROW_H scales with CELL_W while
+  // cannonY is a fixed pixel offset from the bottom: verified by computing
+  // both cases, desktop (1280x800) landed ~12.7 rows of buffer, mobile
+  // (390x844) landed ~19.9 rows for the identical schedule — real,
+  // computed cross-device difficulty drift, not a hunch. 13 rows matches
+  // the old desktop feel closely (12.7) and is now the buffer on every
+  // device. Clamped against cannonY so an extreme short viewport still
+  // can't push the line past/through the cannon.
+  const ROW_BUDGET = 13;
   function layout(){
     const sidePad = 16;
     const availW = W - sidePad*2;
@@ -677,7 +689,7 @@ const Game = (function(){
     leftWall = boardX; rightWall = boardX + boardWidth;
     topY = 90;
     cannonX = W/2; cannonY = H - 70;
-    dangerLineY = cannonY - CELL_W*1.3;
+    dangerLineY = Math.min(topY + ROW_BUDGET*ROW_H, cannonY - CELL_W*0.9);
   }
   function resize(){
     dpr = Math.min(window.devicePixelRatio||1, 2);
@@ -984,6 +996,7 @@ const Game = (function(){
 
   const SIM_DT = 1/60, MAX_STEPS = 5;
   let acc=0, lastTs=0;
+  let dangerProximity = 0; // hoisted out of update() so render() can draw the danger line's pulse off the same live value, not a second recompute
   function update(dt){
     if(!running || paused || roundEnded) return;
     if(flight){
@@ -995,8 +1008,8 @@ const Game = (function(){
     Juice.update(dt);
     const bottom = Grid.bottomOccupiedRow();
     const bottomY = bottom>=0 ? topY + bottom*ROW_H + CELL_W/2 : topY;
-    const proximity = clamp((bottomY - topY) / Math.max(1, dangerLineY - topY), 0, 1);
-    Music.updateDrone(proximity);
+    dangerProximity = clamp((bottomY - topY) / Math.max(1, dangerLineY - topY), 0, 1);
+    Music.updateDrone(dangerProximity);
     updateHudPhase();
   }
   function flightPos(){
@@ -1041,6 +1054,28 @@ const Game = (function(){
         ctx.drawImage(sprite, -SPRITE_SIZE*scale/2, -SPRITE_SIZE*scale/2, SPRITE_SIZE*scale, SPRITE_SIZE*scale);
         ctx.restore();
       }
+    }
+
+    // danger line — dangerLineY already drove the loss-check and the
+    // drone's proximity calc, but was never actually drawn: the one thing
+    // this line exists to tell the player was invisible. A hazard
+    // telegraph is informational, so per GAME_3_PILLARS.md §3's
+    // accessibility rule it stays fully visible under reduced motion —
+    // only the pulse's amplitude drops, never the line's presence.
+    if(running){
+      const pulseAmp = Settings.reducedMotion() ? 0.06 : 0.22;
+      const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
+      const glow = clamp(0.35 + dangerProximity*0.5 + pulse*pulseAmp*dangerProximity + Juice.descentFlashAmt()*0.4, 0, 1);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,77,112,${glow})`;
+      ctx.lineWidth = 2 + dangerProximity*2;
+      ctx.setLineDash([10,6]);
+      ctx.beginPath();
+      ctx.moveTo(leftWall, dangerLineY);
+      ctx.lineTo(rightWall, dangerLineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
     }
 
     if(running && !paused && !roundEnded && !flight){
@@ -1181,11 +1216,11 @@ const Game = (function(){
   const _test = {
     state: () => ({ running, paused, roundEnded, score: totalScore, comboStreak, shotsFired,
       shotsSinceDescent, phase, flying: !!flight, aimAngle, currentItem, nextItem,
-      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length }),
+      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length, dangerProximity }),
     setAim: (angle) => { aimAngle = clamp(angle, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD); },
     fire: () => fire(),
     forceItem: (item) => { currentItem = item; },
-    forceDescend: () => { Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase,PHASE_STONE_CHANCE.length-1)]); },
+    forceDescend: () => { Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase,PHASE_STONE_CHANCE.length-1)]); Events.emit('descend', {}); },
     setGrid: (pattern) => { Grid.setRows(pattern); },
     setComboStreak: (n) => { comboStreak = n; },
     fireAt: (col,row,item) => {
@@ -1222,6 +1257,7 @@ const Juice = (function(){
   let comboPulse = 0;
   let shakeMag = 0;
   let recoil = 0;
+  let descentFlash = 0; // 0..1, a beat of extra danger-line glow on every descend — the one event that IS the pressure mechanic had zero visual reaction before this (audio-only)
 
   function addShake(mag){
     if(Settings.reducedMotion()) mag *= 0.15;
@@ -1232,6 +1268,7 @@ const Juice = (function(){
   function getRecoil(){ return recoil; }
   function cannonRecoil(){ recoil = Settings.reducedMotion() ? 4 : 10; }
   function comboPulseScale(){ return 1 + comboPulse*0.3; }
+  function descentFlashAmt(){ return descentFlash; }
 
   Events.on('wardBroken', (p)=>{
     for(const c of p.centers) pops.push({x:c.x,y:c.y,t:0,dur:0.32});
@@ -1239,11 +1276,20 @@ const Juice = (function(){
     addShake(Math.min(3 + p.n*0.4, 14));
     vibrate(Settings.reducedMotion() ? [] : [16, 24]);
   });
+  // descend is the actual pressure mechanic firing — deliberately a smaller
+  // shake than a big ward-break (magnitude 5 vs up to 14) so it reads as
+  // "something changed, pay attention" rather than competing with a real pop
+  Events.on('descend', ()=>{
+    addShake(5);
+    descentFlash = 1;
+    vibrate(Settings.reducedMotion() ? [] : [30]);
+  });
 
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
+    descentFlash = Math.max(0, descentFlash - dt*1.8);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
     if(recoil > 0){ recoil *= Math.max(0, 1 - dt*14); if(recoil < 0.2) recoil = 0; }
   }
@@ -1258,8 +1304,8 @@ const Juice = (function(){
       ctx.restore();
     }
   }
-  return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil,
-    _test: { shakeMag: () => shakeMag } };
+  return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil, descentFlashAmt,
+    _test: { shakeMag: () => shakeMag, descentFlash: () => descentFlash } };
 })();
 
 /* =====================================================================
@@ -1357,7 +1403,19 @@ const Music = (function(){
   }
   function updateDrone(proximity){
     if(!droneActive || !ctx) return;
-    droneGain.gain.value = 0.18 * clamp(proximity,0,1);
+    // remapped so the drone stays genuinely quiet through the round's
+    // normal early buffer and only builds meaningfully once real danger
+    // starts — raw proximity is already ~0.3-0.36 the instant a round
+    // begins (5 initial rows aren't zero-distance from the ceiling
+    // either), so a straight linear map made the drone sound already
+    // partway-alarmed at round start. Peak coefficient also raised from
+    // 0.18 to 0.35 — the old ceiling (0.18*0.5*0.5=0.045 effective gain
+    // at default volumes) was quieter than the routine per-shot click
+    // (0.09), so the one continuous tension layer this design explicitly
+    // calls for (GAME_3_PILLARS.md §4) was inaudible under the game's own
+    // routine action sound.
+    const intensity = clamp((clamp(proximity,0,1) - 0.35) / 0.65, 0, 1);
+    droneGain.gain.value = 0.35 * intensity;
   }
   function toggleMute(){
     muted = !muted;
