@@ -2697,7 +2697,7 @@ const Game = (function(){
         for(let i=0;i<n;i++){
           const a = baseAng + (i-(n-1)/2)*0.22;
           if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(a)*420, vy:Math.sin(a)*420,
-            dmg:(10+weapons.shardspray*4)*dmgMult(), r:4, life:1.6, pierce:2, color:'#9d6bff' });
+            dmg:(10+weapons.shardspray*4)*dmgMult(), r:4, life:1.6, pierce:2, color:'#9d6bff', shape:'shard' });
         }
       }
     }
@@ -3774,12 +3774,15 @@ const Game = (function(){
     }
 
     // bullets — comet shards: gradient trail aligned to travel direction,
-    // bright core tip, instead of a flat dot
+    // bright core tip, instead of a flat dot. Shardspray gets its own core
+    // shape (see below) — Pulse/Counter keep the round core since a single
+    // precise bolt is already a correct, distinct read for them.
     for(const b of bullets){
       const bx = b.x+ox, by = b.y+oy;
       if(bx < -30 || bx > W+30 || by < -30 || by > H+30) continue;
       const speed = Math.hypot(b.vx, b.vy) || 1;
-      const tailLen = Math.min(20, b.r*3.4);
+      const isShard = b.shape === 'shard';
+      const tailLen = isShard ? Math.min(11, b.r*2) : Math.min(20, b.r*3.4);
       const tx = bx - (b.vx/speed)*tailLen, ty = by - (b.vy/speed)*tailLen;
       const trailGrad = ctx.createLinearGradient(tx, ty, bx, by);
       trailGrad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -3788,10 +3791,27 @@ const Game = (function(){
       ctx.lineWidth = b.r*1.15;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.fillStyle = '#fbf8ff';
-      ctx.globalAlpha = 0.9;
-      ctx.beginPath(); ctx.arc(bx, by, b.r*0.45, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
+      if(isShard){
+        // faceted kite silhouette split into a lit/dark half via shadeHex —
+        // the same two-tone facet convention the enemy sprites and death
+        // particles already use — instead of the shared round core dot, so
+        // Shardspray finally reads as an actual shard rather than "the
+        // same bullet as Pulse in a different color."
+        const travelAngle = Math.atan2(b.vy, b.vx);
+        const len = b.r*1.6, wid = b.r*0.85;
+        ctx.save();
+        ctx.translate(bx, by); ctx.rotate(travelAngle);
+        ctx.fillStyle = shadeHex(b.color, 32, 10);
+        ctx.beginPath(); ctx.moveTo(len*0.6,0); ctx.lineTo(-len*0.4,-wid); ctx.lineTo(-len*0.15,0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = shadeHex(b.color, -18, 10);
+        ctx.beginPath(); ctx.moveTo(len*0.6,0); ctx.lineTo(-len*0.4,wid); ctx.lineTo(-len*0.15,0); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#fbf8ff';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.arc(bx, by, b.r*0.45, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // enemies — sprite-blitted (see buildEnemySprite): rotation/pulse/flash
