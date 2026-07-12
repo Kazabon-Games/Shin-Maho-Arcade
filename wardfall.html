@@ -48,6 +48,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .hud-left{display:flex;flex-direction:column;gap:2px;}
 #scoreVal{font-size:28px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
 #comboVal{font-size:13px;color:var(--neon);min-height:16px;}
+#paceVal{font-size:12px;min-height:14px;font-family:var(--mono);}
 .hud-right{text-align:right;display:flex;flex-direction:column;gap:2px;}
 #descentVal{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:.05em;}
 #phaseVal{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
@@ -135,6 +136,7 @@ body.reduced-motion .panel{
   <div class="hud-left">
     <div id="scoreVal">0</div>
     <div id="comboVal"></div>
+    <div id="paceVal"></div>
   </div>
   <div class="hud-right">
     <div id="descentVal">8</div>
@@ -148,7 +150,9 @@ body.reduced-motion .panel{
     <div class="tagline">swing the censer, break the ward</div>
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
     <div class="stat-line">Shards <b id="menuShardsVal">0</b></div>
+    <div class="stat-line" id="menuDailyRow"><span id="menuDailyLabel">Day #0 best</span> <b id="menuDailyBestVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a run">SOUND THE WARDFALL</button>
+    <button class="btn" onclick="Game.startRound({daily:true})" aria-label="Play today's Wardfall — a shared board everyone sees the same day">☀ TODAY'S WARDFALL</button>
     <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Shop.open()" aria-label="Shop">✦ SHARD SHOP</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
@@ -191,8 +195,14 @@ body.reduced-motion .panel{
     <div class="new-best" id="newBestBadge" style="display:none;">✦ New Best ✦</div>
     <div class="stat-line">Score <b id="finalScoreVal">0</b></div>
     <div class="stat-line">Best <b id="bestScoreVal">0</b></div>
+    <div class="stat-line">Phase reached <b id="phaseReachedVal">0</b></div>
+    <div class="stat-line">Biggest group <b id="biggestGroupVal">0</b></div>
+    <div class="stat-line">Best combo <b id="bestComboVal">0</b></div>
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
-    <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
+    <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
+    <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
 </div>
@@ -241,6 +251,8 @@ const Persist = (function(){
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null, colorblind: false },
     achievements: {},
     cosmetics: { owned: {}, equipped: {} },
+    daily: { date: null, bestScore: 0 },
+    bestPace: [], // score-at-shot-N trace from the current lifetime-best run — a scoped numeric "race your best" stand-in, not a full ghost replay (that needs input-stream capture this game doesn't have)
   };
   function load(){
     try{
@@ -260,6 +272,13 @@ const Persist = (function(){
         if(!data.cosmetics) data.cosmetics = { owned:{}, equipped:{} };
         if(!data.cosmetics.owned) data.cosmetics.owned = {};
         if(!data.cosmetics.equipped) data.cosmetics.equipped = {};
+        // daily — additive, gameplay-inert (a local per-day best score
+        // record only, never a gameplay-affecting unlock, keeping §5's
+        // cosmetics-only meta-progression rule intact)
+        if(!data.daily) data.daily = { date: null, bestScore: 0 };
+        if(data.daily.date===undefined) data.daily.date = null;
+        if(data.daily.bestScore===undefined) data.daily.bestScore = 0;
+        if(!Array.isArray(data.bestPace)) data.bestPace = [];
       }
     }catch(e){}
   }
@@ -275,6 +294,52 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 function rand(a,b){ return a + Math.random()*(b-a); }
 function randInt(n){ return Math.floor(Math.random()*n); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- SEEDED RNG — for Daily Wardfall only. free-play stays on Math.random
+// (untouched by anything below); Grid/Queue each hold their own swappable
+// rng function (default Math.random), set once at round start via
+// Grid.setRng/Queue.setRng and reset back to null (= Math.random) when
+// leaving daily mode. Isolated to the two gameplay-determining call sites
+// (generateRow's color/stone roll, nextColor/nextItem's color/special roll)
+// — everything else (screen-shake jitter, the reverb impulse-response
+// noise fill) is cosmetic and deliberately NOT seeded.
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seedFromString(str){
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 2654435761); h ^= h >>> 16; }
+  return h >>> 0;
+}
+// local calendar date (not UTC) so "today" matches the player's own day
+function localDateString(d){
+  d = d || new Date();
+  const tzAdjusted = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tzAdjusted.toISOString().slice(0,10);
+}
+const DAILY_EPOCH = '2026-07-09'; // Wardfall's ship date — Day #1
+function dayNumberFor(dateStr){
+  const a = Date.parse(DAILY_EPOCH+'T00:00:00Z');
+  const b = Date.parse(dateStr+'T00:00:00Z');
+  return Math.floor((b-a)/86400000) + 1;
+}
+// shared by every menu-render call site (showMenu, Settings.close, initial
+// page load) — top-level since it only needs Persist's public data, not
+// any of Game's private state, matching how menuBestVal/menuShardsVal are
+// already independently populated at each of those same three sites.
+function renderMenuDailyRow(){
+  const todayStr = localDateString();
+  const todayNum = dayNumberFor(todayStr);
+  const todayBest = Persist.data.daily.date === todayStr ? Persist.data.daily.bestScore : 0;
+  document.getElementById('menuDailyLabel').textContent = 'Day #'+todayNum+' best';
+  document.getElementById('menuDailyBestVal').textContent = todayBest;
+}
 
 const Ease = {
   popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
@@ -471,23 +536,28 @@ function facetSprite(defs, baseColor, litFn, darkFn){
   c2.closePath(); c2.stroke();
   return cvs;
 }
+// near-black obsidian base + hot ember accent (bomb), and the 4-hue cycle
+// (rainbow) — hoisted to shared top-level constants (not locals inside
+// their own sprite-builder) so Juice's pop-VFX branch can reuse the exact
+// same identity colors instead of re-declaring them, matching this file's
+// own "define once" canvas color-token-drift guard (GAME_3_PILLARS.md §3).
+const BOMB_OBSIDIAN = '#161022', BOMB_EMBER = '#ff9d52';
+const RAINBOW_HUES = ['#4ea8ff','#b98aff','#2d8f9e','#e8e4ff'];
 function buildBombSprite(){
   // near-black obsidian base; a hot ember accent lives only on two lit
   // facets (a glowing fuse/crack), not the base fill — deliberately kept
   // off --danger red as an accent, not a semantic hazard color.
-  const OBSIDIAN = '#161022', EMBER = '#ff9d52';
-  return facetSprite(BOMB_VERTS, OBSIDIAN,
-    (i)=> (i===0||i===6) ? EMBER : shadeHex(OBSIDIAN, 14, 6),
-    (i)=> shadeHex(OBSIDIAN, -10, -4));
+  return facetSprite(BOMB_VERTS, BOMB_OBSIDIAN,
+    (i)=> (i===0||i===6) ? BOMB_EMBER : shadeHex(BOMB_OBSIDIAN, 14, 6),
+    (i)=> shadeHex(BOMB_OBSIDIAN, -10, -4));
 }
 function buildRainbowSprite(){
   // 4+ distinct cycling hues per facet, not the usual binary lit/dark
   // alternation of one color — a rainbow orb built with the standard
   // i%2 alternation would read as "a two-color gem," not rainbow.
-  const HUES = ['#4ea8ff','#b98aff','#2d8f9e','#e8e4ff'];
   return facetSprite(RAINBOW_VERTS, '#c9b8ff',
-    (i)=> shadeHex(HUES[i%HUES.length], 14, 6),
-    (i)=> shadeHex(HUES[(i+2)%HUES.length], -12, -4));
+    (i)=> shadeHex(RAINBOW_HUES[i%RAINBOW_HUES.length], 14, 6),
+    (i)=> shadeHex(RAINBOW_HUES[(i+2)%RAINBOW_HUES.length], -12, -4));
 }
 function buildStoneSprite(crack){
   // lighter true ash-grey, deliberately split in lightness/saturation
@@ -531,6 +601,9 @@ function spriteFor(cell){
 ===================================================================== */
 const Grid = (function(){
   let rows = []; // rows[0] = topmost/newest; rows[rows.length-1] = deepest/oldest
+  let rng = Math.random; // swapped to a seeded fn for Daily Wardfall, see Game.startRound
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
 
   function rowOffset(row){ return (row % 2 === 1) ? 0.5 : 0; }
   function inBounds(col,row){ return row>=0 && row<rows.length && col>=0 && col<COLS; }
@@ -553,8 +626,8 @@ const Grid = (function(){
   function generateRow(colorPool, stoneChance){
     const row = [];
     for(let i=0;i<COLS;i++){
-      if(Math.random() < stoneChance) row.push({ special:'stone', crack:0 });
-      else row.push({ color: colorPool[randInt(colorPool.length)] });
+      if(rng() < stoneChance) row.push({ special:'stone', crack:0 });
+      else row.push({ color: colorPool[rngInt(colorPool.length)] });
     }
     return row;
   }
@@ -614,7 +687,7 @@ const Grid = (function(){
   }
   return {
     rowOffset, inBounds, orbAt, setOrb, removeOrb, hexNeighbors,
-    init, descend, setRows, forEachOrb, liveColors, bottomOccupiedRow, floodFill, ceilingConnected,
+    init, descend, setRows, forEachOrb, liveColors, bottomOccupiedRow, floodFill, ceilingConnected, setRng,
     get rows(){ return rows; },
   };
 })();
@@ -631,23 +704,26 @@ const Grid = (function(){
    is worth its stale-state risk here.
 ===================================================================== */
 const Queue = (function(){
+  let rng = Math.random; // swapped to a seeded fn for Daily Wardfall, see Game.startRound
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
   function colorPoolForPhase(phase){
     return COLOR_KEYS.slice(0, PHASE_COLOR_COUNT[phase] || PHASE_COLOR_COUNT[PHASE_COLOR_COUNT.length-1]);
   }
   function nextColor(phase){
     const live = Grid.liveColors();
     const pool = live.size ? Array.from(live) : colorPoolForPhase(phase);
-    return pool[randInt(pool.length)];
+    return pool[rngInt(pool.length)];
   }
   function nextItem(phase){
     const bombP = PHASE_BOMB_CHANCE[phase] || 0;
     const rainbowP = PHASE_RAINBOW_CHANCE[phase] || 0;
-    const r = Math.random();
+    const r = rng();
     if(r < bombP) return { special:'bomb' };
     if(r < bombP + rainbowP) return { special:'rainbow' };
     return { color: nextColor(phase) };
   }
-  return { colorPoolForPhase, nextItem };
+  return { colorPoolForPhase, nextItem, setRng };
 })();
 
 /* =====================================================================
@@ -667,6 +743,18 @@ const Game = (function(){
   let CELL_W=40, ROW_H=34.6, boardX=0, topY=90, leftWall=0, rightWall=0;
   let cannonX=0, cannonY=0, dangerLineY=0;
 
+  // ROW_BUDGET — a fixed row count, not a CELL_W-scaled pixel margin off
+  // cannonY. The old `cannonY - CELL_W*1.3` formula meant the same descent
+  // schedule (PHASE_SHOTS_PER_DESCENT) gave a different amount of real
+  // buffer depending on screen size, since ROW_H scales with CELL_W while
+  // cannonY is a fixed pixel offset from the bottom: verified by computing
+  // both cases, desktop (1280x800) landed ~12.7 rows of buffer, mobile
+  // (390x844) landed ~19.9 rows for the identical schedule — real,
+  // computed cross-device difficulty drift, not a hunch. 13 rows matches
+  // the old desktop feel closely (12.7) and is now the buffer on every
+  // device. Clamped against cannonY so an extreme short viewport still
+  // can't push the line past/through the cannon.
+  const ROW_BUDGET = 13;
   function layout(){
     const sidePad = 16;
     const availW = W - sidePad*2;
@@ -677,7 +765,7 @@ const Game = (function(){
     leftWall = boardX; rightWall = boardX + boardWidth;
     topY = 90;
     cannonX = W/2; cannonY = H - 70;
-    dangerLineY = cannonY - CELL_W*1.3;
+    dangerLineY = Math.min(topY + ROW_BUDGET*ROW_H, cannonY - CELL_W*0.9);
   }
   function resize(){
     dpr = Math.min(window.devicePixelRatio||1, 2);
@@ -779,6 +867,10 @@ const Game = (function(){
   let roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
     usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
   let lastEventType = null;
+  let lastRunStats = null; // captured at round-end for ShareCard — mirrors exactly what the round-end overlay itself shows, no new stats invented
+  let dailyMode = false, dailyDateStr = null; // Daily Wardfall — seeded board, see startRound()
+  let paceTrace = []; // score-at-shot-N for THIS run — becomes the new Persist.data.bestPace only if this run sets a new lifetime best
+  const PACE_TRACE_CAP = 400; // bounded, matching the game-designer's own "capped/truncated" scoping — not unbounded per-shot growth
   const frameTimes = [];
 
   let wakeLockSentinel = null;
@@ -938,11 +1030,23 @@ const Game = (function(){
     roundStats.totalOrbsPoppedRun += nPopped + nFallen + nBomb;
     updateHudScore();
 
-    if(scored) Events.emit('wardBroken', { centers: poppedCenters, n: nPopped+nFallen+nBomb+nHazard, streak: comboStreak, colorKey: item.color });
+    if(scored){
+      // popType — the pillars doc (GAME_3_PILLARS.md §3) explicitly calls
+      // for bomb detonation to get its own shockwave/flash distinct from a
+      // plain 3-match pop; that never got built because every pop path
+      // funneled into the same single generic Juice effect regardless of
+      // type. Tagging the type here (already known at each branch above)
+      // is the one payload change needed to let Juice actually branch.
+      const popType = item.special==='bomb' ? 'bomb' : item.special==='rainbow' ? 'rainbow' : 'match';
+      const epicenter = cellCenter(landingCell.col, landingCell.row);
+      Events.emit('wardBroken', { centers: poppedCenters, n: nPopped+nFallen+nBomb+nHazard, streak: comboStreak, colorKey: item.color, type: popType, epicenter });
+    }
     else Events.emit('orbMiss', {});
     lastEventType = scored ? 'wardBroken' : 'orbMiss';
 
     shotsFired += 1; shotsSinceDescent += 1;
+    if(paceTrace.length < PACE_TRACE_CAP) paceTrace.push(totalScore);
+    updateHudPace();
     const newPhase = phaseForShots(shotsFired);
     if(newPhase !== phase){ phase = newPhase; roundStats.phaseReached = Math.max(roundStats.phaseReached, phase); Events.emit('phaseChange', {phase}); }
     const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
@@ -976,6 +1080,22 @@ const Game = (function(){
     const el = document.getElementById('comboVal');
     el.textContent = comboStreak>1 ? ('×'+comboMult(comboStreak).toFixed(2)+' combo') : '';
   }
+  // best-pace delta — a scoped "race your best" stand-in: compares this
+  // run's score at the current shot count against the score-at-the-same-
+  // shot-count from the current lifetime-best run (Persist.data.bestPace,
+  // saved only when a run actually sets a new best — see endRound()).
+  // Deliberately NOT a full ghost replay (would need input-stream capture
+  // this game doesn't have); a numeric delta off data already being
+  // tracked is the buildable version of the same "race yourself" idea.
+  function updateHudPace(){
+    const el = document.getElementById('paceVal');
+    const bestPace = Persist.data.bestPace;
+    const idx = shotsFired - 1;
+    if(!bestPace || !bestPace.length || idx < 0 || idx >= bestPace.length){ el.textContent = ''; return; }
+    const delta = totalScore - bestPace[idx];
+    el.style.color = delta >= 0 ? 'var(--ok)' : 'var(--danger)';
+    el.textContent = (delta >= 0 ? '+' : '') + delta + ' vs best pace';
+  }
   function updateHudPhase(){
     const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
     document.getElementById('descentVal').textContent = Math.max(0, spd - shotsSinceDescent);
@@ -984,6 +1104,7 @@ const Game = (function(){
 
   const SIM_DT = 1/60, MAX_STEPS = 5;
   let acc=0, lastTs=0;
+  let dangerProximity = 0; // hoisted out of update() so render() can draw the danger line's pulse off the same live value, not a second recompute
   function update(dt){
     if(!running || paused || roundEnded) return;
     if(flight){
@@ -995,8 +1116,8 @@ const Game = (function(){
     Juice.update(dt);
     const bottom = Grid.bottomOccupiedRow();
     const bottomY = bottom>=0 ? topY + bottom*ROW_H + CELL_W/2 : topY;
-    const proximity = clamp((bottomY - topY) / Math.max(1, dangerLineY - topY), 0, 1);
-    Music.updateDrone(proximity);
+    dangerProximity = clamp((bottomY - topY) / Math.max(1, dangerLineY - topY), 0, 1);
+    Music.updateDrone(dangerProximity);
     updateHudPhase();
   }
   function flightPos(){
@@ -1043,6 +1164,28 @@ const Game = (function(){
       }
     }
 
+    // danger line — dangerLineY already drove the loss-check and the
+    // drone's proximity calc, but was never actually drawn: the one thing
+    // this line exists to tell the player was invisible. A hazard
+    // telegraph is informational, so per GAME_3_PILLARS.md §3's
+    // accessibility rule it stays fully visible under reduced motion —
+    // only the pulse's amplitude drops, never the line's presence.
+    if(running){
+      const pulseAmp = Settings.reducedMotion() ? 0.06 : 0.22;
+      const pulse = 0.5 + 0.5*Math.sin(performance.now()/260);
+      const glow = clamp(0.35 + dangerProximity*0.5 + pulse*pulseAmp*dangerProximity + Juice.descentFlashAmt()*0.4, 0, 1);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,77,112,${glow})`;
+      ctx.lineWidth = 2 + dangerProximity*2;
+      ctx.setLineDash([10,6]);
+      ctx.beginPath();
+      ctx.moveTo(leftWall, dangerLineY);
+      ctx.lineTo(rightWall, dangerLineY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     if(running && !paused && !roundEnded && !flight){
       const dirX = Math.cos(aimAngle), dirY = Math.sin(aimAngle);
       const preview = raymarch(cannonX, cannonY, dirX, dirY, 2);
@@ -1072,15 +1215,25 @@ const Game = (function(){
       }
     }
 
-    // censer (cannon) — small hand-drawn urn silhouette with recoil offset
+    // censer (cannon) — small hand-drawn urn silhouette with recoil offset.
+    // Was a single flat fillStyle — the one persistently-on-screen singular
+    // object in the game had less shading effort than a mass-produced orb
+    // (every orb gets a two-stop radial gradient + highlight, buildOrbSprite
+    // 398-412). Same technique applied here, not a new one invented.
     const recoil = Juice.getRecoil();
     ctx.save();
     ctx.translate(cannonX, cannonY + recoil);
     ctx.rotate(aimAngle + Math.PI/2);
-    ctx.fillStyle = shadeHex('#3a2a5c', 4, 2);
+    const censerGrad = ctx.createRadialGradient(-6,-10,4, 0,2,28);
+    censerGrad.addColorStop(0, shadeHex('#3a2a5c', 22, 8));
+    censerGrad.addColorStop(0.55, shadeHex('#3a2a5c', 4, 2));
+    censerGrad.addColorStop(1, shadeHex('#3a2a5c', -16, 0));
+    ctx.fillStyle = censerGrad;
     ctx.beginPath();
     ctx.moveTo(-16,18); ctx.lineTo(-10,-14); ctx.lineTo(10,-14); ctx.lineTo(16,18); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = 'rgba(255,215,107,0.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(-6,-8,5,8,-0.15,0,Math.PI*2); ctx.fill();
     ctx.restore();
     if(!flight && currentItem){
       const sprite = spriteFor(currentItem.special ? {special:currentItem.special} : {color:currentItem.color});
@@ -1113,12 +1266,30 @@ const Game = (function(){
     requestAnimationFrame(loop);
   }
 
-  function startRound(){
+  function startRound(opts){
+    // Daily Wardfall — a deterministic seeded board keyed off the local
+    // calendar date, so every player who plays "today's" board sees the
+    // identical color/stone/bomb/rainbow sequence and scores are
+    // genuinely comparable without any backend. Additive only: normal
+    // free-play always resets both rng sources back to Math.random.
+    dailyMode = !!(opts && opts.daily);
+    if(dailyMode){
+      dailyDateStr = localDateString();
+      const rngFn = mulberry32(seedFromString(dailyDateStr));
+      Grid.setRng(rngFn);
+      Queue.setRng(rngFn);
+    } else {
+      dailyDateStr = null;
+      Grid.setRng(null);
+      Queue.setRng(null);
+    }
     running=true; paused=false; roundEnded=false;
     totalScore=0; comboStreak=0; shotsFired=0; shotsSinceDescent=0; phase=0;
     aimAngle=-Math.PI/2; flight=null;
     roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
       usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
+    paceTrace = [];
+    document.getElementById('paceVal').textContent = '';
     Grid.init(INITIAL_ROWS, Queue.colorPoolForPhase(0), PHASE_STONE_CHANCE[0]);
     currentItem = Queue.nextItem(0); nextItem = Queue.nextItem(0);
     document.getElementById('menuOverlay').classList.remove('show');
@@ -1146,6 +1317,7 @@ const Game = (function(){
     document.getElementById('pauseOverlay').classList.remove('show');
     document.getElementById('menuBestVal').textContent = Persist.data.best.score;
     document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+    renderMenuDailyRow();
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRound(){
@@ -1154,13 +1326,19 @@ const Game = (function(){
     Music.setDroneActive(false);
     const best = Persist.data.best;
     const newBest = totalScore > best.score;
-    if(newBest) best.score = totalScore;
+    if(newBest){ best.score = totalScore; Persist.data.bestPace = paceTrace.slice(); }
     best.longestGroupPopped = Math.max(best.longestGroupPopped, roundStats.longestGroupPopped);
     best.longestComboStreak = Math.max(best.longestComboStreak, roundStats.longestComboStreak);
     best.totalOrbsPoppedLifetime += roundStats.totalOrbsPoppedRun;
     Persist.data.totalRounds += 1;
     const shardsEarned = Math.floor(totalScore/50);
     Persist.data.shards += shardsEarned;
+    let dailyNewBest = false;
+    if(dailyMode){
+      const daily = Persist.data.daily;
+      if(daily.date !== dailyDateStr){ daily.date = dailyDateStr; daily.bestScore = 0; }
+      if(totalScore > daily.bestScore){ daily.bestScore = totalScore; dailyNewBest = true; }
+    }
     Persist.save();
     const noMiss = roundStats.missCount===0 && shotsFired>0;
     Achievements.checkAll({ score: totalScore, longestGroupPopped: roundStats.longestGroupPopped,
@@ -1172,7 +1350,28 @@ const Game = (function(){
     document.getElementById('hud').classList.remove('show');
     document.getElementById('finalScoreVal').textContent = totalScore;
     document.getElementById('bestScoreVal').textContent = best.score;
+    // roundStats already computes these every round (used by Achievements
+    // above) but the overlay discarded them and showed only score/best/
+    // shards — cheap, concrete "feels unfinished" fix: surface the data
+    // that's already sitting in memory instead of computing anything new.
+    // phaseReached is 0-indexed internally (matches HUD's phase+1 convention).
+    document.getElementById('phaseReachedVal').textContent = roundStats.phaseReached + 1;
+    document.getElementById('biggestGroupVal').textContent = roundStats.longestGroupPopped;
+    document.getElementById('bestComboVal').textContent = roundStats.longestComboStreak;
     document.getElementById('shardsEarnedVal').textContent = shardsEarned;
+    const dailyRow = document.getElementById('dailyResultRow');
+    let dayNumber = null;
+    if(dailyMode){
+      dayNumber = dayNumberFor(dailyDateStr);
+      document.getElementById('dailyDayLabel').textContent = 'Day #'+dayNumber+' best';
+      document.getElementById('dailyBestVal').textContent = Persist.data.daily.bestScore;
+      dailyRow.style.display = '';
+    } else {
+      dailyRow.style.display = 'none';
+    }
+    lastRunStats = { score: totalScore, phaseReached: roundStats.phaseReached + 1,
+      longestGroupPopped: roundStats.longestGroupPopped, longestComboStreak: roundStats.longestComboStreak,
+      shardsEarned, newBest, dailyMode, dayNumber, dailyBestScore: dailyMode ? Persist.data.daily.bestScore : null, dailyNewBest };
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -1181,11 +1380,14 @@ const Game = (function(){
   const _test = {
     state: () => ({ running, paused, roundEnded, score: totalScore, comboStreak, shotsFired,
       shotsSinceDescent, phase, flying: !!flight, aimAngle, currentItem, nextItem,
-      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length }),
+      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length, dangerProximity,
+      dailyMode, dailyDateStr, paceTraceLength: paceTrace.length,
+      paceHudText: document.getElementById('paceVal').textContent }),
+    snapshotBoard: () => Grid.rows.map(row => row.map(o => o ? (o.color || o.special) : null)),
     setAim: (angle) => { aimAngle = clamp(angle, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD); },
     fire: () => fire(),
     forceItem: (item) => { currentItem = item; },
-    forceDescend: () => { Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase,PHASE_STONE_CHANCE.length-1)]); },
+    forceDescend: () => { Grid.descend(Queue.colorPoolForPhase(phase), PHASE_STONE_CHANCE[Math.min(phase,PHASE_STONE_CHANCE.length-1)]); Events.emit('descend', {}); },
     setGrid: (pattern) => { Grid.setRows(pattern); },
     setComboStreak: (n) => { comboStreak = n; },
     fireAt: (col,row,item) => {
@@ -1206,7 +1408,7 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
-  return { startRound, togglePause, showMenu, _test };
+  return { startRound, togglePause, showMenu, getLastRunStats: () => lastRunStats, isDailyMode: () => dailyMode, _test };
 })();
 
 /* =====================================================================
@@ -1218,10 +1420,12 @@ const Game = (function(){
    Wonderland shipped without, see GAME_3_PILLARS.md §3).
 ===================================================================== */
 const Juice = (function(){
-  let pops = [];
+  let pops = [];       // per-orb match/rainbow flares
+  let shockwaves = []; // bomb detonations — a blast, not a flock of per-orb flares
   let comboPulse = 0;
   let shakeMag = 0;
   let recoil = 0;
+  let descentFlash = 0; // 0..1, a beat of extra danger-line glow on every descend — the one event that IS the pressure mechanic had zero visual reaction before this (audio-only)
 
   function addShake(mag){
     if(Settings.reducedMotion()) mag *= 0.15;
@@ -1232,18 +1436,49 @@ const Juice = (function(){
   function getRecoil(){ return recoil; }
   function cannonRecoil(){ recoil = Settings.reducedMotion() ? 4 : 10; }
   function comboPulseScale(){ return 1 + comboPulse*0.3; }
+  function descentFlashAmt(){ return descentFlash; }
 
+  // wardBroken previously funneled bomb/rainbow/plain-match pops through one
+  // identical generic white flare — GAME_3_PILLARS.md §3 explicitly calls
+  // for bomb to get its own shockwave/flash distinct from a plain match;
+  // that was never built. Now branches on the type tag Game already
+  // attaches at each resolveAttach() path, and a plain match's flare tints
+  // to the popped color (colorKey was already in the payload, unused here
+  // before) instead of a flat off-white circle.
   Events.on('wardBroken', (p)=>{
-    for(const c of p.centers) pops.push({x:c.x,y:c.y,t:0,dur:0.32});
+    if(p.type === 'bomb'){
+      shockwaves.push({ x:p.epicenter.x, y:p.epicenter.y, t:0, dur:0.42 });
+      addShake(Math.min(6 + p.n*0.5, 14));
+      vibrate(Settings.reducedMotion() ? [] : [30, 10, 45]);
+    } else {
+      const rainbow = p.type === 'rainbow';
+      const cdef = !rainbow ? activeColorDef(p.colorKey) : null;
+      const baseColor = cdef ? cdef.color : '#c9b8ff';
+      p.centers.forEach((c,i)=>{
+        pops.push({ x:c.x, y:c.y, t:0, dur:0.32,
+          color: rainbow ? RAINBOW_HUES[i%RAINBOW_HUES.length] : baseColor });
+      });
+      addShake(Math.min(3 + p.n*0.4, 14));
+      vibrate(Settings.reducedMotion() ? [] : [16, 24]);
+    }
     comboPulse = 1;
-    addShake(Math.min(3 + p.n*0.4, 14));
-    vibrate(Settings.reducedMotion() ? [] : [16, 24]);
+  });
+  // descend is the actual pressure mechanic firing — deliberately a smaller
+  // shake than a big ward-break (magnitude 5 vs up to 14) so it reads as
+  // "something changed, pay attention" rather than competing with a real pop
+  Events.on('descend', ()=>{
+    addShake(5);
+    descentFlash = 1;
+    vibrate(Settings.reducedMotion() ? [] : [30]);
   });
 
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
+    for(const s of shockwaves) s.t += dt;
+    shockwaves = shockwaves.filter(s=>s.t < s.dur);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
+    descentFlash = Math.max(0, descentFlash - dt*1.8);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
     if(recoil > 0){ recoil *= Math.max(0, 1 - dt*14); if(recoil < 0.2) recoil = 0; }
   }
@@ -1253,13 +1488,28 @@ const Juice = (function(){
       const s = Ease.popSettle(t) * (1-t*0.4) * (SPRITE_SIZE*0.5);
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1-t);
-      ctx.fillStyle = 'rgba(255,246,220,0.85)';
+      ctx.fillStyle = shadeHex(p.color, 34, 12);
       ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI*2); ctx.fill();
+      // a thin expanding ring on the same timeline — reads as a flare
+      // dissolving outward, not just a dot fading in place
+      ctx.strokeStyle = p.color; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, s*(1+t*1.5), 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    for(const s of shockwaves){
+      const t = s.t/s.dur;
+      const r = Ease.easeOutCubic(t) * SPRITE_SIZE*2.1;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.strokeStyle = BOMB_EMBER; ctx.lineWidth = 4*(1-t)+1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = `rgba(22,16,34,${0.5*(1-t)})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r*0.55, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     }
   }
-  return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil,
-    _test: { shakeMag: () => shakeMag } };
+  return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil, descentFlashAmt,
+    _test: { shakeMag: () => shakeMag, descentFlash: () => descentFlash, popCount: () => pops.length, shockwaveCount: () => shockwaves.length } };
 })();
 
 /* =====================================================================
@@ -1357,7 +1607,19 @@ const Music = (function(){
   }
   function updateDrone(proximity){
     if(!droneActive || !ctx) return;
-    droneGain.gain.value = 0.18 * clamp(proximity,0,1);
+    // remapped so the drone stays genuinely quiet through the round's
+    // normal early buffer and only builds meaningfully once real danger
+    // starts — raw proximity is already ~0.3-0.36 the instant a round
+    // begins (5 initial rows aren't zero-distance from the ceiling
+    // either), so a straight linear map made the drone sound already
+    // partway-alarmed at round start. Peak coefficient also raised from
+    // 0.18 to 0.35 — the old ceiling (0.18*0.5*0.5=0.045 effective gain
+    // at default volumes) was quieter than the routine per-shot click
+    // (0.09), so the one continuous tension layer this design explicitly
+    // calls for (GAME_3_PILLARS.md §4) was inaudible under the game's own
+    // routine action sound.
+    const intensity = clamp((clamp(proximity,0,1) - 0.35) / 0.65, 0, 1);
+    droneGain.gain.value = 0.35 * intensity;
   }
   function toggleMute(){
     muted = !muted;
@@ -1374,6 +1636,101 @@ const Music = (function(){
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
     _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive } };
+})();
+
+/* =====================================================================
+   SHARECARD — Wardfall was the only shipped game without one (grepped:
+   no ShareCard/navigator.share anywhere in this file before this).
+   Mirrors iridescentcosmology.html:5534-5596's proven pattern verbatim:
+   a composed canvas card, navigator.share with a file attachment when
+   available, falling back to a plain PNG download. Also adds a plain-
+   text result string + clipboard-copy path neither existing game has —
+   the actual mechanism that makes a result shareable in a text thread
+   without an image attachment, per the game-designer's review: real
+   competitive comparison in a no-accounts/no-backend game depends on
+   a result being easy to paste somewhere, not just pretty to look at.
+===================================================================== */
+const ShareCard = (function(){
+  function resultText(stats){
+    // Daily runs lead with the day number — that's the actual comparable
+    // claim ("I got X on today's board"), a generic score means nothing
+    // without the shared-seed context that makes it comparable at all.
+    const prefix = stats.dailyMode ? `Wardfall — Day #${stats.dayNumber}` : 'Wardfall';
+    return `${prefix} — ${stats.score} pts — Phase ${stats.phaseReached} — biggest group ${stats.longestGroupPopped} — best combo streak ${stats.longestComboStreak}`;
+  }
+  function buildCanvas(stats){
+    const cv = document.createElement('canvas');
+    cv.width = 600; cv.height = 315;
+    const c = cv.getContext('2d');
+    const bgGrad = c.createLinearGradient(0,0,0,cv.height);
+    bgGrad.addColorStop(0, '#231442'); bgGrad.addColorStop(1, '#140b30');
+    c.fillStyle = bgGrad; c.fillRect(0,0,cv.width,cv.height);
+    c.strokeStyle = 'rgba(255,203,92,0.55)'; c.lineWidth = 2;
+    c.strokeRect(8,8,cv.width-16,cv.height-16);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ffcb5c';
+    // sized down for the daily title (longer string than the plain
+    // "WARDFALL" — same "stay clear of the 600px canvas edges" reasoning
+    // iridescentcosmology.html's own ShareCard already applies)
+    c.font = stats.dailyMode ? "bold 24px 'Cormorant Garamond', Georgia, serif" : "bold 30px 'Cormorant Garamond', Georgia, serif";
+    c.fillText(stats.dailyMode ? 'WARDFALL — DAY #'+stats.dayNumber : 'WARDFALL', cv.width/2, 66);
+    c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
+    c.fillStyle = '#c2b3e8';
+    c.fillText(stats.dailyMode ? 'today\'s shared board — same censer for everyone' : 'swing the censer, break the ward', cv.width/2, 92);
+
+    // mirrors exactly what the round-end overlay already shows — no new
+    // stats invented
+    const cols = [['SCORE', stats.score], ['PHASE REACHED', stats.phaseReached],
+      ['BIGGEST GROUP', stats.longestGroupPopped], ['BEST COMBO', stats.longestComboStreak]];
+    const colW = cv.width / cols.length;
+    cols.forEach(([label, val], i) => {
+      const x = colW*i + colW/2;
+      c.fillStyle = '#ffe6a8';
+      c.font = "bold 28px 'IBM Plex Mono', monospace";
+      c.fillText(String(val), x, 195);
+      c.fillStyle = '#8674b8';
+      c.font = "11px 'Quicksand', sans-serif";
+      c.fillText(label, x, 220);
+    });
+
+    c.fillStyle = '#6b6050';
+    c.font = "12px 'IBM Plex Mono', monospace";
+    c.fillText('SHIN MAHOU ARCADE', cv.width/2, cv.height-24);
+    return cv;
+  }
+
+  function share(){
+    const stats = Game.getLastRunStats();
+    if(!stats) return;
+    const cv = buildCanvas(stats);
+    cv.toBlob(async (blob) => {
+      if(!blob) return;
+      const file = new File([blob], 'wardfall-run.png', { type:'image/png' });
+      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+        try{ await navigator.share({ files:[file], title:'WARDFALL', text: resultText(stats) }); return; }
+        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      }
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = 'wardfall-run.png';
+      a.click();
+    }, 'image/png');
+  }
+  // plain-text fallback, deliberately separate from share()'s image path —
+  // returns a Promise<boolean> so the caller's feedback reflects the
+  // clipboard write actually resolving, not just having been kicked off.
+  // (qa-playtest flag: the earlier synchronous-true version could show
+  // "✓ COPIED" on a browser that silently denies clipboard permission —
+  // couldn't be forced to fail in the sandboxed test browser, but the
+  // API is honestly async and the return value should say so.)
+  function copyText(){
+    const stats = Game.getLastRunStats();
+    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return Promise.resolve(false);
+    return navigator.clipboard.writeText(resultText(stats)).then(()=>true).catch(()=>false);
+  }
+
+  return { share, copyText, resultText, _test: { buildCanvas } };
 })();
 
 /* =====================================================================
@@ -1414,6 +1771,7 @@ const Settings = (function(){
     if(openedFromMenu){
       document.getElementById('menuBestVal').textContent = Persist.data.best.score;
       document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+      renderMenuDailyRow();
       document.getElementById('menuOverlay').classList.add('show');
     }
   }
@@ -1549,6 +1907,7 @@ const FullscreenCtrl = (function(){
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
 document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+renderMenuDailyRow();
 
 // PWA registration — see the pwa-offline-games skill. Built in from the
 // first commit this time (Games 1-2 both retrofitted this). Explicit
