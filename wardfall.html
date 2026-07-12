@@ -195,6 +195,8 @@ body.reduced-motion .panel{
     <div class="stat-line">Biggest group <b id="biggestGroupVal">0</b></div>
     <div class="stat-line">Best combo <b id="bestComboVal">0</b></div>
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn" onclick="if(ShareCard.copyText()){ this.textContent='✓ COPIED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); }" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
     <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
@@ -799,6 +801,7 @@ const Game = (function(){
   let roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
     usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
   let lastEventType = null;
+  let lastRunStats = null; // captured at round-end for ShareCard — mirrors exactly what the round-end overlay itself shows, no new stats invented
   const frameTimes = [];
 
   let wakeLockSentinel = null;
@@ -1244,6 +1247,9 @@ const Game = (function(){
     document.getElementById('biggestGroupVal').textContent = roundStats.longestGroupPopped;
     document.getElementById('bestComboVal').textContent = roundStats.longestComboStreak;
     document.getElementById('shardsEarnedVal').textContent = shardsEarned;
+    lastRunStats = { score: totalScore, phaseReached: roundStats.phaseReached + 1,
+      longestGroupPopped: roundStats.longestGroupPopped, longestComboStreak: roundStats.longestComboStreak,
+      shardsEarned, newBest };
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -1277,7 +1283,7 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
-  return { startRound, togglePause, showMenu, _test };
+  return { startRound, togglePause, showMenu, getLastRunStats: () => lastRunStats, _test };
 })();
 
 /* =====================================================================
@@ -1505,6 +1511,91 @@ const Music = (function(){
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
     _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive } };
+})();
+
+/* =====================================================================
+   SHARECARD — Wardfall was the only shipped game without one (grepped:
+   no ShareCard/navigator.share anywhere in this file before this).
+   Mirrors iridescentcosmology.html:5534-5596's proven pattern verbatim:
+   a composed canvas card, navigator.share with a file attachment when
+   available, falling back to a plain PNG download. Also adds a plain-
+   text result string + clipboard-copy path neither existing game has —
+   the actual mechanism that makes a result shareable in a text thread
+   without an image attachment, per the game-designer's review: real
+   competitive comparison in a no-accounts/no-backend game depends on
+   a result being easy to paste somewhere, not just pretty to look at.
+===================================================================== */
+const ShareCard = (function(){
+  function resultText(stats){
+    return `Wardfall — ${stats.score} pts — Phase ${stats.phaseReached} — biggest group ${stats.longestGroupPopped} — best combo streak ${stats.longestComboStreak}`;
+  }
+  function buildCanvas(stats){
+    const cv = document.createElement('canvas');
+    cv.width = 600; cv.height = 315;
+    const c = cv.getContext('2d');
+    const bgGrad = c.createLinearGradient(0,0,0,cv.height);
+    bgGrad.addColorStop(0, '#231442'); bgGrad.addColorStop(1, '#140b30');
+    c.fillStyle = bgGrad; c.fillRect(0,0,cv.width,cv.height);
+    c.strokeStyle = 'rgba(255,203,92,0.55)'; c.lineWidth = 2;
+    c.strokeRect(8,8,cv.width-16,cv.height-16);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ffcb5c';
+    c.font = "bold 30px 'Cormorant Garamond', Georgia, serif";
+    c.fillText('WARDFALL', cv.width/2, 66);
+    c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
+    c.fillStyle = '#c2b3e8';
+    c.fillText('swing the censer, break the ward', cv.width/2, 92);
+
+    // mirrors exactly what the round-end overlay already shows — no new
+    // stats invented
+    const cols = [['SCORE', stats.score], ['PHASE REACHED', stats.phaseReached],
+      ['BIGGEST GROUP', stats.longestGroupPopped], ['BEST COMBO', stats.longestComboStreak]];
+    const colW = cv.width / cols.length;
+    cols.forEach(([label, val], i) => {
+      const x = colW*i + colW/2;
+      c.fillStyle = '#ffe6a8';
+      c.font = "bold 28px 'IBM Plex Mono', monospace";
+      c.fillText(String(val), x, 195);
+      c.fillStyle = '#8674b8';
+      c.font = "11px 'Quicksand', sans-serif";
+      c.fillText(label, x, 220);
+    });
+
+    c.fillStyle = '#6b6050';
+    c.font = "12px 'IBM Plex Mono', monospace";
+    c.fillText('SHIN MAHOU ARCADE', cv.width/2, cv.height-24);
+    return cv;
+  }
+
+  function share(){
+    const stats = Game.getLastRunStats();
+    if(!stats) return;
+    const cv = buildCanvas(stats);
+    cv.toBlob(async (blob) => {
+      if(!blob) return;
+      const file = new File([blob], 'wardfall-run.png', { type:'image/png' });
+      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+        try{ await navigator.share({ files:[file], title:'WARDFALL', text: resultText(stats) }); return; }
+        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      }
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = 'wardfall-run.png';
+      a.click();
+    }, 'image/png');
+  }
+  // plain-text fallback, deliberately separate from share()'s image path —
+  // returns whether the copy actually happened so the caller can show
+  // real feedback instead of assuming success.
+  function copyText(){
+    const stats = Game.getLastRunStats();
+    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return false;
+    navigator.clipboard.writeText(resultText(stats)).catch(()=>{});
+    return true;
+  }
+
+  return { share, copyText, resultText, _test: { buildCanvas } };
 })();
 
 /* =====================================================================
