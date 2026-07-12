@@ -148,7 +148,9 @@ body.reduced-motion .panel{
     <div class="tagline">swing the censer, break the ward</div>
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
     <div class="stat-line">Shards <b id="menuShardsVal">0</b></div>
+    <div class="stat-line" id="menuDailyRow"><span id="menuDailyLabel">Day #0 best</span> <b id="menuDailyBestVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a run">SOUND THE WARDFALL</button>
+    <button class="btn" onclick="Game.startRound({daily:true})" aria-label="Play today's Wardfall — a shared board everyone sees the same day">☀ TODAY'S WARDFALL</button>
     <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Shop.open()" aria-label="Shop">✦ SHARD SHOP</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
@@ -195,9 +197,10 @@ body.reduced-motion .panel{
     <div class="stat-line">Biggest group <b id="biggestGroupVal">0</b></div>
     <div class="stat-line">Best combo <b id="bestComboVal">0</b></div>
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
+    <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
     <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
     <button class="btn" onclick="if(ShareCard.copyText()){ this.textContent='✓ COPIED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); }" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
-    <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
+    <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
 </div>
@@ -246,6 +249,7 @@ const Persist = (function(){
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null, colorblind: false },
     achievements: {},
     cosmetics: { owned: {}, equipped: {} },
+    daily: { date: null, bestScore: 0 },
   };
   function load(){
     try{
@@ -265,6 +269,12 @@ const Persist = (function(){
         if(!data.cosmetics) data.cosmetics = { owned:{}, equipped:{} };
         if(!data.cosmetics.owned) data.cosmetics.owned = {};
         if(!data.cosmetics.equipped) data.cosmetics.equipped = {};
+        // daily — additive, gameplay-inert (a local per-day best score
+        // record only, never a gameplay-affecting unlock, keeping §5's
+        // cosmetics-only meta-progression rule intact)
+        if(!data.daily) data.daily = { date: null, bestScore: 0 };
+        if(data.daily.date===undefined) data.daily.date = null;
+        if(data.daily.bestScore===undefined) data.daily.bestScore = 0;
       }
     }catch(e){}
   }
@@ -280,6 +290,52 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 function rand(a,b){ return a + Math.random()*(b-a); }
 function randInt(n){ return Math.floor(Math.random()*n); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- SEEDED RNG — for Daily Wardfall only. free-play stays on Math.random
+// (untouched by anything below); Grid/Queue each hold their own swappable
+// rng function (default Math.random), set once at round start via
+// Grid.setRng/Queue.setRng and reset back to null (= Math.random) when
+// leaving daily mode. Isolated to the two gameplay-determining call sites
+// (generateRow's color/stone roll, nextColor/nextItem's color/special roll)
+// — everything else (screen-shake jitter, the reverb impulse-response
+// noise fill) is cosmetic and deliberately NOT seeded.
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seedFromString(str){
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 2654435761); h ^= h >>> 16; }
+  return h >>> 0;
+}
+// local calendar date (not UTC) so "today" matches the player's own day
+function localDateString(d){
+  d = d || new Date();
+  const tzAdjusted = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tzAdjusted.toISOString().slice(0,10);
+}
+const DAILY_EPOCH = '2026-07-09'; // Wardfall's ship date — Day #1
+function dayNumberFor(dateStr){
+  const a = Date.parse(DAILY_EPOCH+'T00:00:00Z');
+  const b = Date.parse(dateStr+'T00:00:00Z');
+  return Math.floor((b-a)/86400000) + 1;
+}
+// shared by every menu-render call site (showMenu, Settings.close, initial
+// page load) — top-level since it only needs Persist's public data, not
+// any of Game's private state, matching how menuBestVal/menuShardsVal are
+// already independently populated at each of those same three sites.
+function renderMenuDailyRow(){
+  const todayStr = localDateString();
+  const todayNum = dayNumberFor(todayStr);
+  const todayBest = Persist.data.daily.date === todayStr ? Persist.data.daily.bestScore : 0;
+  document.getElementById('menuDailyLabel').textContent = 'Day #'+todayNum+' best';
+  document.getElementById('menuDailyBestVal').textContent = todayBest;
+}
 
 const Ease = {
   popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
@@ -541,6 +597,9 @@ function spriteFor(cell){
 ===================================================================== */
 const Grid = (function(){
   let rows = []; // rows[0] = topmost/newest; rows[rows.length-1] = deepest/oldest
+  let rng = Math.random; // swapped to a seeded fn for Daily Wardfall, see Game.startRound
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
 
   function rowOffset(row){ return (row % 2 === 1) ? 0.5 : 0; }
   function inBounds(col,row){ return row>=0 && row<rows.length && col>=0 && col<COLS; }
@@ -563,8 +622,8 @@ const Grid = (function(){
   function generateRow(colorPool, stoneChance){
     const row = [];
     for(let i=0;i<COLS;i++){
-      if(Math.random() < stoneChance) row.push({ special:'stone', crack:0 });
-      else row.push({ color: colorPool[randInt(colorPool.length)] });
+      if(rng() < stoneChance) row.push({ special:'stone', crack:0 });
+      else row.push({ color: colorPool[rngInt(colorPool.length)] });
     }
     return row;
   }
@@ -624,7 +683,7 @@ const Grid = (function(){
   }
   return {
     rowOffset, inBounds, orbAt, setOrb, removeOrb, hexNeighbors,
-    init, descend, setRows, forEachOrb, liveColors, bottomOccupiedRow, floodFill, ceilingConnected,
+    init, descend, setRows, forEachOrb, liveColors, bottomOccupiedRow, floodFill, ceilingConnected, setRng,
     get rows(){ return rows; },
   };
 })();
@@ -641,23 +700,26 @@ const Grid = (function(){
    is worth its stale-state risk here.
 ===================================================================== */
 const Queue = (function(){
+  let rng = Math.random; // swapped to a seeded fn for Daily Wardfall, see Game.startRound
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
   function colorPoolForPhase(phase){
     return COLOR_KEYS.slice(0, PHASE_COLOR_COUNT[phase] || PHASE_COLOR_COUNT[PHASE_COLOR_COUNT.length-1]);
   }
   function nextColor(phase){
     const live = Grid.liveColors();
     const pool = live.size ? Array.from(live) : colorPoolForPhase(phase);
-    return pool[randInt(pool.length)];
+    return pool[rngInt(pool.length)];
   }
   function nextItem(phase){
     const bombP = PHASE_BOMB_CHANCE[phase] || 0;
     const rainbowP = PHASE_RAINBOW_CHANCE[phase] || 0;
-    const r = Math.random();
+    const r = rng();
     if(r < bombP) return { special:'bomb' };
     if(r < bombP + rainbowP) return { special:'rainbow' };
     return { color: nextColor(phase) };
   }
-  return { colorPoolForPhase, nextItem };
+  return { colorPoolForPhase, nextItem, setRng };
 })();
 
 /* =====================================================================
@@ -802,6 +864,7 @@ const Game = (function(){
     usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
   let lastEventType = null;
   let lastRunStats = null; // captured at round-end for ShareCard — mirrors exactly what the round-end overlay itself shows, no new stats invented
+  let dailyMode = false, dailyDateStr = null; // Daily Wardfall — seeded board, see startRound()
   const frameTimes = [];
 
   let wakeLockSentinel = null;
@@ -1179,7 +1242,23 @@ const Game = (function(){
     requestAnimationFrame(loop);
   }
 
-  function startRound(){
+  function startRound(opts){
+    // Daily Wardfall — a deterministic seeded board keyed off the local
+    // calendar date, so every player who plays "today's" board sees the
+    // identical color/stone/bomb/rainbow sequence and scores are
+    // genuinely comparable without any backend. Additive only: normal
+    // free-play always resets both rng sources back to Math.random.
+    dailyMode = !!(opts && opts.daily);
+    if(dailyMode){
+      dailyDateStr = localDateString();
+      const rngFn = mulberry32(seedFromString(dailyDateStr));
+      Grid.setRng(rngFn);
+      Queue.setRng(rngFn);
+    } else {
+      dailyDateStr = null;
+      Grid.setRng(null);
+      Queue.setRng(null);
+    }
     running=true; paused=false; roundEnded=false;
     totalScore=0; comboStreak=0; shotsFired=0; shotsSinceDescent=0; phase=0;
     aimAngle=-Math.PI/2; flight=null;
@@ -1212,6 +1291,7 @@ const Game = (function(){
     document.getElementById('pauseOverlay').classList.remove('show');
     document.getElementById('menuBestVal').textContent = Persist.data.best.score;
     document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+    renderMenuDailyRow();
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRound(){
@@ -1227,6 +1307,12 @@ const Game = (function(){
     Persist.data.totalRounds += 1;
     const shardsEarned = Math.floor(totalScore/50);
     Persist.data.shards += shardsEarned;
+    let dailyNewBest = false;
+    if(dailyMode){
+      const daily = Persist.data.daily;
+      if(daily.date !== dailyDateStr){ daily.date = dailyDateStr; daily.bestScore = 0; }
+      if(totalScore > daily.bestScore){ daily.bestScore = totalScore; dailyNewBest = true; }
+    }
     Persist.save();
     const noMiss = roundStats.missCount===0 && shotsFired>0;
     Achievements.checkAll({ score: totalScore, longestGroupPopped: roundStats.longestGroupPopped,
@@ -1247,9 +1333,19 @@ const Game = (function(){
     document.getElementById('biggestGroupVal').textContent = roundStats.longestGroupPopped;
     document.getElementById('bestComboVal').textContent = roundStats.longestComboStreak;
     document.getElementById('shardsEarnedVal').textContent = shardsEarned;
+    const dailyRow = document.getElementById('dailyResultRow');
+    let dayNumber = null;
+    if(dailyMode){
+      dayNumber = dayNumberFor(dailyDateStr);
+      document.getElementById('dailyDayLabel').textContent = 'Day #'+dayNumber+' best';
+      document.getElementById('dailyBestVal').textContent = Persist.data.daily.bestScore;
+      dailyRow.style.display = '';
+    } else {
+      dailyRow.style.display = 'none';
+    }
     lastRunStats = { score: totalScore, phaseReached: roundStats.phaseReached + 1,
       longestGroupPopped: roundStats.longestGroupPopped, longestComboStreak: roundStats.longestComboStreak,
-      shardsEarned, newBest };
+      shardsEarned, newBest, dailyMode, dayNumber, dailyBestScore: dailyMode ? Persist.data.daily.bestScore : null, dailyNewBest };
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -1258,7 +1354,9 @@ const Game = (function(){
   const _test = {
     state: () => ({ running, paused, roundEnded, score: totalScore, comboStreak, shotsFired,
       shotsSinceDescent, phase, flying: !!flight, aimAngle, currentItem, nextItem,
-      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length, dangerProximity }),
+      bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length, dangerProximity,
+      dailyMode, dailyDateStr }),
+    snapshotBoard: () => Grid.rows.map(row => row.map(o => o ? (o.color || o.special) : null)),
     setAim: (angle) => { aimAngle = clamp(angle, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD); },
     fire: () => fire(),
     forceItem: (item) => { currentItem = item; },
@@ -1283,7 +1381,7 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
-  return { startRound, togglePause, showMenu, getLastRunStats: () => lastRunStats, _test };
+  return { startRound, togglePause, showMenu, getLastRunStats: () => lastRunStats, isDailyMode: () => dailyMode, _test };
 })();
 
 /* =====================================================================
@@ -1527,7 +1625,11 @@ const Music = (function(){
 ===================================================================== */
 const ShareCard = (function(){
   function resultText(stats){
-    return `Wardfall — ${stats.score} pts — Phase ${stats.phaseReached} — biggest group ${stats.longestGroupPopped} — best combo streak ${stats.longestComboStreak}`;
+    // Daily runs lead with the day number — that's the actual comparable
+    // claim ("I got X on today's board"), a generic score means nothing
+    // without the shared-seed context that makes it comparable at all.
+    const prefix = stats.dailyMode ? `Wardfall — Day #${stats.dayNumber}` : 'Wardfall';
+    return `${prefix} — ${stats.score} pts — Phase ${stats.phaseReached} — biggest group ${stats.longestGroupPopped} — best combo streak ${stats.longestComboStreak}`;
   }
   function buildCanvas(stats){
     const cv = document.createElement('canvas');
@@ -1541,11 +1643,14 @@ const ShareCard = (function(){
 
     c.textAlign = 'center';
     c.fillStyle = '#ffcb5c';
-    c.font = "bold 30px 'Cormorant Garamond', Georgia, serif";
-    c.fillText('WARDFALL', cv.width/2, 66);
+    // sized down for the daily title (longer string than the plain
+    // "WARDFALL" — same "stay clear of the 600px canvas edges" reasoning
+    // iridescentcosmology.html's own ShareCard already applies)
+    c.font = stats.dailyMode ? "bold 24px 'Cormorant Garamond', Georgia, serif" : "bold 30px 'Cormorant Garamond', Georgia, serif";
+    c.fillText(stats.dailyMode ? 'WARDFALL — DAY #'+stats.dayNumber : 'WARDFALL', cv.width/2, 66);
     c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
     c.fillStyle = '#c2b3e8';
-    c.fillText('swing the censer, break the ward', cv.width/2, 92);
+    c.fillText(stats.dailyMode ? 'today\'s shared board — same censer for everyone' : 'swing the censer, break the ward', cv.width/2, 92);
 
     // mirrors exactly what the round-end overlay already shows — no new
     // stats invented
@@ -1636,6 +1741,7 @@ const Settings = (function(){
     if(openedFromMenu){
       document.getElementById('menuBestVal').textContent = Persist.data.best.score;
       document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+      renderMenuDailyRow();
       document.getElementById('menuOverlay').classList.add('show');
     }
   }
@@ -1771,6 +1877,7 @@ const FullscreenCtrl = (function(){
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
 document.getElementById('menuShardsVal').textContent = Persist.data.shards;
+renderMenuDailyRow();
 
 // PWA registration — see the pwa-offline-games skill. Built in from the
 // first commit this time (Games 1-2 both retrofitted this). Explicit
