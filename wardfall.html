@@ -471,23 +471,28 @@ function facetSprite(defs, baseColor, litFn, darkFn){
   c2.closePath(); c2.stroke();
   return cvs;
 }
+// near-black obsidian base + hot ember accent (bomb), and the 4-hue cycle
+// (rainbow) — hoisted to shared top-level constants (not locals inside
+// their own sprite-builder) so Juice's pop-VFX branch can reuse the exact
+// same identity colors instead of re-declaring them, matching this file's
+// own "define once" canvas color-token-drift guard (GAME_3_PILLARS.md §3).
+const BOMB_OBSIDIAN = '#161022', BOMB_EMBER = '#ff9d52';
+const RAINBOW_HUES = ['#4ea8ff','#b98aff','#2d8f9e','#e8e4ff'];
 function buildBombSprite(){
   // near-black obsidian base; a hot ember accent lives only on two lit
   // facets (a glowing fuse/crack), not the base fill — deliberately kept
   // off --danger red as an accent, not a semantic hazard color.
-  const OBSIDIAN = '#161022', EMBER = '#ff9d52';
-  return facetSprite(BOMB_VERTS, OBSIDIAN,
-    (i)=> (i===0||i===6) ? EMBER : shadeHex(OBSIDIAN, 14, 6),
-    (i)=> shadeHex(OBSIDIAN, -10, -4));
+  return facetSprite(BOMB_VERTS, BOMB_OBSIDIAN,
+    (i)=> (i===0||i===6) ? BOMB_EMBER : shadeHex(BOMB_OBSIDIAN, 14, 6),
+    (i)=> shadeHex(BOMB_OBSIDIAN, -10, -4));
 }
 function buildRainbowSprite(){
   // 4+ distinct cycling hues per facet, not the usual binary lit/dark
   // alternation of one color — a rainbow orb built with the standard
   // i%2 alternation would read as "a two-color gem," not rainbow.
-  const HUES = ['#4ea8ff','#b98aff','#2d8f9e','#e8e4ff'];
   return facetSprite(RAINBOW_VERTS, '#c9b8ff',
-    (i)=> shadeHex(HUES[i%HUES.length], 14, 6),
-    (i)=> shadeHex(HUES[(i+2)%HUES.length], -12, -4));
+    (i)=> shadeHex(RAINBOW_HUES[i%RAINBOW_HUES.length], 14, 6),
+    (i)=> shadeHex(RAINBOW_HUES[(i+2)%RAINBOW_HUES.length], -12, -4));
 }
 function buildStoneSprite(crack){
   // lighter true ash-grey, deliberately split in lightness/saturation
@@ -950,7 +955,17 @@ const Game = (function(){
     roundStats.totalOrbsPoppedRun += nPopped + nFallen + nBomb;
     updateHudScore();
 
-    if(scored) Events.emit('wardBroken', { centers: poppedCenters, n: nPopped+nFallen+nBomb+nHazard, streak: comboStreak, colorKey: item.color });
+    if(scored){
+      // popType — the pillars doc (GAME_3_PILLARS.md §3) explicitly calls
+      // for bomb detonation to get its own shockwave/flash distinct from a
+      // plain 3-match pop; that never got built because every pop path
+      // funneled into the same single generic Juice effect regardless of
+      // type. Tagging the type here (already known at each branch above)
+      // is the one payload change needed to let Juice actually branch.
+      const popType = item.special==='bomb' ? 'bomb' : item.special==='rainbow' ? 'rainbow' : 'match';
+      const epicenter = cellCenter(landingCell.col, landingCell.row);
+      Events.emit('wardBroken', { centers: poppedCenters, n: nPopped+nFallen+nBomb+nHazard, streak: comboStreak, colorKey: item.color, type: popType, epicenter });
+    }
     else Events.emit('orbMiss', {});
     lastEventType = scored ? 'wardBroken' : 'orbMiss';
 
@@ -1107,15 +1122,25 @@ const Game = (function(){
       }
     }
 
-    // censer (cannon) — small hand-drawn urn silhouette with recoil offset
+    // censer (cannon) — small hand-drawn urn silhouette with recoil offset.
+    // Was a single flat fillStyle — the one persistently-on-screen singular
+    // object in the game had less shading effort than a mass-produced orb
+    // (every orb gets a two-stop radial gradient + highlight, buildOrbSprite
+    // 398-412). Same technique applied here, not a new one invented.
     const recoil = Juice.getRecoil();
     ctx.save();
     ctx.translate(cannonX, cannonY + recoil);
     ctx.rotate(aimAngle + Math.PI/2);
-    ctx.fillStyle = shadeHex('#3a2a5c', 4, 2);
+    const censerGrad = ctx.createRadialGradient(-6,-10,4, 0,2,28);
+    censerGrad.addColorStop(0, shadeHex('#3a2a5c', 22, 8));
+    censerGrad.addColorStop(0.55, shadeHex('#3a2a5c', 4, 2));
+    censerGrad.addColorStop(1, shadeHex('#3a2a5c', -16, 0));
+    ctx.fillStyle = censerGrad;
     ctx.beginPath();
     ctx.moveTo(-16,18); ctx.lineTo(-10,-14); ctx.lineTo(10,-14); ctx.lineTo(16,18); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = 'rgba(255,215,107,0.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.beginPath(); ctx.ellipse(-6,-8,5,8,-0.15,0,Math.PI*2); ctx.fill();
     ctx.restore();
     if(!flight && currentItem){
       const sprite = spriteFor(currentItem.special ? {special:currentItem.special} : {color:currentItem.color});
@@ -1253,7 +1278,8 @@ const Game = (function(){
    Wonderland shipped without, see GAME_3_PILLARS.md §3).
 ===================================================================== */
 const Juice = (function(){
-  let pops = [];
+  let pops = [];       // per-orb match/rainbow flares
+  let shockwaves = []; // bomb detonations — a blast, not a flock of per-orb flares
   let comboPulse = 0;
   let shakeMag = 0;
   let recoil = 0;
@@ -1270,11 +1296,30 @@ const Juice = (function(){
   function comboPulseScale(){ return 1 + comboPulse*0.3; }
   function descentFlashAmt(){ return descentFlash; }
 
+  // wardBroken previously funneled bomb/rainbow/plain-match pops through one
+  // identical generic white flare — GAME_3_PILLARS.md §3 explicitly calls
+  // for bomb to get its own shockwave/flash distinct from a plain match;
+  // that was never built. Now branches on the type tag Game already
+  // attaches at each resolveAttach() path, and a plain match's flare tints
+  // to the popped color (colorKey was already in the payload, unused here
+  // before) instead of a flat off-white circle.
   Events.on('wardBroken', (p)=>{
-    for(const c of p.centers) pops.push({x:c.x,y:c.y,t:0,dur:0.32});
+    if(p.type === 'bomb'){
+      shockwaves.push({ x:p.epicenter.x, y:p.epicenter.y, t:0, dur:0.42 });
+      addShake(Math.min(6 + p.n*0.5, 14));
+      vibrate(Settings.reducedMotion() ? [] : [30, 10, 45]);
+    } else {
+      const rainbow = p.type === 'rainbow';
+      const cdef = !rainbow ? activeColorDef(p.colorKey) : null;
+      const baseColor = cdef ? cdef.color : '#c9b8ff';
+      p.centers.forEach((c,i)=>{
+        pops.push({ x:c.x, y:c.y, t:0, dur:0.32,
+          color: rainbow ? RAINBOW_HUES[i%RAINBOW_HUES.length] : baseColor });
+      });
+      addShake(Math.min(3 + p.n*0.4, 14));
+      vibrate(Settings.reducedMotion() ? [] : [16, 24]);
+    }
     comboPulse = 1;
-    addShake(Math.min(3 + p.n*0.4, 14));
-    vibrate(Settings.reducedMotion() ? [] : [16, 24]);
   });
   // descend is the actual pressure mechanic firing — deliberately a smaller
   // shake than a big ward-break (magnitude 5 vs up to 14) so it reads as
@@ -1288,6 +1333,8 @@ const Juice = (function(){
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
+    for(const s of shockwaves) s.t += dt;
+    shockwaves = shockwaves.filter(s=>s.t < s.dur);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
     descentFlash = Math.max(0, descentFlash - dt*1.8);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
@@ -1299,13 +1346,28 @@ const Juice = (function(){
       const s = Ease.popSettle(t) * (1-t*0.4) * (SPRITE_SIZE*0.5);
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1-t);
-      ctx.fillStyle = 'rgba(255,246,220,0.85)';
+      ctx.fillStyle = shadeHex(p.color, 34, 12);
       ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI*2); ctx.fill();
+      // a thin expanding ring on the same timeline — reads as a flare
+      // dissolving outward, not just a dot fading in place
+      ctx.strokeStyle = p.color; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, s*(1+t*1.5), 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    for(const s of shockwaves){
+      const t = s.t/s.dur;
+      const r = Ease.easeOutCubic(t) * SPRITE_SIZE*2.1;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.strokeStyle = BOMB_EMBER; ctx.lineWidth = 4*(1-t)+1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = `rgba(22,16,34,${0.5*(1-t)})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r*0.55, 0, Math.PI*2); ctx.fill();
       ctx.restore();
     }
   }
   return { update, render, comboPulseScale, getShake, getRecoil, cannonRecoil, descentFlashAmt,
-    _test: { shakeMag: () => shakeMag, descentFlash: () => descentFlash } };
+    _test: { shakeMag: () => shakeMag, descentFlash: () => descentFlash, popCount: () => pops.length, shockwaveCount: () => shockwaves.length } };
 })();
 
 /* =====================================================================
