@@ -1253,6 +1253,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <button class="btn primary" onclick="Game.start()">✦ &nbsp;OPEN THE COSMOLOGY</button>
     <button class="btn gold" onclick="Shop.open()">📖 &nbsp;GRIMOIRE</button>
     <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
+    <button class="btn" onclick="EvoLibrary.open()">✦ &nbsp;EVOLUTIONS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint">WASD / arrows to move · spells cast themselves<br>on touch: drag the joystick<br><span style="color:var(--neon2)">master a spell and its matching passive — together, they evolve</span></div>
     <a class="arcade-credit" href="index.html" aria-label="Back to the Shin Mahou Arcade">SHIN MAHOU ARCADE</a>
@@ -1334,6 +1335,23 @@ textarea.form-input{min-height:70px;resize:vertical;}
   </div>
 </div>
 
+<!-- EVOLUTION LIBRARY — direct response to real player feedback ("I've
+     only managed to discover the chain one"): the pairing that produces
+     each evolution was previously undiscoverable except by accident.
+     Requirement (which spell + which passive to max) is always shown,
+     even before discovery — that's the actionable part a player needs to
+     strategize toward. The evolved effect itself stays hidden as "???"
+     until actually obtained, same as Achievements' own convention. -->
+<div class="overlay" id="evoLibraryOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Evolution Library">
+    <h2>✦ WHAT THE PAIRING BECOMES ✦</h2>
+    <div class="tagline">master a spell and its matching passive — together, they evolve</div>
+    <div class="ach-progress" id="evoLibProgress"></div>
+    <div id="evoLibRows"></div>
+    <button class="btn" onclick="EvoLibrary.close()">BACK</button>
+  </div>
+</div>
+
 <!-- BUG REPORTER -->
 <div class="overlay" id="bugOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
@@ -1399,6 +1417,7 @@ const Persist = (function(){
     lifetimeKills: 0, lifetimeEssence: 0, bossesDefeated: 0, deaths: 0, revives: 0,
     fastestClear: null,
     achievements: {},
+    evolutionsDiscovered: {}, // lifetime record for the Evolution Library — set on first obtaining each evolution in any run
     // reducedMotion: null means "not manually overridden, defer to the OS
     // prefers-reduced-motion setting" — see Settings.reducedMotion().
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
@@ -1430,6 +1449,7 @@ const Persist = (function(){
         if(data.revives === undefined) data.revives = 0;
         if(data.fastestClear === undefined) data.fastestClear = null;
         if(!data.achievements) data.achievements = {};
+        if(!data.evolutionsDiscovered) data.evolutionsDiscovered = {};
         // backfill for saves from before the accessibility/settings pass
         if(!data.settings) data.settings = { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null };
         if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
@@ -3830,6 +3850,10 @@ const Game = (function(){
       if(o.key==='maxhp'){ player.maxhp = 100 + Persist.data.upgrades.vitality*15 + passives.maxhp*20; player.hp += 20; }
     } else if(o.kind==='evolution'){
       evolutions[o.key] = true;
+      if(!Persist.data.evolutionsDiscovered[o.key]){
+        Persist.data.evolutionsDiscovered[o.key] = { at: Date.now() };
+        Persist.save();
+      }
     }
     document.getElementById('levelOverlay').classList.remove('show');
     levelChoosing = false;
@@ -5309,6 +5333,44 @@ const Achievements = (function(){
   }
 
   return { open, close, checkAll, render, DEFS };
+})();
+
+/* =====================================================================
+   EVOLUTION LIBRARY — same DEFS/render/open/close shape as Achievements
+   above, reused deliberately rather than a new pattern. Discovery is
+   lifetime (Persist.data.evolutionsDiscovered), set once in Game.pick()
+   the first time a player actually obtains each evolution in any run.
+===================================================================== */
+const EvoLibrary = (function(){
+  function render(){
+    const d = Persist.data;
+    const keys = Object.keys(EVOLUTIONS);
+    const discoveredCount = keys.filter(k => d.evolutionsDiscovered && d.evolutionsDiscovered[k]).length;
+    document.getElementById('evoLibProgress').textContent = `${discoveredCount} / ${keys.length} discovered`;
+    document.getElementById('evoLibRows').innerHTML = keys.map(k => {
+      const def = EVOLUTIONS[k];
+      const on = !!(d.evolutionsDiscovered && d.evolutionsDiscovered[k]);
+      const spellName = WEAPONS[def.spell] ? WEAPONS[def.spell].name : def.spell;
+      const passiveName = PASSIVES[def.passive] ? PASSIVES[def.passive].name : def.passive;
+      return `<div class="ach-row ${on?'unlocked':''}">
+        <div class="ach-icon">${on?def.icon:'?'}</div>
+        <div class="ach-info">
+          <div class="ach-name">${on ? def.name : '???'}</div>
+          <div class="ach-desc">max <b style="color:var(--neon2)">${spellName}</b> + <b style="color:var(--neon2)">${passiveName}</b>${on ? ' — ' + def.desc() : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  function open(){
+    document.getElementById('menuOverlay').classList.remove('show');
+    render();
+    document.getElementById('evoLibraryOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('evoLibraryOverlay').classList.remove('show');
+    document.getElementById('menuOverlay').classList.add('show');
+  }
+  return { open, close, render };
 })();
 
 /* =====================================================================
