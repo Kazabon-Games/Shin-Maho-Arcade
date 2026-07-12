@@ -191,6 +191,9 @@ body.reduced-motion .panel{
     <div class="new-best" id="newBestBadge" style="display:none;">✦ New Best ✦</div>
     <div class="stat-line">Score <b id="finalScoreVal">0</b></div>
     <div class="stat-line">Best <b id="bestScoreVal">0</b></div>
+    <div class="stat-line">Phase reached <b id="phaseReachedVal">0</b></div>
+    <div class="stat-line">Biggest group <b id="biggestGroupVal">0</b></div>
+    <div class="stat-line">Best combo <b id="bestComboVal">0</b></div>
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
@@ -1232,6 +1235,14 @@ const Game = (function(){
     document.getElementById('hud').classList.remove('show');
     document.getElementById('finalScoreVal').textContent = totalScore;
     document.getElementById('bestScoreVal').textContent = best.score;
+    // roundStats already computes these every round (used by Achievements
+    // above) but the overlay discarded them and showed only score/best/
+    // shards — cheap, concrete "feels unfinished" fix: surface the data
+    // that's already sitting in memory instead of computing anything new.
+    // phaseReached is 0-indexed internally (matches HUD's phase+1 convention).
+    document.getElementById('phaseReachedVal').textContent = roundStats.phaseReached + 1;
+    document.getElementById('biggestGroupVal').textContent = roundStats.longestGroupPopped;
+    document.getElementById('bestComboVal').textContent = roundStats.longestComboStreak;
     document.getElementById('shardsEarnedVal').textContent = shardsEarned;
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
