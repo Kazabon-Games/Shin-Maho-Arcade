@@ -782,12 +782,16 @@ const Game = (function(){
   Events.on('capture', d => {
     bursts.push({ x:d.x, y:d.y, color: GOLD_REF, life:0, maxLife:0.4, r0:4, r1:24 * (0.6+0.4*motionScale()) });
     addShake(1.2);
-    floatTexts.push({ x:d.x, y:d.y, text:'+'+d.pts, life:0, maxLife:0.7 });
+    floatTexts.push({ x:d.x, y:d.y, text:'+'+d.pts, color: GOLD_REF, life:0, maxLife:0.7 });
   });
   Events.on('fusion', d => {
     bursts.push({ x:d.x, y:d.y, color: '#ffffff', life:0, maxLife:0.5, r0:6, r1:32 * (0.6+0.4*motionScale()) });
     addShake(2.5);
-    floatTexts.push({ x:d.x, y:d.y, text:'+'+d.pts, life:0, maxLife:0.7 });
+    // fusion's own float-text matches its burst's white, not capture's gold —
+    // preserves the visual distinction burst+shake already establish between
+    // the two event types instead of flattening both to the same color
+    // (visual-art-director flag).
+    floatTexts.push({ x:d.x, y:d.y, text:'+'+d.pts, color: '#ffffff', life:0, maxLife:0.7 });
   });
   Events.on('well_expire', d => bursts.push({ x:d.x, y:d.y, color: '#4ea8ff', life:0, maxLife:0.45, r0:8, r1:CAPTURE_RADIUS*1.3 * (0.6+0.4*motionScale()) }));
   Events.on('hull_damage', d => {
@@ -1313,8 +1317,9 @@ const Game = (function(){
       ctx.globalAlpha = 1 - p;
       ctx.font = "bold 15px 'IBM Plex Mono', 'Courier New', monospace";
       ctx.textAlign = 'center';
-      ctx.fillStyle = GOLD_REF;
-      ctx.shadowColor = GOLD_REF; ctx.shadowBlur = 6;
+      const color = t.color || GOLD_REF;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = 6;
       ctx.fillText(t.text, t.x, t.y - 14 - rise);
       ctx.restore();
     }
