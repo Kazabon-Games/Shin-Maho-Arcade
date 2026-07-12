@@ -1705,6 +1705,18 @@ const WEAPONS = {
     desc:l=>`Curses the nearest Husk, burning for ${8+l*4} dmg/s over ${2+l*0.4}s.`,
     maxLvl:5,
   },
+  // Sunder — new to this game, not a backdated Monolith operator (all 13
+  // real canonical names are already spoken for by the roster above).
+  // Granted directly on reaching Stage 2, never offered as a random early
+  // pick (see poolChoices' explicit sunder exclusion). Reuses Ramiel's own
+  // beam perpendicular-distance-to-ray math (updateBoss's 'beaming' phase)
+  // rather than inventing new collision geometry — the player, in effect,
+  // now wields what the boss wielded.
+  sunder: {
+    name:'Sunder', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="19" y2="5"/><line x1="8" y1="16" x2="11" y2="13"/><line x1="13" y1="11" x2="16" y2="8"/><path d="M19 5L16 5.3M19 5L18.7 8"/></svg>', archetype:'beamPierce',
+    desc:l=>`Channels a piercing beam at the nearest threat, ${6+l*3} dmg/tick for 1.0s, every ${(5.5-l*0.5).toFixed(1)}s.`,
+    maxLvl:5,
+  },
 };
 // Passives
 const PASSIVES = {
@@ -1715,6 +1727,14 @@ const PASSIVES = {
   magnet:   { name:'Gather',icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4H10V13A2 2 0 0 0 14 13V4H17V13A5 5 0 0 1 7 13V4Z"/><rect x="7" y="4" width="3" height="3" fill="currentColor" stroke="none"/><rect x="14" y="4" width="3" height="3" fill="currentColor" stroke="none"/></svg>', desc:l=>`+${l*35}% pickup range.`, maxLvl:5 },
   reflect:  { name:'Reflect',icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20" stroke-dasharray="2 2.5"/></svg>', desc:l=>`Return ${l*15}% of contact damage to attacker.`, maxLvl:5 },
   counter:  { name:'Counter',icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L5 14H11L10 22L19 9H13L13 2Z"/></svg>', desc:l=>`On being hit, fire a retaliation bolt for ${18+l*8} dmg.`, maxLvl:5 },
+  // Fortify reduces what the player actually RECEIVES — see fortifyMult()
+  // for the ordering fix that keeps this from letting Reflect return
+  // full-value damage off an enemy's un-mitigated hit.
+  fortify:  { name:'Fortify', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L19 6.5V12C19 16.5 16 19.8 12 21C8 19.8 5 16.5 5 12V6.5Z"/></svg>', desc:l=>`-${l*6}% incoming damage.`, maxLvl:5 },
+  // Amplify scales radius/size ONLY, at every existing aura/AoE call site
+  // individually (Nova/Drain/Root/Afflict/Mine/Orbitals) — the adjacent
+  // damage term on each of those same lines is deliberately left untouched.
+  amplify:  { name:'Amplify', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9" stroke-dasharray="2 2.5"/></svg>', desc:l=>`+${l*8}% radius on all fields/bursts.`, maxLvl:5 },
 };
 
 // Evolutions — maxed spell + maxed specific passive → replaces both with one
@@ -1744,11 +1764,25 @@ const EVOLUTIONS = {
 // currency colors (a real playtest finding: they read as rewards). Recolored
 // off that band entirely rather than just darkened, so neither reads as
 // currency-adjacent anymore.
+//
+// Second pass (real audit, RGB-distance + WCAG contrast computed, not
+// eyeballed): bulwark (#ff3d68) was only 17.9 units from --danger and 33.0
+// from Ramiel's own attack-flash color — a near-duplicate under a different
+// name, diluting the one signal that most needs to read as unique. Moved to
+// #d81f42 (75.8/86.5 units from those two respectively). elite (#7a1030)
+// failed WCAG contrast against the real play-field background fill
+// (#0d0724) at 1.81:1 — below the 3:1 floor, worse than every other enemy —
+// and every attempt to fix that by raising lightness on its own red hue
+// collided with the new bulwark. Moved off the red axis entirely to a cold
+// steel-blue (#677fad, 4.86:1 contrast, 182.8 units from bulwark). This is
+// a real identity change (was "dark blood-jewel," now "cold armored
+// threat") — deliberate, not a silent patch; flagged to and approved by
+// the producer before shipping.
 const ENEMY_TYPES = {
   husk:    { r:13, hp:22, speed:62,  dmg:9,  xp:1, color:'#b45cff', shape:'tri'    },
   swarmer: { r:8,  hp:9,  speed:105, dmg:5,  xp:1, color:'#2dd9c9', shape:'dot'    },
-  bulwark: { r:22, hp:90, speed:36,  dmg:18, xp:4, color:'#ff3d68', shape:'hex'    },
-  elite:   { r:30, hp:600,speed:44,  dmg:26, xp:30,color:'#7a1030', shape:'diamond'},
+  bulwark: { r:22, hp:90, speed:36,  dmg:18, xp:4, color:'#d81f42', shape:'hex'    },
+  elite:   { r:30, hp:600,speed:44,  dmg:26, xp:30,color:'#677fad', shape:'diamond'},
 };
 const ENEMY_SPAWN_POP_DUR = 0.2; // seconds — regular-enemy spawn pop-in window (elites skip this, see spawnEnemy)
 
@@ -1861,7 +1895,7 @@ const Game = (function(){
     if(wakeLockSentinel){ try{ wakeLockSentinel.release(); }catch(e){} wakeLockSentinel = null; }
   }
   let elapsed = 0, lastTs = 0;
-  let player, enemies = [], bullets = [], gems = [], particles = [], novaRings = [], mines = [];
+  let player, enemies = [], bullets = [], gems = [], particles = [], novaRings = [], mines = [], sunderBeams = [];
   let atmosphereTime = 0; // real-clock time, always advances — drives the idle menu backdrop
   let kills, shardsThisRun, xp, xpNeed, level;
   let spawnAcc = 0, eliteAcc = 0;
@@ -1869,6 +1903,29 @@ const Game = (function(){
   // its behavior (phased state machine, absorb mechanic, beam/shard attacks)
   // shares nothing with "chase player, deal contact damage."
   const BOSS_TRIGGER_TIME = 450; // 7:30 — leaves a real fight window before the 10-min stage target
+  // Stage 2: an escalation phase the run continues into after Ramiel falls,
+  // not a separate selectable level. `stage` tracks which half of the run
+  // this is; `boss2Triggered` is a deliberately SEPARATE flag from
+  // `bossTriggered` (which stays permanently true once Ramiel has spawned)
+  // rather than resetting/reusing it — a shared trigger flag between two
+  // bosses is exactly the kind of stale-state collision this studio treats
+  // as a correctness risk, not a style nit.
+  let stage = 1, boss2Triggered = false, stage2EnteredAt = 0;
+  const STAGE2_BREATHER_HEAL = 0.3; // fraction of maxhp restored on advancing
+  const STAGE2_BREATHER_IFRAMES = 2.5; // seconds — same shape as Second Wind's revival grace
+  // Sunder — granted directly on advancing to stage 2 (see advanceToStage2),
+  // never offered through the random level-up pool (see poolChoices' sunder
+  // exclusion) — reads as "you now wield what Ramiel wielded," not a
+  // lucky pickup. Deliberately bypasses MAX_SPELL_SLOTS too: it's a
+  // reward slot, not a 7th randomly-earned one, so a player already at 6
+  // active spells legitimately ends up with 7 after stage 2 — an
+  // intentional exception, not an oversight.
+  const SUNDER_RANGE = 460; // shorter than Ramiel's own 2600 — that's a
+                             // full-arena telegraph, this is a player tool
+                             // balanced against a much smaller clear radius
+  const SUNDER_WIDTH = 30;
+  const SUNDER_TICK_INTERVAL = 0.2; // 5 ticks/sec
+  const SUNDER_DURATION = 1.0;
   let boss = null, bossTriggered = false, bossProjectiles = [];
   let bossEntranceTimer = 0, bossSpawnX = 0, bossSpawnY = 0;
   let weapons, passives, evolutions;      // { key: level } / { key: level } / { key: true }
@@ -2055,13 +2112,14 @@ const Game = (function(){
     elapsed = 0; kills = 0; shardsThisRun = 0;
     xp = 0; level = 1; xpNeed = 4;
     player = newPlayer();
-    enemies = []; bullets = []; gems = []; particles = []; novaRings = []; mines = [];
+    enemies = []; bullets = []; gems = []; particles = []; novaRings = []; mines = []; sunderBeams = [];
     weapons = { pulse: 1 };  // start with Pulse lv1
     passives = {};
     evolutions = {};
-    fireTimers = { pulse:0, nova:0, shardspray:0, drain:0, root:0, displace:0, chain:0, mine:0, afflict:0, banish:0, impose:0 };
+    fireTimers = { pulse:0, nova:0, shardspray:0, drain:0, root:0, displace:0, chain:0, mine:0, afflict:0, banish:0, impose:0, sunder:0 };
     spawnAcc = 0; eliteAcc = 0;
     boss = null; bossTriggered = false; bossProjectiles = [];
+    stage = 1; boss2Triggered = false; stage2EnteredAt = 0;
     camX = 0; camY = 0;
     document.getElementById('hud').classList.add('show');
     lastTs = performance.now();
@@ -2186,6 +2244,10 @@ const Game = (function(){
 
   function spawnBoss(x, y){
     boss = {
+      kind: 'ramiel', // distinguishes which boss this is — bossDefeated()
+                       // branches on it, and damageBoss()'s shield check is
+                       // phase-name-based, so a second boss must never reuse
+                       // Ramiel's phase names for something unrelated
       x, y, r: 55, hp: BOSS_MAXHP, maxhp: BOSS_MAXHP,
       phase: 'gathering', phaseTimer: GATHER_DURATION,
       charge: 0, rotation: 0,
@@ -2260,7 +2322,7 @@ const Game = (function(){
       if(proj > 0 && proj < 2600){
         const perp = Math.abs(toPx*dy - toPy*dx);
         if(perp < boss.beamWidth/2 + player.r && player.iframes <= 0){
-          const dmg = boss.beamDmgPerTick * dt * 5; // per-tick over the duration
+          const dmg = boss.beamDmgPerTick * dt * 5 * fortifyMult(); // per-tick over the duration
           player.hp -= dmg;
           player._hurtFlash = 0.3;
           Events.emit('playerHurt', { dmg, from: null, hp: player.hp, dirX: player.x-boss.x, dirY: player.y-boss.y });
@@ -2293,10 +2355,11 @@ const Game = (function(){
     for(const s of bossProjectiles){
       s.x += s.vx*dt; s.y += s.vy*dt; s.life -= dt;
       if(player.iframes <= 0 && dist2(s.x,s.y,player.x,player.y) < (s.r+player.r)*(s.r+player.r)){
-        player.hp -= s.dmg;
+        const dmg = s.dmg * fortifyMult();
+        player.hp -= dmg;
         player.iframes = 0.4;
         player._hurtFlash = 0.3;
-        Events.emit('playerHurt', { dmg: s.dmg, from: null, hp: player.hp, dirX: player.x-s.x, dirY: player.y-s.y });
+        Events.emit('playerHurt', { dmg, from: null, hp: player.hp, dirX: player.x-s.x, dirY: player.y-s.y });
         s.life = 0;
         if(player.hp <= 0 && !tryRevive()){ die(); return; }
       }
@@ -2310,6 +2373,25 @@ const Game = (function(){
   // scales with the same Empower/Rite of Empowering stack players already
   // built around — a boss immune to your build's power would feel unfair
   function dmgMultOfPlayerTaken(){ return 1; } // boss damage OUTPUT is fixed by design; kept as a named hook for future tuning
+  // Fortify passive — reduces what the player actually RECEIVES (a
+  // defense-side stat), distinct from dmgMultOfPlayerTaken above (an
+  // enemy-OUTPUT tuning hook). Applied at every player.hp-=dmg site,
+  // always BEFORE Events.emit('playerHurt', {dmg,...}) fires — Reflect's
+  // handler (below) reads that same event's dmg field, so mitigating here
+  // first means Reflect automatically returns a % of the post-mitigation
+  // damage, never the enemy's raw pre-Fortify output. That ordering is
+  // the actual fix for a real compounding risk found during design review:
+  // a maxed build would otherwise take 30% less damage AND return
+  // full-value Reflect damage off the enemy's un-mitigated hit — an
+  // asymmetric free-roll, the same shape as the studio's own Drain
+  // incident (two multipliers landing on one event, one not paying its cost).
+  function fortifyMult(){ return 1 - (passives.fortify||0)*0.06; } // maxLvl 5 -> 30% cap
+  // Amplify — scales radius/size ONLY. Applied at exactly six call sites
+  // (Nova/Drain/Root/Afflict/Mine/Orbitals radii), each verified
+  // individually to touch only the radius term, never the damage term on
+  // the same statement — the guardrail the design review named explicitly
+  // to keep this from silently becoming a second damage multiplier.
+  function ampMult(){ return 1 + (passives.amplify||0)*0.08; } // maxLvl 5 -> 40% cap
 
   function damageBoss(dmg){
     if(!boss) return;
@@ -2323,10 +2405,42 @@ const Game = (function(){
   }
 
   function bossDefeated(){
-    Events.emit('bossDefeat', { x: boss.x, y: boss.y });
+    const defeatedKind = boss.kind;
+    const bx = boss.x, by = boss.y;
     boss = null;
     Persist.data.bossesDefeated++;
-    stageCleared();
+    // Ramiel's defeat now branches: stage 1 -> a non-terminal advance into
+    // stage 2 (the run keeps going), anything else -> the real, terminal
+    // end-of-run path. This is the actual fix for the fact that boss defeat
+    // used to unconditionally end the run outright — found independently by
+    // three specialists (design/engineering/audio) during the Chapter 2
+    // consultation. `boss1Defeat` is a genuinely separate event from
+    // `bossDefeat`, not a renamed alias — Music's existing `bossDefeat`
+    // handler does a hard freeze+fade+victory-phrase sequence that must
+    // never fire on a non-terminal defeat, or stage 2 opens to several
+    // seconds of dead audio and a fired-but-wrong victory cue.
+    if(defeatedKind === 'ramiel' && stage === 1){
+      Events.emit('boss1Defeat', { x: bx, y: by });
+      advanceToStage2();
+    } else {
+      Events.emit('bossDefeat', { x: bx, y: by });
+      stageCleared();
+    }
+  }
+
+  // Non-terminal: the run continues. Grants a brief breather (same shape as
+  // Second Wind's revival grace — heal + iframes, not a new mechanic) so
+  // stage 2's pressure doesn't open on a player who just spent their whole
+  // kit on Ramiel. Enemy difficulty scaling is already open-ended
+  // (`difficulty()`/`spawnEnemy()`/`updateSpawns()` all read uncapped
+  // `elapsed`), so stage 2 escalates for free the moment the run keeps going
+  // — no new tuning math needed for this step alone.
+  function advanceToStage2(){
+    stage = 2;
+    stage2EnteredAt = elapsed;
+    player.hp = Math.min(player.maxhp, player.hp + player.maxhp*STAGE2_BREATHER_HEAL);
+    player.iframes = Math.max(player.iframes, STAGE2_BREATHER_IFRAMES);
+    if(!weapons.sunder) weapons.sunder = 1;
   }
 
   function stageCleared(){
@@ -2402,7 +2516,7 @@ const Game = (function(){
       if(fireTimers.nova <= 0){
         fireTimers.nova = 4.2 - weapons.nova*0.5;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        const radius = 120 + weapons.nova*22;
+        const radius = (120 + weapons.nova*22) * ampMult();
         const dmg = (20 + weapons.nova*10)*dmgMult();
         novaRings.push({ x:player.x, y:player.y, r:0, max:radius, life:0.35, dur:0.35 });
         Events.emit('novaFire', { x:player.x, y:player.y, radius });
@@ -2438,7 +2552,7 @@ const Game = (function(){
         fireTimers.drain = 0.35;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
         const siphon = evolutions.siphon;
-        const radius = (70 + weapons.drain*10) * (siphon ? 1.7 : 1);
+        const radius = (70 + weapons.drain*10) * (siphon ? 1.7 : 1) * ampMult();
         const dmgPerTick = (8+weapons.drain*4)*dmgMult();
         let totalDmg = 0, healHits = 0;
         // heal target count is capped independent of level/radius — damage
@@ -2486,7 +2600,7 @@ const Game = (function(){
         fireTimers.root = 0.3;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
         const nullifyAll = evolutions.nullifyAll;
-        const radius = 90 + weapons.root*14;
+        const radius = (90 + weapons.root*14) * ampMult();
         const slowMult = 1 - (0.20+weapons.root*0.10);
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
@@ -2548,7 +2662,7 @@ const Game = (function(){
       if(fireTimers.mine <= 0){
         fireTimers.mine = 2.6 - weapons.mine*0.2;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        mines.push({ x:player.x, y:player.y, fuse:1.1, dmg:(30+weapons.mine*12)*dmgMult(), r:80 });
+        mines.push({ x:player.x, y:player.y, fuse:1.1, dmg:(30+weapons.mine*12)*dmgMult(), r:80*ampMult() });
       }
     }
     // Afflict — weakening aura, reduces incoming contact damage from Husks caught inside
@@ -2557,7 +2671,7 @@ const Game = (function(){
       if(fireTimers.afflict <= 0){
         fireTimers.afflict = 0.3;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        const radius = 85 + weapons.afflict*12;
+        const radius = (85 + weapons.afflict*12) * ampMult();
         const weakMult = 1 - (0.15+weapons.afflict*0.07);
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius) applyWeaken(e, weakMult, 0.5);
@@ -2601,6 +2715,24 @@ const Game = (function(){
         if(t){
           hitEnemy(t, 4*dmgMult());
           applyBurn(t, (8+weapons.impose*4)*dmgMult(), 2+weapons.impose*0.4);
+        }
+      }
+    }
+    // Sunder — channels a beam at the nearest threat; the beam itself
+    // ticks damage over its active duration in the sunderBeams update
+    // block below, not here (this only fires the channel, matching how
+    // mines fire-then-tick-separately elsewhere in this function).
+    if(weapons.sunder){
+      fireTimers.sunder -= dt*rateMult();
+      if(fireTimers.sunder <= 0){
+        const t = nearestEnemy();
+        if(t){
+          fireTimers.sunder = 5.5 - weapons.sunder*0.5;
+          player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
+          const angle = Math.atan2(t.y-player.y, t.x-player.x);
+          sunderBeams.push({ x:player.x, y:player.y, angle, life:SUNDER_DURATION,
+            tickTimer:0, dmgPerTick:(6+weapons.sunder*3)*dmgMult() });
+          Events.emit('sunderFire', { x:player.x, y:player.y, dirX:Math.cos(angle), dirY:Math.sin(angle) });
         }
       }
     }
@@ -2784,7 +2916,7 @@ const Game = (function(){
         if(e._dead) return false;
         const rr = e.r + player.r;
         if(dist2(e.x,e.y,player.x,player.y) < rr*rr){
-          const dmg = e.dmg * weakMultOf(e);
+          const dmg = e.dmg * weakMultOf(e) * fortifyMult();
           player.hp -= dmg;
           player.iframes = 0.55;
           player._hurtFlash = 0.3;
@@ -2802,7 +2934,7 @@ const Game = (function(){
     if(weapons.orbitals){
       const nhulParticle = evolutions.nhulparticle;
       const n = nhulParticle ? 7 : Math.min(weapons.orbitals+1, 5);
-      const oR = 62, orbDmg = (12+weapons.orbitals*5)*dmgMult();
+      const oR = 62 * ampMult(), orbDmg = (12+weapons.orbitals*5)*dmgMult();
       for(let i=0;i<n;i++){
         const a = elapsed*2.4 + i*(Math.PI*2/n);
         const ox = player.x + Math.cos(a)*oR, oy = player.y + Math.sin(a)*oR;
@@ -2855,6 +2987,43 @@ const Game = (function(){
       }
     }
     mines = mines.filter(m=>!m._boomed);
+
+    // sunderBeams — channeled pierce, ticks damage 5x/sec against every
+    // enemy caught in the line for its active duration. Reuses Ramiel's
+    // own beam perpendicular-distance-to-ray math (updateBoss's 'beaming'
+    // phase: proj = toP·dir along the beam, perp = |cross product| off it)
+    // rather than inventing new collision geometry. Broad-phase circle
+    // query centered on the beam's own origin with radius=SUNDER_RANGE
+    // correctly covers the whole line segment (a line from the circle's
+    // center is always a subset of the circle), same pattern every other
+    // AoE spell here already uses for its broad-phase filter.
+    for(const sb of sunderBeams){
+      sb.life -= dt;
+      sb.tickTimer -= dt;
+      if(sb.tickTimer <= 0){
+        sb.tickTimer += SUNDER_TICK_INTERVAL;
+        const dx = Math.cos(sb.angle), dy = Math.sin(sb.angle);
+        Grid.queryCircle(sb.x, sb.y, SUNDER_RANGE, (e) => {
+          if(e._dead) return false;
+          const toPx = e.x-sb.x, toPy = e.y-sb.y;
+          const proj = toPx*dx + toPy*dy;
+          if(proj > 0 && proj < SUNDER_RANGE){
+            const perp = Math.abs(toPx*dy - toPy*dx);
+            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick);
+          }
+          return false;
+        });
+        if(boss){
+          const toPx = boss.x-sb.x, toPy = boss.y-sb.y;
+          const proj = toPx*dx + toPy*dy;
+          if(proj > 0 && proj < SUNDER_RANGE){
+            const perp = Math.abs(toPx*dy - toPy*dx);
+            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick);
+          }
+        }
+      }
+    }
+    sunderBeams = sunderBeams.filter(sb => sb.life > 0);
 
     // gems: magnet + pickup
     const mr = magnetR();
@@ -3281,6 +3450,22 @@ const Game = (function(){
       ctx.beginPath(); ctx.arc(m.x+ox, m.y+oy, pulse, 0, Math.PI*2); ctx.fill();
     }
 
+    // sunderBeams — a cooler violet-white echo of Ramiel's own warm
+    // pink-red beam (reads as "harnessed," not "hostile" — the reserved
+    // danger band stays exclusive to actual threats), fading over its
+    // active duration
+    for(const sb of sunderBeams){
+      const p = clamp(sb.life/SUNDER_DURATION, 0, 1);
+      ctx.save();
+      ctx.translate(sb.x+ox, sb.y+oy); ctx.rotate(sb.angle);
+      const sgrad = ctx.createLinearGradient(0,0,SUNDER_RANGE,0);
+      sgrad.addColorStop(0, `rgba(210,190,255,${0.9*p})`);
+      sgrad.addColorStop(1, `rgba(185,138,255,${0.08*p})`);
+      ctx.fillStyle = sgrad;
+      ctx.fillRect(0, -SUNDER_WIDTH/2, SUNDER_RANGE, SUNDER_WIDTH);
+      ctx.restore();
+    }
+
     // bullets — comet shards: gradient trail aligned to travel direction,
     // bright core tip, instead of a flat dot
     for(const b of bullets){
@@ -3388,14 +3573,22 @@ const Game = (function(){
         ctx.beginPath(); ctx.arc(ex, ey, e.r*pulse+3, 0, Math.PI*2); ctx.stroke();
       }
 
-      // elite: hp ring + two orbiting motes for real presence
+      // elite: hp ring + two orbiting motes for real presence.
+      // Fixed: this decoration used #ffd166/rgba(255,209,102,...) — the
+      // exact reward-gold hex used for currency/XP-gem drops elsewhere in
+      // this file — on the toughest common hostile entity in the game, a
+      // real STUDIO_BIBLE.md §11 violation that survived the earlier
+      // swarmer/elite base-color fix because that fix only touched
+      // ENEMY_TYPES.color, not this separate decorative layer. HP-ring is
+      // correctly --danger's own semantic home (HP loss); motes now derive
+      // from elite's own body color via shadeHex instead of a flat gold fill.
       if(e.type==='elite'){
-        ctx.strokeStyle = 'rgba(255,209,102,0.6)';
+        ctx.strokeStyle = 'rgba(255,77,112,0.6)';
         ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(ex, ey, e.r+8, -Math.PI/2, -Math.PI/2 + Math.PI*2*(e.hp/e.maxhp)); ctx.stroke();
         for(let i=0;i<2;i++){
           const a = elapsed*3 + i*Math.PI;
-          ctx.fillStyle = '#ffd166';
+          ctx.fillStyle = shadeHex(ENEMY_TYPES.elite.color, 30, 15);
           ctx.beginPath(); ctx.arc(ex+Math.cos(a)*(e.r+16), ey+Math.sin(a)*(e.r+16), 3, 0, Math.PI*2); ctx.fill();
         }
       }
@@ -3416,10 +3609,15 @@ const Game = (function(){
     if(player){
       if(weapons && weapons.orbitals){
         const n = evolutions.nhulparticle ? 7 : Math.min(weapons.orbitals+1, 5);
+        // 62 here must match the collision oR in fireWeapons' orbitals-contact
+        // block exactly — this was a second hardcoded copy of that same
+        // number before Amplify existed, harmless while both were static,
+        // a real render/hitbox desync now that Amplify scales the real one.
+        const orbitR = 62 * ampMult();
         ctx.fillStyle = '#e2b855';
         for(let i=0;i<n;i++){
           const a = elapsed*2.4 + i*(Math.PI*2/n);
-          ctx.beginPath(); ctx.arc(player.x+Math.cos(a)*62+ox, player.y+Math.sin(a)*62+oy, 9, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.arc(player.x+Math.cos(a)*orbitR+ox, player.y+Math.sin(a)*orbitR+oy, 9, 0, Math.PI*2); ctx.fill();
         }
       }
 
@@ -3554,6 +3752,7 @@ const Game = (function(){
       const cur = weapons[k]||0;
       if(cur >= def.maxLvl) continue;
       if(cur === 0 && slotsFull) continue; // no new spells once all 6 slots are taken
+      if(k === 'sunder' && cur === 0) continue; // granted directly on reaching stage 2 (advanceToStage2), never offered as a random early pick — still levelable normally through this pool once owned
       opts.push({ kind:'weapon', key:k, def, cur });
     }
     for(const [k,def] of Object.entries(PASSIVES)){
@@ -3743,10 +3942,11 @@ const Game = (function(){
       revivesLeft: player?player._revivesLeft:null,
       dashCd: player?player._dashCd:null, dashActive: player?player._dashActive:null,
       trailLen: player?player._trail.length:0,
-      boss: boss ? { phase:boss.phase, hp:boss.hp, maxhp:boss.maxhp, charge:boss.charge,
+      boss: boss ? { kind:boss.kind, phase:boss.phase, hp:boss.hp, maxhp:boss.maxhp, charge:boss.charge,
         shieldHp:boss.shieldHp, shieldMax:boss.shieldMax, shieldCracked:boss.shieldCracked,
         x:boss.x, y:boss.y, phaseTimer:boss.phaseTimer } : null,
       bossEntranceTimer, bossProjectileCount: bossProjectiles.length,
+      stage, boss2Triggered, stage2EnteredAt,
       shardsThisRun }),
     grantXP: (n) => { xp += n; },
     hurt: (n) => { player.hp -= n; if(player.hp<=0 && !tryRevive()) die(); },
@@ -3758,6 +3958,7 @@ const Game = (function(){
     forceSpawnBossNow: (dx,dy) => { spawnBoss(player.x+(dx||260), player.y+(dy||-180)); bossTriggered = true; bossEntranceTimer = 0; },
     setBossPhase: (phase, timer) => { if(boss){ boss.phase = phase; if(timer!=null) boss.phaseTimer = timer; } },
     damageBoss: (dmg) => damageBoss(dmg),
+    forceDefeatBoss: () => { if(boss) bossDefeated(); },
   };
 
   // timeScale accessor for juice systems (hitstop/slow-mo tween it)
