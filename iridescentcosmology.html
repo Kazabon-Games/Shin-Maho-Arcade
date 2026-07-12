@@ -1301,7 +1301,12 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay" id="stageClearOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Stage cleared">
     <h2 style="color:var(--neon)">✦ STAGE I CLEARED ✦</h2>
-    <div class="tagline" style="margin-bottom:16px;">Ramiel is shattered. The cosmology exhales.</div>
+    <!-- With stage 2 in place, this overlay's terminal path is now only
+         realistically reached via boss2's (the Fracture's) defeat — Ramiel's
+         own defeat is non-terminal (advances to stage 2 instead of ending
+         the run). Text updated to reflect the real, reachable case rather
+         than describing an outcome that no longer produces this screen. -->
+    <div class="tagline" style="margin-bottom:16px;">Ramiel and the Fracture both lie broken. The cosmology exhales.</div>
     <div class="stat-grid">
       <div class="stat-box"><div class="v" id="clearTime">0:00</div><div class="k">time to victory</div></div>
       <div class="stat-box"><div class="v" id="clearKills">0</div><div class="k">Husks destroyed</div></div>
@@ -1414,7 +1419,7 @@ const Persist = (function(){
     upgrades: { vitality:0, output:0, thrusters:0, magnet:0, greed:0, shadow:0, insight:0, revival:0 },
     best: { time:0, kills:0, level:0 },
     totalRuns: 0,
-    lifetimeKills: 0, lifetimeEssence: 0, bossesDefeated: 0, deaths: 0, revives: 0,
+    lifetimeKills: 0, lifetimeEssence: 0, bossesDefeated: 0, boss2Defeats: 0, deaths: 0, revives: 0,
     fastestClear: null,
     achievements: {},
     evolutionsDiscovered: {}, // lifetime record for the Evolution Library — set on first obtaining each evolution in any run
@@ -1445,6 +1450,7 @@ const Persist = (function(){
         if(data.lifetimeKills === undefined) data.lifetimeKills = 0;
         if(data.lifetimeEssence === undefined) data.lifetimeEssence = 0;
         if(data.bossesDefeated === undefined) data.bossesDefeated = 0;
+        if(data.boss2Defeats === undefined) data.boss2Defeats = 0;
         if(data.deaths === undefined) data.deaths = 0;
         if(data.revives === undefined) data.revives = 0;
         if(data.fastestClear === undefined) data.fastestClear = null;
@@ -1947,6 +1953,34 @@ const Game = (function(){
   const SUNDER_TICK_INTERVAL = 0.2; // 5 ticks/sec
   const SUNDER_DURATION = 1.0;
   let boss = null, bossTriggered = false, bossProjectiles = [];
+  // Boss 2 ("the Fracture") — deliberately built in fully separate
+  // functions/state from Ramiel throughout (spawnBoss2/updateBoss2/
+  // damageBoss2/renderBoss2, own phase-name vocabulary, own boss2 variable),
+  // per the engineer's explicit warning: branching a second boss into
+  // Ramiel's own phase-name-keyed functions (damageBoss's shield check is
+  // literally `boss.phase === 'charging'`) risks a stale-state collision if
+  // the two ever reused a phase name for something unrelated. Mechanical
+  // identity: "territory, not resource" — the mirror opposite of Ramiel's
+  // resource-denial fight, built within what this engine's controls
+  // actually support (autocast spells + player movement/dash — there's no
+  // manual-aim mechanic anywhere in this game to build a timing-window
+  // fight around). One learnable rule: you can only hurt it while it's
+  // anchored; when it goes unbound it's untargetable, relocates, and
+  // leaves a trail that punishes standing still.
+  const BOSS2_TRIGGER_DELAY = 240; // seconds after stage2EnteredAt — estimate, pending playtest, same as every other timing constant in this fight
+  const BOSS2_MAXHP = 3800;
+  const BOSS2_ANCHOR_DURATION = 6;
+  const BOSS2_UNBIND_TELEGRAPH = 0.7;
+  const BOSS2_UNBOUND_DURATION = 2.2;
+  const BOSS2_TELEPORT_DIST = 260;
+  const BOSS2_PULSE_INTERVAL = 1.8;
+  const BOSS2_PULSE_RADIUS = 130;
+  const BOSS2_PULSE_DMG = 10;
+  const BOSS2_TRAIL_SEGMENTS = 5;
+  const BOSS2_TRAIL_RADIUS = 40;
+  const BOSS2_TRAIL_DURATION = 3.5;
+  const BOSS2_TRAIL_DMG_PER_TICK = 6;
+  let boss2 = null, boss2EntranceTimer = 0, boss2SpawnX = 0, boss2SpawnY = 0, boss2Trails = [];
   let bossEntranceTimer = 0, bossSpawnX = 0, bossSpawnY = 0;
   let weapons, passives, evolutions;      // { key: level } / { key: level } / { key: true }
   let fireTimers;
@@ -2140,6 +2174,7 @@ const Game = (function(){
     spawnAcc = 0; eliteAcc = 0;
     boss = null; bossTriggered = false; bossProjectiles = [];
     stage = 1; boss2Triggered = false; stage2EnteredAt = 0;
+    boss2 = null; boss2EntranceTimer = 0; boss2Trails = [];
     camX = 0; camY = 0;
     document.getElementById('hud').classList.add('show');
     lastTs = performance.now();
@@ -2463,6 +2498,108 @@ const Game = (function(){
     if(!weapons.sunder) weapons.sunder = 1;
   }
 
+  // ── Boss 2: the Fracture — fully separate from every Ramiel function
+  // above. See the boss2 state-declaration comment for the full rationale.
+  function spawnBoss2(x, y){
+    boss2 = {
+      kind: 'fracture',
+      x, y, r: 50, hp: BOSS2_MAXHP, maxhp: BOSS2_MAXHP,
+      phase: 'anchored', phaseTimer: BOSS2_ANCHOR_DURATION,
+      pulseTimer: BOSS2_PULSE_INTERVAL,
+      rotation: 0, hitFlash: 0,
+    };
+    boss2Trails = [];
+    Events.emit('boss2Arrive', { x, y });
+  }
+
+  function updateBoss2(dt){
+    boss2.rotation += dt * 0.3;
+    if(boss2.hitFlash > 0) boss2.hitFlash -= dt;
+    boss2.phaseTimer -= dt;
+
+    if(boss2.phase === 'anchored'){
+      boss2.pulseTimer -= dt;
+      if(boss2.pulseTimer <= 0){
+        boss2.pulseTimer = BOSS2_PULSE_INTERVAL;
+        Events.emit('boss2Pulse', { x: boss2.x, y: boss2.y });
+        if(player.iframes <= 0 && dist2(player.x,player.y,boss2.x,boss2.y) < BOSS2_PULSE_RADIUS*BOSS2_PULSE_RADIUS){
+          const dmg = BOSS2_PULSE_DMG * fortifyMult();
+          player.hp -= dmg;
+          player.iframes = 0.5;
+          player._hurtFlash = 0.3;
+          Events.emit('playerHurt', { dmg, from: null, hp: player.hp, dirX: player.x-boss2.x, dirY: player.y-boss2.y });
+          if(player.hp <= 0 && !tryRevive()){ die(); return; }
+        }
+      }
+      if(boss2.phaseTimer <= 0){
+        boss2.phase = 'unboundTelegraph'; boss2.phaseTimer = BOSS2_UNBIND_TELEGRAPH;
+        Events.emit('boss2Unbind', { x: boss2.x, y: boss2.y });
+      }
+    }
+    else if(boss2.phase === 'unboundTelegraph'){
+      if(boss2.phaseTimer <= 0){
+        // teleport: pick a point BOSS2_TELEPORT_DIST from the player, drop a
+        // trail of hazard zones along the straight line from old to new
+        // position — the actual "you have to move too" pressure
+        const oldX = boss2.x, oldY = boss2.y;
+        const ang = Math.random()*Math.PI*2;
+        const newX = clamp(player.x + Math.cos(ang)*BOSS2_TELEPORT_DIST, -WORLD, WORLD);
+        const newY = clamp(player.y + Math.sin(ang)*BOSS2_TELEPORT_DIST, -WORLD, WORLD);
+        for(let i=1;i<=BOSS2_TRAIL_SEGMENTS;i++){
+          const t = i/BOSS2_TRAIL_SEGMENTS;
+          boss2Trails.push({ x: oldX+(newX-oldX)*t, y: oldY+(newY-oldY)*t, life: BOSS2_TRAIL_DURATION, r: BOSS2_TRAIL_RADIUS });
+        }
+        boss2.x = newX; boss2.y = newY;
+        boss2.phase = 'unbound'; boss2.phaseTimer = BOSS2_UNBOUND_DURATION;
+        Events.emit('boss2Teleport', { x: newX, y: newY });
+      }
+    }
+    else if(boss2.phase === 'unbound'){
+      if(boss2.phaseTimer <= 0){
+        boss2.phase = 'anchored'; boss2.phaseTimer = BOSS2_ANCHOR_DURATION;
+        boss2.pulseTimer = BOSS2_PULSE_INTERVAL;
+        Events.emit('boss2Anchor', { x: boss2.x, y: boss2.y });
+      }
+    }
+
+    // trail zones — continuous DoT while standing in one, same
+    // iframes<=0-gate-but-don't-set-iframes convention as Ramiel's own
+    // beam (a sustained field, not a discrete hit)
+    for(const tz of boss2Trails){
+      tz.life -= dt;
+      if(player.iframes <= 0 && dist2(player.x,player.y,tz.x,tz.y) < tz.r*tz.r){
+        const dmg = BOSS2_TRAIL_DMG_PER_TICK * dt * fortifyMult();
+        player.hp -= dmg;
+        player._hurtFlash = 0.15;
+        Events.emit('playerHurt', { dmg, from: null, hp: player.hp, dirX: 0, dirY: 0 });
+        if(player.hp <= 0 && !tryRevive()){ die(); return; }
+      }
+    }
+    boss2Trails = boss2Trails.filter(tz => tz.life > 0);
+
+    if(boss2.hp <= 0) boss2Defeated();
+  }
+
+  function damageBoss2(dmg){
+    if(!boss2) return;
+    boss2.hitFlash = 0.1;
+    if(boss2.phase === 'unbound' || boss2.phase === 'unboundTelegraph') return; // untargetable while unbound
+    boss2.hp -= dmg;
+  }
+
+  function boss2Defeated(){
+    const bx = boss2.x, by = boss2.y;
+    boss2 = null;
+    boss2Trails = [];
+    Persist.data.bossesDefeated++;
+    Persist.data.boss2Defeats++; // own counter — bossesDefeated is now shared across two boss kinds, see the Fracture achievement below and "Ramiel's End"'s reworded desc
+    // Boss 2 is always the stage's actual final boss right now (there is
+    // no stage 3) — this IS the terminal path, same event/flow Ramiel's
+    // own bossDefeated() uses when stage!==1.
+    Events.emit('bossDefeat', { x: bx, y: by });
+    stageCleared();
+  }
+
   function stageCleared(){
     running = false;
     releaseWakeLock();
@@ -2496,6 +2633,13 @@ const Game = (function(){
     if(boss){
       const d2 = dist2(player.x,player.y,boss.x,boss.y);
       if(d2 < bd){ bd = d2; best = boss; }
+    }
+    // boss2 is untargetable while unbound — excluded here too, not just
+    // from damage, so autocast spells don't waste their cast "aiming" at
+    // something the player has no way of actually hitting right now
+    if(boss2 && boss2.phase !== 'unbound' && boss2.phase !== 'unboundTelegraph'){
+      const d2 = dist2(player.x,player.y,boss2.x,boss2.y);
+      if(d2 < bd){ bd = d2; best = boss2; }
     }
     return best;
   }
@@ -2761,6 +2905,7 @@ const Game = (function(){
 
   function hitEnemy(e, dmg, silent){
     if(e === boss){ damageBoss(dmg); Events.emit('hit', { enemy: e, dmg, x: e.x, y: e.y }); return; }
+    if(e === boss2){ damageBoss2(dmg); Events.emit('hit', { enemy: e, dmg, x: e.x, y: e.y }); return; }
     e.hp -= dmg;
     if(!silent){
       e.hitFlash = 0.1;
@@ -2897,6 +3042,23 @@ const Game = (function(){
     }
     if(boss) updateBoss(dt);
 
+    // Boss 2 trigger — only once stage 2 is underway, offset from the
+    // moment Ramiel fell (stage2EnteredAt), not from absolute elapsed —
+    // a player who takes longer to reach stage 2 still gets the same real
+    // fight window afterward, matching BOSS_TRIGGER_TIME's own "leaves a
+    // real fight window" framing for Ramiel.
+    if(stage === 2 && !boss2Triggered && elapsed >= stage2EnteredAt + BOSS2_TRIGGER_DELAY){
+      boss2Triggered = true;
+      boss2SpawnX = player.x - 260; boss2SpawnY = player.y + 180;
+      boss2EntranceTimer = 3.2;
+      Events.emit('boss2Spawn', { x: boss2SpawnX, y: boss2SpawnY });
+    }
+    if(boss2EntranceTimer > 0){
+      boss2EntranceTimer -= dt;
+      if(boss2EntranceTimer <= 0) spawnBoss2(boss2SpawnX, boss2SpawnY);
+    }
+    if(boss2) updateBoss2(dt);
+
     updateSpawns(dt);
     fireWeapons(dt);
 
@@ -2928,7 +3090,12 @@ const Game = (function(){
     }
 
     // spatial grid rebuild — after movement, before any collision query
-    Grid.rebuild(boss ? enemies.concat([boss]) : enemies);
+    {
+      const gridExtra = [];
+      if(boss) gridExtra.push(boss);
+      if(boss2 && boss2.phase !== 'unbound' && boss2.phase !== 'unboundTelegraph') gridExtra.push(boss2); // untargetable while unbound — excluded from every AoE query, not just direct damage
+      Grid.rebuild(gridExtra.length ? enemies.concat(gridExtra) : enemies);
+    }
 
     // player contact damage via grid (only checks nearby cells)
     if(player.iframes <= 0){
@@ -3121,6 +3288,86 @@ const Game = (function(){
      trail (isTrail=true skips the halo/chest glow so trailing copies read
      as pure shadow-blur, not a smear of duplicate light sources). */
   /* ── Ramiel render — big faceted rotating core, shield, telegraphs, beam ── */
+  // Boss 2's own hand-authored silhouette — a genuinely different grammar
+  // from RAMIEL_VERTS' tall, wildly-varying spire cluster (0.55-1.22
+  // multiplier range, 3 long peaks). This is a mostly-uniform ring
+  // (0.90-1.05) broken by 3 irregularly-spaced sharp inward notches
+  // (~0.38-0.45) — a "fractured ring" read, not "bigger/smaller Ramiel."
+  // Per faceted-gem-rendering's own rule (this is a singular, named
+  // entity) and the visual-art-director's explicit warning against a
+  // retinted copy of the first boss's shape.
+  const FRACTURE_VERTS = [
+    { a:0.00, m:0.95 }, { a:0.08, m:1.02 }, { a:0.15, m:0.40 },
+    { a:0.22, m:0.92 }, { a:0.33, m:1.05 }, { a:0.41, m:0.98 },
+    { a:0.50, m:0.38 }, { a:0.58, m:0.90 }, { a:0.68, m:1.00 },
+    { a:0.77, m:0.45 }, { a:0.85, m:0.96 }, { a:0.93, m:1.03 },
+  ];
+  function renderBoss2(ox, oy){
+    if(!boss2) return;
+    const bx = boss2.x+ox, by = boss2.y+oy;
+    const r = boss2.r * (1 + Math.sin(elapsed*2)*0.03);
+    const unbound = boss2.phase === 'unbound' || boss2.phase === 'unboundTelegraph';
+    const bodyColor = boss2.hitFlash > 0 ? '#ffffff' : '#6b6089';
+
+    ctx.save();
+    ctx.translate(bx,by);
+    ctx.rotate(boss2.rotation);
+    ctx.globalAlpha = unbound ? 0.22 : 1; // untargetable while unbound — reads as ghosted, not just dim
+    const n = FRACTURE_VERTS.length;
+    const vx = i => Math.cos(FRACTURE_VERTS[i].a*Math.PI*2)*r*FRACTURE_VERTS[i].m;
+    const vy = i => Math.sin(FRACTURE_VERTS[i].a*Math.PI*2)*r*FRACTURE_VERTS[i].m;
+    ctx.shadowColor = bodyColor; ctx.shadowBlur = unbound ? 10 : 22;
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){ const px=vx(i), py=vy(i); i===0?ctx.moveTo(px,py):ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0;
+    if(!unbound){
+      for(let i=0;i<n;i++){
+        const j = (i+1)%n;
+        ctx.fillStyle = shadeHex(bodyColor, i%2===0?20:-14, 8);
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(vx(i),vy(i)); ctx.lineTo(vx(j),vy(j)); ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.strokeStyle = unbound ? 'rgba(220,210,255,0.5)' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){ const px=vx(i), py=vy(i); i===0?ctx.moveTo(px,py):ctx.lineTo(px,py); }
+    ctx.closePath(); ctx.stroke();
+    ctx.restore();
+
+    // unbind telegraph — brightening outline warns it's about to vanish/move
+    if(boss2.phase === 'unboundTelegraph'){
+      const p = 1 - clamp(boss2.phaseTimer/BOSS2_UNBIND_TELEGRAPH, 0, 1);
+      ctx.strokeStyle = `rgba(220,210,255,${0.3+p*0.6})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(bx,by, r+10, 0, Math.PI*2); ctx.stroke();
+    }
+    // anchored pulse telegraph
+    if(boss2.phase === 'anchored'){
+      const pp = 1 - clamp(boss2.pulseTimer/BOSS2_PULSE_INTERVAL, 0, 1);
+      ctx.strokeStyle = `rgba(107,96,137,${0.15+pp*0.25})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bx,by, BOSS2_PULSE_RADIUS*pp, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // hp ring — reuses --danger, same semantic home as elite's own (§11:
+    // HP loss is correctly this token's band, not a new hardcoded color)
+    ctx.strokeStyle = 'rgba(255,77,112,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bx,by, r+16, -Math.PI/2, -Math.PI/2 + Math.PI*2*(boss2.hp/boss2.maxhp)); ctx.stroke();
+
+    // trail hazard zones
+    for(const tz of boss2Trails){
+      const a = clamp(tz.life/BOSS2_TRAIL_DURATION, 0, 1);
+      ctx.fillStyle = `rgba(107,96,137,${0.25*a})`;
+      ctx.beginPath(); ctx.arc(tz.x+ox, tz.y+oy, tz.r, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = `rgba(220,210,255,${0.35*a})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
   function renderBoss(ox, oy){
     if(!boss) return;
     const bx = boss.x+ox, by = boss.y+oy;
@@ -3615,6 +3862,7 @@ const Game = (function(){
     }
 
     renderBoss(ox, oy);
+    renderBoss2(ox, oy);
     // boss shard projectiles
     for(const s of bossProjectiles){
       ctx.fillStyle = '#8ec8ff';
@@ -3971,6 +4219,9 @@ const Game = (function(){
         x:boss.x, y:boss.y, phaseTimer:boss.phaseTimer } : null,
       bossEntranceTimer, bossProjectileCount: bossProjectiles.length,
       stage, boss2Triggered, stage2EnteredAt,
+      boss2: boss2 ? { kind:boss2.kind, phase:boss2.phase, hp:boss2.hp, maxhp:boss2.maxhp,
+        x:boss2.x, y:boss2.y, phaseTimer:boss2.phaseTimer, pulseTimer:boss2.pulseTimer } : null,
+      boss2EntranceTimer, boss2TrailCount: boss2Trails.length,
       shardsThisRun }),
     grantXP: (n) => { xp += n; },
     hurt: (n) => { player.hp -= n; if(player.hp<=0 && !tryRevive()) die(); },
@@ -3983,6 +4234,14 @@ const Game = (function(){
     setBossPhase: (phase, timer) => { if(boss){ boss.phase = phase; if(timer!=null) boss.phaseTimer = timer; } },
     damageBoss: (dmg) => damageBoss(dmg),
     forceDefeatBoss: () => { if(boss) bossDefeated(); },
+    forceEnterStage2: () => { if(stage === 1) advanceToStage2(); },
+    forceTriggerBoss2: () => { stage2EnteredAt = elapsed - BOSS2_TRIGGER_DELAY; },
+    forceSpawnBoss2Now: (dx,dy) => { spawnBoss2(player.x+(dx||260), player.y+(dy||-180)); boss2Triggered = true; boss2EntranceTimer = 0; },
+    setBoss2Phase: (phase, timer) => { if(boss2){ boss2.phase = phase; if(timer!=null) boss2.phaseTimer = timer; } },
+    damageBoss2: (dmg) => damageBoss2(dmg),
+    forceDefeatBoss2: () => { if(boss2) boss2Defeated(); },
+    setPlayerPos: (x,y) => { player.x = x; player.y = y; },
+    clearIframes: () => { player.iframes = 0; },
   };
 
   // timeScale accessor for juice systems (hitstop/slow-mo tween it)
@@ -5110,7 +5369,7 @@ const ShareCard = (function(){
     c.fillText('IRIDESCENT COSMOLOGY', cv.width/2, 66);
     c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
     c.fillStyle = '#c9b98f';
-    c.fillText(stats.cleared ? 'Stage I cleared — Ramiel is shattered' : 'the hunger was patient tonight', cv.width/2, 92);
+    c.fillText(stats.cleared ? 'Stage I cleared — Ramiel and the Fracture both broken' : 'the hunger was patient tonight', cv.width/2, 92);
 
     // mirrors exactly what each overlay already shows — no new stats invented
     const cols = stats.cleared
@@ -5275,7 +5534,13 @@ const Achievements = (function(){
     { id:'husk_hunter', name:'Husk Hunter', desc:'Destroy 1,000 Husks across all runs.', check:d=>d.lifetimeKills>=1000 },
     { id:'husk_slayer', name:'Husk Slayer', desc:'Destroy 10,000 Husks across all runs.', check:d=>d.lifetimeKills>=10000 },
     { id:'ramiels_bane', name:"Ramiel's Bane", desc:'Defeat Ramiel for the first time.', check:d=>d.bossesDefeated>=1 },
-    { id:'ramiels_end', name:"Ramiel's End", desc:'Defeat Ramiel five times.', check:d=>d.bossesDefeated>=5 },
+    // Reworded: bossesDefeated is now a shared counter across Ramiel and
+    // the Fracture (stage 2's boss) — "five times" no longer specifically
+    // meant Ramiel five times once a second boss could contribute to the
+    // same total. Corrected in place rather than left reading as something
+    // it can no longer guarantee.
+    { id:'ramiels_end', name:"Ramiel's End", desc:'Defeat five bosses total, across any combination of Ramiel and the Fracture.', check:d=>d.bossesDefeated>=5 },
+    { id:'fracture_broken', name:'The Fracture, Broken', desc:'Defeat the Fracture and clear the full Cosmology.', check:d=>d.boss2Defeats>=1 },
     { id:'second_wind', name:'Second Wind', desc:'Survive a lethal blow with the Rite of the Second Wind.', check:d=>d.revives>=1 },
     { id:'collector', name:'Collector', desc:'Earn 1,000 lifetime essence.', check:d=>d.lifetimeEssence>=1000 },
     { id:'devoted', name:'Devoted', desc:'Complete 25 runs.', check:d=>d.totalRuns>=25 },
