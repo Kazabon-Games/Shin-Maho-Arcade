@@ -286,6 +286,42 @@ function ok(cond, label){
   ok(infallTokens.includes('--gold: #ffd76b') && infallTokens.includes('--danger: #ff4d70') && infallTokens.includes('--ok: #5eff9c'),
     'infall :root shares byte-identical --gold/--danger/--ok tokens with the sibling games');
 
+  console.log('16. First-run tutorial — robust to out-of-order actions (regression: an earlier version required move->launch->capture in exact order and silently dropped anything that arrived early)');
+  await page.evaluate(() => localStorage.removeItem('infall-save-v1'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof Game !== 'undefined' && typeof Game._test !== 'undefined');
+  await page.evaluate(() => Game.start());
+  await page.waitForTimeout(150);
+  ok((await page.evaluate(() => Game._test.tutorialStep)) === 1, 'tutorial starts on step 1 ("move") for a first-ever player');
+  // launch + capture BEFORE ever touching a movement key — the exact
+  // out-of-order sequence that broke the earlier version
+  await page.evaluate(() => {
+    const cx = Game.cinder.x, cy = Game.cinder.y;
+    Game._test.setAim(cx, cy, cx+60, cy+40);
+    Game._test.launchWell();
+  });
+  await page.waitForTimeout(2600);
+  await page.evaluate(() => {
+    const w = Game._test.wells.find(w => w.state === 'active');
+    Game._test.debris.push({ x: w.x, y: w.y, vx: 0, vy: 0, mass: 2, type: 'normal', timeInRadius: 0 });
+  });
+  await page.waitForTimeout(900);
+  ok((await page.evaluate(() => Game._test.tutorialStep)) === 1, 'launch+capture arriving before "moved" leaves step at 1, not silently stuck past it (got '+(await page.evaluate(() => Game._test.tutorialStep))+')');
+  await page.keyboard.down('d');
+  await page.waitForTimeout(500);
+  await page.keyboard.up('d');
+  await page.waitForTimeout(300);
+  ok((await page.evaluate(() => Game._test.tutorialStep)) === 4, 'moving afterward correctly jumps straight to step 4, since launch+capture were already satisfied out of order');
+  await page.waitForTimeout(4800);
+  ok((await page.evaluate(() => Game._test.tutorialStep)) === 0, 'tutorial auto-dismisses after the final step (not stuck forever)');
+  ok((await page.evaluate(() => Persist.data.seenTutorial)) === true, 'seenTutorial persists once the sequence genuinely completes');
+  await page.evaluate(() => { Game.cinder.hull = 0; });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => Game.start());
+  await page.waitForTimeout(300);
+  ok((await page.evaluate(() => Game._test.tutorialStep)) === 0, 'tutorial never shows again on a later run once seenTutorial is set');
+  await page.evaluate(() => Game.abandonRun());
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   console.log('final console errors:', JSON.stringify(consoleErrors));
   console.log('final page errors:', JSON.stringify(pageErrors));

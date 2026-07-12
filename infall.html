@@ -61,6 +61,20 @@ html,body{height:100%;overflow:hidden;background:var(--bg-deep);color:var(--ink)
 #hullBar{height:100%;background:var(--ok);width:100%;transition:width .25s ease, background .25s ease;}
 #hullBar.warn{background:var(--danger);}
 
+/* first-run contextual tutorial — state-driven (tied to real actions via
+   Events), not a timer, shown once per player then never again. */
+#tutorialBanner{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-8px);
+  z-index:15;pointer-events:none;background:rgba(10,6,32,0.88);border:1px solid var(--border);
+  border-radius:10px;padding:8px 18px;font-family:var(--body-font);font-size:.85rem;
+  color:var(--ink);text-align:center;opacity:0;transition:opacity .3s ease, transform .3s ease;
+  max-width:min(90vw,420px);box-shadow:0 0 24px -8px rgba(78,168,255,0.5);}
+#tutorialBanner.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#tutorialBanner b{color:var(--gold);}
+@media (prefers-reduced-motion: reduce){
+  #tutorialBanner{transition:opacity .3s ease;transform:translateX(-50%);}
+  #tutorialBanner.show{transform:translateX(-50%);}
+}
+
 /* touch joystick — reused pattern for continuous thrust */
 #joystick{position:fixed;bottom:30px;left:30px;width:110px;height:110px;border-radius:50%;
   border:1px solid var(--border);background:rgba(255,255,255,0.04);display:none;z-index:20;touch-action:none;}
@@ -177,6 +191,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
   </div>
 </div>
 
+<div id="tutorialBanner" aria-live="polite"></div>
+
 <div class="achieve-toast" id="achieveToast">
   <div class="achieve-toast-icon">✦</div>
   <div>
@@ -191,11 +207,12 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <h1>INFALL</h1>
     <div class="stage-badge">STAGE IV</div>
     <div class="tagline">place the wells · become what they pull</div>
+    <div class="hint" style="margin-top:-8px;margin-bottom:14px;">Capture debris in your wells before it hits you. Survive as long as you can.</div>
     <button class="btn primary" onclick="Game.start()">✦ &nbsp;TRIGGER THE INFALL</button>
     <button class="btn gold" onclick="Shop.open()">◈ &nbsp;FLUX SHOP</button>
     <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
     <div class="stat-grid" id="menuBest"></div>
-    <div class="hint">WASD / arrows / joystick to fly · drag anywhere else to aim, release to launch a well<br>the Cinder is pulled by gravity too — including your own wells</div>
+    <div class="hint"><b style="color:var(--ink-mid);">Move:</b> WASD / arrows / joystick<br><b style="color:var(--ink-mid);">Launch a well:</b> click or tap and drag, then release<br>wells pull debris in — and pull you too, including your own</div>
     <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
   </div>
 </div>
@@ -375,6 +392,7 @@ const Persist = (function(){
     maxWellsAtOnce: 0,
     achievements: {},
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
+    seenTutorial: false,
   };
   function load(){
     try{
@@ -390,6 +408,7 @@ const Persist = (function(){
         if(data.deepestPhase === undefined) data.deepestPhase = 1;
         if(data.flawlessRuns === undefined) data.flawlessRuns = 0;
         if(data.maxWellsAtOnce === undefined) data.maxWellsAtOnce = 0;
+        if(data.seenTutorial === undefined) data.seenTutorial = false;
         if(!data.achievements) data.achievements = {};
         if(!data.settings) data.settings = { musicVol:0.5, sfxVol:0.5, reducedMotion:null };
         if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
@@ -540,21 +559,29 @@ const Game = (function(){
   const HAZARD_IMPACT_MULT = 2;           // §2 / §6
   const HULL_HP_MAX = 100;                // §2
   const SWIFT_TIME_MULT = 2;              // §2
-  const THRUST_ACCEL = 900;               // tunable — not numerically spec'd
-  // Real gap found via live screenshot verification (not spec'd, not caught
-  // by any of the earlier numeric/adversarial checks): with THRUST_ACCEL
-  // this high and DAMPING this gentle, sustained thrust in one direction
-  // had no terminal velocity — measured climbing 410 -> 1483 px/s over
-  // 2.6s of held input with no ceiling, crossing the whole arena in about
-  // a second and then sitting pinned against the wall. A uniform top-speed
-  // clamp on the Cinder (checked and applied every physics step, same as
-  // DAMPING) fixes this without adding a second force source.
-  const MAX_CINDER_SPEED = 420;           // tunable — not numerically spec'd
-  // Uniform velocity damping, applied identically to Cinder/debris/well
-  // projectiles — a single added constant, not a second force source, kept
-  // deliberately small. Not in GAME_4_PILLARS.md; a playability addition
-  // flagged here rather than silently folded into the "one rule" framing.
-  const DAMPING = 0.994;
+  // Retuned after real playtest feedback ("controls feel twitchy / hard to
+  // control"): the original THRUST_ACCEL=900 + DAMPING=0.994 combination
+  // snapped to near-max speed almost instantly on a tap (twitchy) but then
+  // took ~1.9s to bleed off after releasing thrust (sluggish to stop) —
+  // twitchy AND unresponsive at once, not a contradiction. Lowered
+  // acceleration for a smoother ramp, tightened damping for a much faster
+  // stop (half-life ~0.77s vs ~1.9s), and lowered the speed ceiling to
+  // match — verified live via measured position/velocity traces, not
+  // just read from the numbers, same as the original speed-cap bug.
+  const THRUST_ACCEL = 520;               // tunable — not numerically spec'd
+  // A uniform top-speed clamp on the Cinder (checked and applied every
+  // physics step, same as DAMPING) — found necessary via live screenshot
+  // verification: earlier, sustained thrust in one direction had no
+  // terminal velocity at all (measured climbing 410 -> 1483 px/s over 2.6s
+  // with no ceiling), crossing the whole arena in about a second and then
+  // sitting pinned against the wall. Fixes that without adding a second
+  // force source.
+  const MAX_CINDER_SPEED = 360;           // tunable — not numerically spec'd
+  // Velocity damping, applied to the Cinder only (debris/well projectiles
+  // have no equivalent drag term) — a single added constant, not a second
+  // force source. Not in GAME_4_PILLARS.md; a playability addition flagged
+  // here rather than silently folded into the "one rule" framing.
+  const DAMPING = 0.985;
   const CINDER_COLLIDE_RADIUS = 14; // tunable — not numerically spec'd
   const SYSTEM_ENERGY_EMA_ALPHA = 0.05; // tunable smoothing factor
   const ENERGY_VEL_REF = 400;           // tunable normalization reference
@@ -640,6 +667,71 @@ const Game = (function(){
     bursts = [];
     systemEnergyEMA = 0;
   }
+
+  // ---- First-run tutorial — driven off real actions (Events + actual
+  // thrust-input usage), not a timer. Shown once ever, then never again.
+  // Direct response to real playtest feedback ("no idea what to do") — the
+  // menu hint text alone wasn't discoverable enough.
+  //
+  // Tracked as independent completed-requirement flags, not a strict
+  // linear step pointer — a real bug in an earlier version required each
+  // action to arrive in the exact expected order (move, then launch, then
+  // capture) and silently dropped anything that arrived early. In real
+  // play a well can be launched before the "moved enough" distance check
+  // ever fires (and the Cinder can also drift from a well's own gravity
+  // with no WASD input at all, a false positive for "moved"), so the sync
+  // below always shows whichever requirement is still unmet, regardless
+  // of what order the player actually did things in.
+  const TUTORIAL_TEXT = [
+    null,
+    'Move with <b>WASD</b> / arrows / joystick',
+    '<b>Click or tap and drag</b> anywhere, then release to launch a well',
+    'Get debris inside the well’s ring — it captures automatically',
+    'Uncaptured debris damages your hull on contact — don’t let it touch you',
+  ];
+  let tutorialActive = false;
+  let tutorialMoved = false, tutorialLaunched = false, tutorialCaptured = false;
+  let tutorialThrustTime = 0; // seconds of actual thrust input seen — immune
+                               // to gravity-drift false positives, unlike
+                               // raw position delta
+  let tutorialFinalTimer = null;
+  function tutorialShow(step){
+    const el = document.getElementById('tutorialBanner');
+    el.innerHTML = TUTORIAL_TEXT[step];
+    el.classList.add('show');
+  }
+  function tutorialDone(){
+    tutorialActive = false;
+    if(tutorialFinalTimer){ clearTimeout(tutorialFinalTimer); tutorialFinalTimer = null; }
+    document.getElementById('tutorialBanner').classList.remove('show');
+    Persist.data.seenTutorial = true;
+    Persist.save();
+  }
+  function tutorialSync(){
+    if(!tutorialActive) return;
+    if(!tutorialMoved){ tutorialShow(1); return; }
+    if(!tutorialLaunched){ tutorialShow(2); return; }
+    if(!tutorialCaptured){ tutorialShow(3); return; }
+    tutorialShow(4);
+    if(!tutorialFinalTimer) tutorialFinalTimer = setTimeout(tutorialDone, 4500);
+  }
+  function tutorialStart(){
+    if(Persist.data.seenTutorial){ tutorialActive = false; return; }
+    tutorialActive = true;
+    tutorialMoved = false; tutorialLaunched = false; tutorialCaptured = false;
+    tutorialThrustTime = 0;
+    if(tutorialFinalTimer){ clearTimeout(tutorialFinalTimer); tutorialFinalTimer = null; }
+    tutorialSync();
+  }
+  function tutorialStepNumber(){
+    if(!tutorialActive) return 0;
+    if(!tutorialMoved) return 1;
+    if(!tutorialLaunched) return 2;
+    if(!tutorialCaptured) return 3;
+    return 4;
+  }
+  Events.on('well_launch', () => { if(tutorialActive && !tutorialLaunched){ tutorialLaunched = true; tutorialSync(); } });
+  Events.on('capture', () => { if(tutorialActive && !tutorialCaptured){ tutorialCaptured = true; tutorialSync(); } });
 
   // ---- Accessibility: reduced-motion resolution -------------------------
   // Mirrors Wardfall's split (§3.6): canvas juice amplitude-reduced, never
@@ -883,6 +975,14 @@ const Game = (function(){
       cinder.y = clamp(cinder.y + cinder.vy * dt, 0, H);
       trail.push({ x: cinder.x, y: cinder.y, mag: cinder.thrustMag });
       if(trail.length > 40) trail.shift();
+
+      if(tutorialActive && !tutorialMoved){
+        // gated on actual thrust input, not raw position delta — a well's
+        // own gravity can drag the Cinder around with no WASD touched at
+        // all, which would otherwise falsely satisfy "moved"
+        if(cinder.thrustMag > 0.3) tutorialThrustTime += dt;
+        if(tutorialThrustTime > 0.35){ tutorialMoved = true; tutorialSync(); }
+      }
     }
 
     // Debris spawn (survival-time-driven difficulty, §2)
@@ -1243,6 +1343,7 @@ const Game = (function(){
     lastTime = performance.now();
     accumulator = 0;
     Music.start();
+    tutorialStart();
     Events.emit('run_start');
   }
   function togglePause(){
@@ -1263,12 +1364,18 @@ const Game = (function(){
   function toMenu(){
     document.getElementById('pauseOverlay').classList.remove('show');
     document.getElementById('deathOverlay').classList.remove('show');
+    document.getElementById('tutorialBanner').classList.remove('show');
+    tutorialActive = false;
+    if(tutorialFinalTimer){ clearTimeout(tutorialFinalTimer); tutorialFinalTimer = null; }
     state = 'menu';
     populateMenuBest();
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRun(){
     state = 'ended';
+    document.getElementById('tutorialBanner').classList.remove('show');
+    tutorialActive = false;
+    if(tutorialFinalTimer){ clearTimeout(tutorialFinalTimer); tutorialFinalTimer = null; }
     const isRecord = run.score > (Persist.data.best.score || 0);
     if(isRecord) Persist.data.best.score = run.score;
     if(run.t > (Persist.data.best.time || 0)) Persist.data.best.time = run.t;
@@ -1330,6 +1437,7 @@ const Game = (function(){
       get wells(){ return wells; },
       get debris(){ return debris; },
       setAim: (sx,sy,cx,cy) => { aimStart.x=sx; aimStart.y=sy; aimCur.x=cx; aimCur.y=cy; },
+      get tutorialStep(){ return tutorialStepNumber(); },
     }
   };
 })();
