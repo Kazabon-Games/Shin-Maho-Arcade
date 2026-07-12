@@ -48,6 +48,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .hud-left{display:flex;flex-direction:column;gap:2px;}
 #scoreVal{font-size:28px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
 #comboVal{font-size:13px;color:var(--neon);min-height:16px;}
+#paceVal{font-size:12px;min-height:14px;font-family:var(--mono);}
 .hud-right{text-align:right;display:flex;flex-direction:column;gap:2px;}
 #descentVal{font-size:24px;font-weight:700;color:var(--ink);letter-spacing:.05em;}
 #phaseVal{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
@@ -135,6 +136,7 @@ body.reduced-motion .panel{
   <div class="hud-left">
     <div id="scoreVal">0</div>
     <div id="comboVal"></div>
+    <div id="paceVal"></div>
   </div>
   <div class="hud-right">
     <div id="descentVal">8</div>
@@ -250,6 +252,7 @@ const Persist = (function(){
     achievements: {},
     cosmetics: { owned: {}, equipped: {} },
     daily: { date: null, bestScore: 0 },
+    bestPace: [], // score-at-shot-N trace from the current lifetime-best run — a scoped numeric "race your best" stand-in, not a full ghost replay (that needs input-stream capture this game doesn't have)
   };
   function load(){
     try{
@@ -275,6 +278,7 @@ const Persist = (function(){
         if(!data.daily) data.daily = { date: null, bestScore: 0 };
         if(data.daily.date===undefined) data.daily.date = null;
         if(data.daily.bestScore===undefined) data.daily.bestScore = 0;
+        if(!Array.isArray(data.bestPace)) data.bestPace = [];
       }
     }catch(e){}
   }
@@ -865,6 +869,8 @@ const Game = (function(){
   let lastEventType = null;
   let lastRunStats = null; // captured at round-end for ShareCard — mirrors exactly what the round-end overlay itself shows, no new stats invented
   let dailyMode = false, dailyDateStr = null; // Daily Wardfall — seeded board, see startRound()
+  let paceTrace = []; // score-at-shot-N for THIS run — becomes the new Persist.data.bestPace only if this run sets a new lifetime best
+  const PACE_TRACE_CAP = 400; // bounded, matching the game-designer's own "capped/truncated" scoping — not unbounded per-shot growth
   const frameTimes = [];
 
   let wakeLockSentinel = null;
@@ -1039,6 +1045,8 @@ const Game = (function(){
     lastEventType = scored ? 'wardBroken' : 'orbMiss';
 
     shotsFired += 1; shotsSinceDescent += 1;
+    if(paceTrace.length < PACE_TRACE_CAP) paceTrace.push(totalScore);
+    updateHudPace();
     const newPhase = phaseForShots(shotsFired);
     if(newPhase !== phase){ phase = newPhase; roundStats.phaseReached = Math.max(roundStats.phaseReached, phase); Events.emit('phaseChange', {phase}); }
     const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
@@ -1071,6 +1079,22 @@ const Game = (function(){
     tweenCountUp('scoreVal', totalScore);
     const el = document.getElementById('comboVal');
     el.textContent = comboStreak>1 ? ('×'+comboMult(comboStreak).toFixed(2)+' combo') : '';
+  }
+  // best-pace delta — a scoped "race your best" stand-in: compares this
+  // run's score at the current shot count against the score-at-the-same-
+  // shot-count from the current lifetime-best run (Persist.data.bestPace,
+  // saved only when a run actually sets a new best — see endRound()).
+  // Deliberately NOT a full ghost replay (would need input-stream capture
+  // this game doesn't have); a numeric delta off data already being
+  // tracked is the buildable version of the same "race yourself" idea.
+  function updateHudPace(){
+    const el = document.getElementById('paceVal');
+    const bestPace = Persist.data.bestPace;
+    const idx = shotsFired - 1;
+    if(!bestPace || !bestPace.length || idx < 0 || idx >= bestPace.length){ el.textContent = ''; return; }
+    const delta = totalScore - bestPace[idx];
+    el.style.color = delta >= 0 ? 'var(--ok)' : 'var(--danger)';
+    el.textContent = (delta >= 0 ? '+' : '') + delta + ' vs best pace';
   }
   function updateHudPhase(){
     const spd = PHASE_SHOTS_PER_DESCENT[Math.min(phase, PHASE_SHOTS_PER_DESCENT.length-1)];
@@ -1264,6 +1288,8 @@ const Game = (function(){
     aimAngle=-Math.PI/2; flight=null;
     roundStats = { longestGroupPopped:0, longestComboStreak:0, totalOrbsPoppedRun:0, missCount:0,
       usedBomb:false, usedRainbow:false, clearedStone:false, phaseReached:0 };
+    paceTrace = [];
+    document.getElementById('paceVal').textContent = '';
     Grid.init(INITIAL_ROWS, Queue.colorPoolForPhase(0), PHASE_STONE_CHANCE[0]);
     currentItem = Queue.nextItem(0); nextItem = Queue.nextItem(0);
     document.getElementById('menuOverlay').classList.remove('show');
@@ -1300,7 +1326,7 @@ const Game = (function(){
     Music.setDroneActive(false);
     const best = Persist.data.best;
     const newBest = totalScore > best.score;
-    if(newBest) best.score = totalScore;
+    if(newBest){ best.score = totalScore; Persist.data.bestPace = paceTrace.slice(); }
     best.longestGroupPopped = Math.max(best.longestGroupPopped, roundStats.longestGroupPopped);
     best.longestComboStreak = Math.max(best.longestComboStreak, roundStats.longestComboStreak);
     best.totalOrbsPoppedLifetime += roundStats.totalOrbsPoppedRun;
@@ -1355,7 +1381,8 @@ const Game = (function(){
     state: () => ({ running, paused, roundEnded, score: totalScore, comboStreak, shotsFired,
       shotsSinceDescent, phase, flying: !!flight, aimAngle, currentItem, nextItem,
       bottomOccupiedRow: Grid.bottomOccupiedRow(), rowCount: Grid.rows.length, dangerProximity,
-      dailyMode, dailyDateStr }),
+      dailyMode, dailyDateStr, paceTraceLength: paceTrace.length,
+      paceHudText: document.getElementById('paceVal').textContent }),
     snapshotBoard: () => Grid.rows.map(row => row.map(o => o ? (o.color || o.special) : null)),
     setAim: (angle) => { aimAngle = clamp(angle, -Math.PI/2-MAX_SPREAD, -Math.PI/2+MAX_SPREAD); },
     fire: () => fire(),
