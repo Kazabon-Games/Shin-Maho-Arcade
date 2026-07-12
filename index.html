@@ -144,6 +144,30 @@ h1.title{
   color:var(--neon2);margin-bottom:.9rem;
 }
 .card-desc{color:var(--ink-mid);font-size:.94rem;line-height:1.65;margin-bottom:1.4rem;max-width:560px;}
+
+/* what's-new callout — reserved for real content updates, not every commit
+   (this studio already flagged an accumulating prose changelog as an
+   anti-pattern once, see Wonderland's old 900-line one). One line, latest
+   update only: overwrite the text on the next real update, delete the
+   whole element when a card has nothing current to say rather than
+   stacking a second one or leaving a stale one in place. */
+.card-whatsnew{
+  display:flex;align-items:center;gap:.6em;
+  font-family:var(--body-font);font-size:.82rem;color:var(--gold);
+  background:rgba(255,215,107,0.08);border:1px solid rgba(255,215,107,0.28);
+  border-radius:8px;padding:.6em .9em;margin-bottom:1.1rem;
+}
+.card-whatsnew b{color:var(--neon);font-weight:700;letter-spacing:.02em;}
+.whatsnew-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--neon);flex-shrink:0;
+  box-shadow:0 0 8px 1px rgba(255,203,92,0.7);
+  animation:whatsnewPulse 1.8s ease-in-out infinite;
+}
+@keyframes whatsnewPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.55;transform:scale(1.35);}}
+@media (prefers-reduced-motion: reduce){
+  .whatsnew-dot{animation:none;}
+}
+
 .card-actions{margin-top:auto;display:flex;gap:.8rem;flex-wrap:wrap;align-items:center;}
 
 .btn{
@@ -230,6 +254,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
           survive to a boss fight that actually escalates with you. Iridescent wonder giving
           way to swarm chaos — one continuous arc, not a loop with a difficulty slider.
         </p>
+        <div class="card-whatsnew"><span class="whatsnew-dot" aria-hidden="true"></span><b>New:</b>&nbsp;Chapter 2 — a second boss &amp; stage, two new spells, and an Evolution Library.</div>
         <div class="card-actions">
           <a class="btn" href="iridescentcosmology.html">✦&nbsp; Open the Cosmology</a>
           <span class="card-meta">12 spells · 7 passives · 6 evolutions</span>
@@ -271,6 +296,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
           was anchoring crashes free in a wardfall of its own. The ceiling doesn't
           wait on a timer; it just keeps descending, so the arc tightens with you.
         </p>
+        <div class="card-whatsnew"><span class="whatsnew-dot" aria-hidden="true"></span><b>New:</b>&nbsp;a shared Daily Wardfall challenge, shareable results, and a real sense of urgency as the ceiling closes in.</div>
         <div class="card-actions">
           <a class="btn" href="wardfall.html">✦&nbsp; Sound the Wardfall</a>
           <span class="card-meta">3 ward-colors · bomb &amp; rainbow orbs · descending ceiling</span>
