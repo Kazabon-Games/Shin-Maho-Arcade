@@ -1300,7 +1300,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <!-- STAGE CLEARED -->
 <div class="overlay" id="stageClearOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Stage cleared">
-    <h2 style="color:var(--neon)">✦ STAGE I CLEARED ✦</h2>
+    <h2 style="color:var(--neon)">✦ THE COSMOLOGY CLEARED ✦</h2>
     <!-- With stage 2 in place, this overlay's terminal path is now only
          realistically reached via boss2's (the Fracture's) defeat — Ramiel's
          own defeat is non-terminal (advances to stage 2 instead of ending
@@ -4358,6 +4358,7 @@ const Juice = (function(){
   // this; same "timer set on event, drawn while >0" structural template as
   // eliteWarnTimer/cometTargetX/Y above, just for text instead of a comet.
   let bossNamePlateTimer = 0;
+  let bossNamePlateText = 'RAMIEL';
   const BOSS_NAMEPLATE_DUR = 3.6; // holds through the 3.2s entrance telegraph, then a beat longer before fading
 
   function addShake(mag, dirX, dirY){
@@ -4450,6 +4451,7 @@ const Juice = (function(){
     eliteWarnTimer = 3.2;
     cometTargetX = data.x; cometTargetY = data.y;
     bossNamePlateTimer = BOSS_NAMEPLATE_DUR;
+    bossNamePlateText = 'RAMIEL';
   });
   Events.on('bossArrive', (data) => {
     addShake(20); vignetteFlash = 1;
@@ -4458,9 +4460,47 @@ const Juice = (function(){
   Events.on('bossCharge', () => { addShake(4); });
   Events.on('bossBeamFire', (data) => { addShake(16, data.dirX, data.dirY); hitstopUntil = Math.max(hitstopUntil, performance.now()+90); vibrate([40,30,40,30,60]); });
   Events.on('bossShardBurst', () => { addShake(8); });
+  // Ramiel's defeat is non-terminal now (advances to stage 2, see
+  // Game.bossDefeated) and fires boss1Defeat instead of bossDefeat — this
+  // still needs its own impact beat (a full boss just died), just a notch
+  // below the true run-ending bossDefeat below.
+  Events.on('boss1Defeat', (data) => {
+    addShake(22); vignetteFlash = 1;
+    eliteRingTimer = eliteRingDur = 0.7; eliteRingX = data.x; eliteRingY = data.y;
+  });
   Events.on('bossDefeat', (data) => {
     addShake(30); vignetteFlash = 1;
     eliteRingTimer = eliteRingDur = 0.9; eliteRingX = data.x; eliteRingY = data.y;
+  });
+
+  // The Fracture (boss2) drama — mirrors Ramiel's own event->feel mapping
+  // above (comet telegraph on spawn, shake+flash+ring on arrival) so stage
+  // 2's boss doesn't read as less finished than stage 1's. Pulse/unbind/
+  // teleport/anchor are the Fracture's own phase beats (no Ramiel
+  // equivalent), weighted by how threatening each moment actually is: the
+  // teleport is the biggest jolt (boss vanishes and reappears elsewhere,
+  // dropping damaging trail zones), the anchor landing is a real but
+  // smaller beat, and the unbind telegraph/pulse are on par with Ramiel's
+  // own charge/shard-burst warnings.
+  Events.on('boss2Spawn', (data) => {
+    eliteWarnTimer = 3.2;
+    cometTargetX = data.x; cometTargetY = data.y;
+    bossNamePlateTimer = BOSS_NAMEPLATE_DUR;
+    bossNamePlateText = 'THE FRACTURE';
+  });
+  Events.on('boss2Arrive', (data) => {
+    addShake(20); vignetteFlash = 1;
+    eliteRingTimer = eliteRingDur = 0.6; eliteRingX = data.x; eliteRingY = data.y;
+  });
+  Events.on('boss2Pulse', () => { addShake(6); });
+  Events.on('boss2Unbind', () => { addShake(4); });
+  Events.on('boss2Teleport', (data) => {
+    addShake(14); vibrate([30,20,30]);
+    eliteRingTimer = eliteRingDur = 0.5; eliteRingX = data.x; eliteRingY = data.y;
+  });
+  Events.on('boss2Anchor', (data) => {
+    addShake(10);
+    eliteRingTimer = eliteRingDur = 0.4; eliteRingX = data.x; eliteRingY = data.y;
   });
 
   let lastT = performance.now();
@@ -4583,7 +4623,7 @@ const Juice = (function(){
       ctx.font = "bold 34px 'Cormorant Garamond', Georgia, serif";
       ctx.shadowColor = 'rgba(255,93,115,0.6)'; ctx.shadowBlur = 18;
       ctx.fillStyle = '#ff5d73';
-      ctx.fillText('RAMIEL', 0, 0);
+      ctx.fillText(bossNamePlateText, 0, 0);
       ctx.shadowBlur = 0;
       ctx.restore();
     }
@@ -4616,7 +4656,7 @@ const Juice = (function(){
   const _test = {
     state: () => ({ shakeMag, hitstopActive: performance.now() < hitstopUntil,
       floatTextCount: floatTexts.length, streakCount, vignetteFlash, deathFlash,
-      eliteWarnTimer, eliteRingTimer }),
+      eliteWarnTimer, eliteRingTimer, bossNamePlateTimer, bossNamePlateText }),
   };
 
   return { draw, _test };
@@ -5511,7 +5551,7 @@ const ShareCard = (function(){
     c.fillText('IRIDESCENT COSMOLOGY', cv.width/2, 66);
     c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
     c.fillStyle = '#c9b98f';
-    c.fillText(stats.cleared ? 'Stage I cleared — Ramiel and the Fracture both broken' : 'the hunger was patient tonight', cv.width/2, 92);
+    c.fillText(stats.cleared ? 'The cosmology cleared — Ramiel and the Fracture both broken' : 'the hunger was patient tonight', cv.width/2, 92);
 
     // mirrors exactly what each overlay already shows — no new stats invented
     const cols = stats.cleared
