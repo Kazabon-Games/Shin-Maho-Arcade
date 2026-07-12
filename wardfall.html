@@ -201,7 +201,7 @@ body.reduced-motion .panel{
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
     <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
     <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
-    <button class="btn" onclick="if(ShareCard.copyText()){ this.textContent='✓ COPIED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); }" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
+    <button class="btn" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
     <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
@@ -1718,13 +1718,16 @@ const ShareCard = (function(){
     }, 'image/png');
   }
   // plain-text fallback, deliberately separate from share()'s image path —
-  // returns whether the copy actually happened so the caller can show
-  // real feedback instead of assuming success.
+  // returns a Promise<boolean> so the caller's feedback reflects the
+  // clipboard write actually resolving, not just having been kicked off.
+  // (qa-playtest flag: the earlier synchronous-true version could show
+  // "✓ COPIED" on a browser that silently denies clipboard permission —
+  // couldn't be forced to fail in the sandboxed test browser, but the
+  // API is honestly async and the return value should say so.)
   function copyText(){
     const stats = Game.getLastRunStats();
-    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return false;
-    navigator.clipboard.writeText(resultText(stats)).catch(()=>{});
-    return true;
+    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return Promise.resolve(false);
+    return navigator.clipboard.writeText(resultText(stats)).then(()=>true).catch(()=>false);
   }
 
   return { share, copyText, resultText, _test: { buildCanvas } };
