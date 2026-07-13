@@ -1477,6 +1477,13 @@ function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':
 // though --ok already declared that exact value).
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 const OK_COLOR = cssVar('--ok');
+// GOLD_COLOR/DANGER_COLOR — visual-art-director audit found #ffd166 (7
+// sites) and #ff5d70/#ff5d73 (6 sites) hardcoded as near-duplicates of
+// --gold/--danger (RGB-distance ~7.8 and ~16 units — the same
+// unconsolidated-drift class this file already fixed once for OK_COLOR,
+// per the comment above, just never swept for these two).
+const GOLD_COLOR = cssVar('--gold');
+const DANGER_COLOR = cssVar('--danger');
 
 // death/victory stats used to just be set as static text — a count-up tween
 // gives them the same "weight" the rest of the juice layer already has
@@ -2983,7 +2990,7 @@ const Game = (function(){
   // Lives in Game (not Juice) because it needs the private `particles` array.
   Events.on('gemPickup', (data) => {
     if(particles.length < MAX_PARTICLES){
-      const color = data.v >= 4 ? '#ffd166' : OK_COLOR;
+      const color = data.v >= 4 ? GOLD_COLOR : OK_COLOR;
       for(let i=0;i<3;i++){
         particles.push({ x:data.x, y:data.y, vx:rand(-40,40), vy:rand(-70,-20), life:rand(0.2,0.35), color, size:rand(1,2) });
       }
@@ -3135,7 +3142,7 @@ const Game = (function(){
           player.iframes = 0.55;
           player._hurtFlash = 0.3;
           Events.emit('playerHurt', { dmg, from: e, hp: player.hp, dirX: player.x-e.x, dirY: player.y-e.y });
-          if(particles.length < MAX_PARTICLES) for(let i=0;i<5;i++) particles.push({ x:player.x, y:player.y, vx:rand(-120,120), vy:rand(-120,120), life:0.35, color:'#ff5d73' });
+          if(particles.length < MAX_PARTICLES) for(let i=0;i<5;i++) particles.push({ x:player.x, y:player.y, vx:rand(-120,120), vy:rand(-120,120), life:0.35, color:DANGER_COLOR });
           return true; // one contact hit per i-frame window
         }
         return false;
@@ -3272,7 +3279,7 @@ const Game = (function(){
         for(let i=0;i<burstCount;i++){
           const a = (Math.PI*2/burstCount)*i + rand(-0.15,0.15);
           const spd = rand(90, 190);
-          particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.4,0.65), color:'#ffd166', size:rand(1.8,3) });
+          particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.4,0.65), color:GOLD_COLOR, size:rand(1.8,3) });
         }
         for(let i=0;i<3;i++){
           particles.push({ x:player.x, y:player.y, vx:rand(-30,30), vy:rand(-30,30), life:rand(0.3,0.5), color:'#ffffff', size:rand(1.4,2.4) });
@@ -3400,7 +3407,7 @@ const Game = (function(){
     const bx = boss.x+ox, by = boss.y+oy;
     const r = boss.r * (1 + Math.sin(elapsed*2)*0.03);
     const inAttack = boss.phase==='beamTelegraph' || boss.phase==='beaming';
-    const bodyColor = boss.hitFlash>0 ? '#ffffff' : (inAttack ? '#ff5d70' : '#8ec8ff');
+    const bodyColor = boss.hitFlash>0 ? '#ffffff' : (inAttack ? DANGER_COLOR : '#8ec8ff');
 
     // shield shell — visible while charging, cracked state shown dimmer
     if(boss.phase === 'charging' && boss.shieldMax > 0){
@@ -3470,7 +3477,7 @@ const Game = (function(){
     const barW = 260;
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(W/2-barW/2, 64, barW, 8);
-    ctx.fillStyle = '#ff5d70';
+    ctx.fillStyle = DANGER_COLOR;
     ctx.fillRect(W/2-barW/2, 64, barW*Math.max(0,boss.hp/boss.maxhp), 8);
   }
 
@@ -3717,7 +3724,7 @@ const Game = (function(){
     for(const g of gems){
       const gx = g.x+ox, gy = g.y+oy;
       if(gx < -20 || gx > W+20 || gy < -20 || gy > H+20) continue;
-      const color = g.v >= 4 ? '#ffd166' : OK_COLOR;
+      const color = g.v >= 4 ? GOLD_COLOR : OK_COLOR;
       const tw = 0.7 + 0.3*Math.sin(elapsed*6 + gx*0.1);
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 8*tw;
@@ -3740,7 +3747,7 @@ const Game = (function(){
     for(const m of mines){
       if(m._boomed) continue;
       const pulse = 4 + Math.sin(elapsed*14)*2;
-      ctx.fillStyle = m.fuse < 0.4 ? '#ff5d73' : '#9d6bff';
+      ctx.fillStyle = m.fuse < 0.4 ? DANGER_COLOR : '#9d6bff';
       ctx.beginPath(); ctx.arc(m.x+ox, m.y+oy, pulse, 0, Math.PI*2); ctx.fill();
     }
 
@@ -4395,7 +4402,7 @@ const Juice = (function(){
     // cap float-text volume so a 500-mob nova doesn't spam the canvas
     if(floatTexts.length < 40){
       floatTexts.push({ x:data.x+rand(-6,6), y:data.y-16, text:Math.round(data.dmg), life:0.55, vy:-46,
-        color: data.dmg >= 40 ? '#ffd166' : '#eee6d4' });
+        color: data.dmg >= 40 ? GOLD_COLOR : '#eee6d4' });
     }
   });
 
@@ -4556,7 +4563,7 @@ const Juice = (function(){
     // it weight" idiom as the enemy hit-punch).
     if(streakCount >= 5){
       const tier = streakCount >= 30 ? 2 : streakCount >= 15 ? 1 : 0;
-      const color = tier === 2 ? '#ff5d73' : tier === 1 ? '#ffd166' : '#eee6d4';
+      const color = tier === 2 ? DANGER_COLOR : tier === 1 ? GOLD_COLOR : '#eee6d4';
       const fontPx = 15 + tier*4;
       const effectivePulse = Settings.reducedMotion() ? streakPulse*0.2 : streakPulse;
       const scale = Ease.popSettle(1 - effectivePulse);
@@ -4609,7 +4616,7 @@ const Juice = (function(){
       ctx.textAlign = 'center';
       ctx.font = "bold 34px 'Cormorant Garamond', Georgia, serif";
       ctx.shadowColor = 'rgba(255,93,115,0.6)'; ctx.shadowBlur = 18;
-      ctx.fillStyle = '#ff5d73';
+      ctx.fillStyle = DANGER_COLOR;
       ctx.fillText(bossNamePlateText, 0, 0);
       ctx.shadowBlur = 0;
       ctx.restore();
