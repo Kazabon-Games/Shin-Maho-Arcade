@@ -1224,6 +1224,13 @@ const Juice = (function(){
       // chainCancel previously had zero subscribers anywhere)
       const r = (SPRITE_SIZE*0.45) * (0.5 + t*0.6) * (Settings.reducedMotion() ? 0.4 : 1);
       ctx.save();
+      // capability audit finding: this ring flash drew with a plain alpha
+      // fade, unlike iridescentcosmology.html's real bloom-like additive
+      // stacking (globalCompositeOperation='lighter', 4019-4036) — this
+      // technique had never propagated here. Scoped to this ring only, not
+      // pops above (a fading rune sprite dissolve, not a glow — additive
+      // blending would just ghost the sprite image, not brighten it).
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = Math.max(0, (1-t)*0.55);
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.stroke();
