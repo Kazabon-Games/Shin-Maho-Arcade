@@ -4875,6 +4875,7 @@ const Music = (function(){
   let bossPad = null; // sustained dissonant tone that fades in for the boss section only
   let riserNodes = null, riserActive = false;
   let menuCtxNodes = null, menuScheduleHandle = null, menuActive = false;
+  let nextLowHpPulseTime = 0; // ctx.currentTime-based, same idiom as nextStepTime — near-death tension pulse
 
   function ensureCtx(){
     if(ctx) return;
@@ -4982,6 +4983,25 @@ const Music = (function(){
     g.connect(wet); wet.connect(reverb);
     o1.start(t); o2.start(t);
     o1.stop(t+(dur||1.4)+0.05); o2.stop(t+(dur||1.4)+0.05);
+  }
+
+  // near-death tension pulse — a low sine "heartbeat" thump (same
+  // pitch-envelope idiom as playKick below), scaled 0..1 by how deep into
+  // the danger zone HP is. Runs on sfxGain, not musicGain, so it reads as
+  // a diegetic warning cue layered over the beat rather than another
+  // scheduled instrument — fixes "no signal at all when close to death"
+  // (audio-designer finding).
+  function playLowHpPulse(severity){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.32 + severity*0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t+0.3);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(38, t+0.22);
+    o.connect(g); o.start(t); o.stop(t+0.32);
   }
 
   // kick — pitch-envelope synthesis: a sine sweeping fast from ~150Hz to
@@ -5304,6 +5324,22 @@ const Music = (function(){
     debugTickCount++;
     const st = Game._test.state();
     if(!st.running || st.paused || st.levelChoosing || resolving) return;
+
+    // near-death tension pulse — silent above 30% HP, then a heartbeat-like
+    // thump that speeds up (0.82s down to 0.4s between beats) and gets
+    // louder the closer HP is to zero. Previously there was no audio signal
+    // at all for being close to death (audio-designer finding) — the HUD
+    // HP bar was the only cue.
+    const hpFrac = (st.maxhp && st.hp != null) ? Math.max(0, st.hp/st.maxhp) : 1;
+    if(hpFrac > 0 && hpFrac <= 0.3){
+      if(ctx.currentTime >= nextLowHpPulseTime){
+        const severity = 1 - hpFrac/0.3; // 0 at the 30% threshold, 1 at empty
+        playLowHpPulse(severity);
+        nextLowHpPulseTime = ctx.currentTime + (0.82 - severity*0.42);
+      }
+    } else {
+      nextLowHpPulseTime = 0; // reset so healing back above 30% doesn't leave a stale future pulse hanging
+    }
 
     const boss = st.boss;
     const boss2 = st.boss2;
