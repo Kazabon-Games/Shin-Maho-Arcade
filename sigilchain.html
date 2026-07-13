@@ -338,7 +338,13 @@ const RUNE_TYPES = {
   earth:  { sides: 4, color: '#8fce5c' },
   wind:   { sides: 5, color: '#8de0c9' },
   water:  { sides: 6, color: '#4ea8ff' },
-  light:  { sides: 7, color: '#ffe066' },
+  // was #ffe066 — only 10.3 RGB units from --gold:#ffd76b (every other rune
+  // clears the gold/reward band by 50+ units), which undercut the radiant
+  // tile's own bonus ring (a lightened version of the tile's own hue) on
+  // this specific rune — the ring and the gold HUD/UI text read as the
+  // same color family. Shifted toward a paler yellow-green (52.2 units
+  // from --gold, still clears every other rune/danger color by 50+).
+  light:  { sides: 7, color: '#f2ff8a' },
   shadow: { sides: 8, color: '#b98aff' },
 };
 const RUNE_KEYS = Object.keys(RUNE_TYPES);
