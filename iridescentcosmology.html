@@ -1055,8 +1055,7 @@ body.reduced-motion .pick-card,
 body.reduced-motion .stat-box,
 body.reduced-motion .shop-row,
 body.reduced-motion .ach-row,
-body.reduced-motion .stage-badge,
-body.reduced-motion .arcade-credit{
+body.reduced-motion .stage-badge{
   animation:none!important;
 }
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
@@ -1074,18 +1073,6 @@ body.reduced-motion .arcade-credit{
   animation:iridescentShift 6s linear infinite;
 }
 @keyframes iridescentShift{0%{background-position:0% 50%;}100%{background-position:300% 50%;}}
-/* STUDIO_BIBLE.md §11: this is the arcade-back-navigation reference site —
-   reuses index.html's .studio-credit gradient verbatim (var(--neon2)/
-   var(--gold), not the untokenized #9d6bff this class used to hardcode) so
-   the same visual effect is one shared pattern, not two drifted copies. */
-.arcade-credit{
-  display:block;text-align:center;font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;
-  margin-top:18px;font-weight:700;opacity:.7;text-decoration:none;cursor:pointer;
-  background:linear-gradient(90deg,var(--neon2),var(--gold),#5ec4a8,var(--neon2));
-  background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
-  animation:iridescentShift 8s linear infinite;
-}
-.arcade-credit:hover{opacity:1;}
 
 .btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
   background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
@@ -1256,7 +1243,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <button class="btn" onclick="EvoLibrary.open()">✦ &nbsp;EVOLUTIONS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint">WASD / arrows to move · spells cast themselves<br>on touch: drag the joystick<br><span style="color:var(--neon2)">master a spell and its matching passive — together, they evolve</span></div>
-    <a class="arcade-credit" href="index.html" aria-label="Back to the Shin Mahou Arcade">SHIN MAHOU ARCADE</a>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
   </div>
 </div>
 
@@ -5955,9 +5942,9 @@ const Bugrep = (function(){
     {a:0.00, m:1.00}, {a:0.095,m:0.27}, {a:0.24, m:0.94}, {a:0.345,m:0.30},
     {a:0.51, m:1.03}, {a:0.605,m:0.25}, {a:0.755,m:0.97}, {a:0.865,m:0.29},
   ];
-  // the exact 3-stop iridescent palette already used twice in this
-  // file's own CSS (.stage-badge / .arcade-credit's iridescentShift
-  // gradient) — reused verbatim, not a new hex trio.
+  // the exact 3-stop iridescent palette already established in this
+  // file's own CSS (.stage-badge's iridescentShift gradient) — reused
+  // verbatim, not a new hex trio.
   const IRIDESCENT_HUES = ['#b98aff', '#ffd76b', '#5ec4a8'];
   const gemR = 40;
 
