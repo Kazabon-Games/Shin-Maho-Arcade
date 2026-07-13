@@ -157,6 +157,8 @@ body.reduced-motion .panel{
     <h1>SIGIL CHAIN</h1>
     <div class="tagline">trace the circle, close the loop</div>
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
+    <div class="stat-line">Rounds played <b id="menuRoundsVal">0</b></div>
+    <div class="stat-line">Lifetime tiles cleared <b id="menuLifetimeTilesVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a round">TRACE THE CIRCLE</button>
     <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
@@ -189,6 +191,9 @@ body.reduced-motion .panel{
     <div class="new-best" id="newBestBadge" style="display:none;">✦ New Best ✦</div>
     <div class="stat-line">Score <b id="finalScoreVal">0</b></div>
     <div class="stat-line">Best <b id="bestScoreVal">0</b></div>
+    <div class="stat-line">Longest chain <b id="longestChainVal">0</b></div>
+    <div class="stat-line">Circles closed <b id="circlesClosedVal">0</b></div>
+    <div class="stat-line">Tiles cleared <b id="tilesClearedVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
@@ -935,6 +940,8 @@ const Game = (function(){
     document.getElementById('roundEndOverlay').classList.remove('show');
     document.getElementById('pauseOverlay').classList.remove('show');
     document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+    document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+    document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRound(){
@@ -954,6 +961,9 @@ const Game = (function(){
     document.getElementById('hud').classList.remove('show');
     document.getElementById('finalScoreVal').textContent = totalScore;
     document.getElementById('bestScoreVal').textContent = best.score;
+    document.getElementById('longestChainVal').textContent = roundStats.maxChain;
+    document.getElementById('circlesClosedVal').textContent = roundStats.circlesClosed;
+    document.getElementById('tilesClearedVal').textContent = roundStats.tilesCleared;
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -1211,6 +1221,8 @@ const Settings = (function(){
     document.getElementById('settingsOverlay').classList.remove('show');
     if(openedFromMenu){
       document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+      document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+      document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
       document.getElementById('menuOverlay').classList.add('show');
     }
   }
@@ -1306,6 +1318,8 @@ const FullscreenCtrl = (function(){
 })();
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
 
 // PWA registration — see the pwa-offline-games skill. Explicit scope keeps
 // this service worker from ever intercepting fetches for the other games
