@@ -1035,6 +1035,28 @@ const Game = (function(){
 const Juice = (function(){
   let pops = [];
   let extendPulses = []; // cheap per-tile flash while building a chain — chainStart/chainExtend/chainCancel had zero subscribers anywhere before this
+  // score-earned float text — mirrors infall.html's own pushFloatText/
+  // drawFloatTexts (game-designer finding: Infall already has exactly this,
+  // proven and shipped; Sigil Chain had no per-clear feedback beyond the
+  // aggregate HUD count-up). Same merge-on-proximity guard: several small
+  // clears landing in quick succession (a normal outcome of rapid chaining,
+  // not a contrived edge case) would otherwise stack into an illegible pile.
+  let floatTexts = [];
+  const FLOATTEXT_MERGE_DIST = 22, FLOATTEXT_MERGE_WINDOW = 0.18;
+  function pushFloatText(x, y, pts, color){
+    for(const t of floatTexts){
+      if(t.life < FLOATTEXT_MERGE_WINDOW && Math.hypot(t.x-x, t.y-y) < FLOATTEXT_MERGE_DIST){
+        t.pts += pts; t.text = '+'+t.pts; t.color = color; t.life = 0;
+        return;
+      }
+    }
+    floatTexts.push({ x, y, text:'+'+pts, pts, color, life:0, maxLife:0.7 });
+  }
+  function centroid(cells){
+    let sx=0, sy=0;
+    for(const c of cells){ sx+=c.x; sy+=c.y; }
+    return { x: sx/cells.length, y: sy/cells.length };
+  }
   let comboPulse = 0, circlePulse = 0;
   let vignetteActive = false, vignette = 0;
   // shake/hitstop/haptic — Wonderland's proven technique
@@ -1059,6 +1081,7 @@ const Juice = (function(){
     // was never checked against reducedMotion() at all, unlike its near-twin
     // circlePulse right below (same mechanism, same dampen-not-remove treatment)
     comboPulse = Settings.reducedMotion() ? 0.3 : 1;
+    if(p.cells.length){ const c = centroid(p.cells); pushFloatText(c.x, c.y, p.score, RUNE_TYPES[p.rune]?.color); }
   });
   Events.on('circleClosed', (p)=>{
     for(const c of p.cells) pops.push({x:c.x,y:c.y,sprite:c.sprite,t:0,dur:0.42});
@@ -1067,6 +1090,7 @@ const Juice = (function(){
     addShake(Math.min(4 + n*0.35, 14));
     hitstopUntil = Math.max(hitstopUntil, performance.now() + (Settings.reducedMotion() ? 0 : 70));
     vibrate(Settings.reducedMotion() ? [] : [20, 30, 40]);
+    if(p.cells.length){ const c = centroid(p.cells); pushFloatText(c.x, c.y, p.score, RUNE_TYPES[p.rune]?.color); }
   });
   Events.on('phaseChange', (p)=>{
     vignetteActive = (p.phase===3);
@@ -1082,6 +1106,8 @@ const Juice = (function(){
     pops = pops.filter(p=>p.t < p.dur);
     for(const p of extendPulses) p.t += dt;
     extendPulses = extendPulses.filter(p=>p.t < p.dur);
+    for(const t of floatTexts) t.life += dt;
+    floatTexts = floatTexts.filter(t=>t.life < t.maxLife);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
     circlePulse = Math.max(0, circlePulse - dt*1.6);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
@@ -1125,6 +1151,30 @@ const Juice = (function(){
       ctx.globalAlpha = circlePulse*0.4;
       ctx.strokeStyle = '#ffd76b'; ctx.lineWidth = 6;
       ctx.beginPath(); ctx.arc(W/2,H/2, Math.min(W,H)*0.4*(1.6-circlePulse), 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    drawFloatTexts(ctx, W, H);
+  }
+  // score-earned float text — mirrors infall.html's drawFloatTexts exactly:
+  // edge-clamped (a clear can legitimately land right at the board's own
+  // edge cells, not just a contrived case) and informational (always
+  // renders regardless of reduced motion; only the rise distance scales
+  // down under it, matching that file's own §3.6 precedent).
+  function drawFloatTexts(ctx, W, H){
+    const marginX = 30, marginTop = 18, marginBottom = 8;
+    for(const t of floatTexts){
+      const p = t.life / t.maxLife;
+      const rise = 22 * (Settings.reducedMotion() ? 0.4 : 1) * Ease.easeOutCubic(p);
+      const drawX = clamp(t.x, marginX, W - marginX);
+      const drawY = clamp(t.y - 12 - rise, marginTop, H - marginBottom);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      ctx.font = "bold 14px 'IBM Plex Mono', 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      const color = t.color || '#ffd76b';
+      ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = 6;
+      ctx.fillText(t.text, drawX, drawY);
       ctx.restore();
     }
   }
