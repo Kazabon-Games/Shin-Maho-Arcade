@@ -1187,12 +1187,6 @@ body.touch-mode #dashBtn{display:flex;}
 .icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
 .bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;
   width:12px;height:12px;font-size:8px;display:none;align-items:center;justify-content:center;}
-/* skip-to-boss dev shortcut mirrors the B key, but B doesn't exist on a
-   touch keyboard — only shown once touch-mode is detected, so desktop
-   keeps the undocumented key shortcut without extra UI clutter */
-.skip-boss-toggle{display:none;}
-body.touch-mode .skip-boss-toggle{display:flex;}
-
 .form-input{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;
   padding:.6rem .7rem;font-size:.9rem;color:var(--ink);font-family:inherit;margin-bottom:10px;}
 .form-input:focus{outline:none;border-color:var(--neon);}
@@ -1368,7 +1362,6 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
-  <button class="icon-btn skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
   <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
 </div>
 
@@ -1578,6 +1571,9 @@ const Grid = (function(){
    INPUT — keyboard + touch joystick
 ===================================================================== */
 const Input = (function(){
+  // dev/playtest shortcuts (currently just skip-to-boss) are opt-in via
+  // ?dev=1 in the URL — never on by default for a shipped player.
+  const DEV_SHORTCUTS_ENABLED = new URLSearchParams(location.search).has('dev');
   const keys = {};
   let joyX = 0, joyY = 0, joyActive = false;
   // gamepad — no persistent event stream for stick movement exists (only
@@ -1592,8 +1588,11 @@ const Input = (function(){
     if(e.key === 'Escape' || e.key.toLowerCase() === 'p') Game.togglePause();
     if((e.key === ' ' || e.key === 'Shift') && !e.repeat) Game.dash();
     // dev/playtest shortcut — not a real game feature, just skips the wait
-    // to reach the boss without needing 7.5 real minutes each time
-    if(e.key.toLowerCase() === 'b' && !e.repeat) Game.skipToBoss();
+    // to reach the boss without needing 7.5 real minutes each time. Gated
+    // behind a URL param (not just the bare B key) so a shipped player
+    // mashing keys can never trigger it by accident — the button that used
+    // to expose this on touch devices has been removed entirely.
+    if(e.key.toLowerCase() === 'b' && !e.repeat && DEV_SHORTCUTS_ENABLED) Game.skipToBoss();
     if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
   });
   window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
