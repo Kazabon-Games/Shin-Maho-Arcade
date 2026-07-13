@@ -1,7 +1,7 @@
 // Infall service worker — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale. Bump CACHE_NAME on any
 // meaningful deploy.
-const CACHE_NAME = 'infall-v1';
+const CACHE_NAME = 'infall-v2'; // bumped: added score-earned float text on capture/fusion, the fix for "no idea how to score"
 const PRECACHE_URLS = ['./infall.html'];
 
 self.addEventListener('install', (e) => {

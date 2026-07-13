@@ -644,6 +644,16 @@ const Game = (function(){
   let cinder, wells, debris, run, state; // state: 'menu'|'playing'|'paused'|'ended'
   let trail = [];   // Cinder motion trail, decorative
   let bursts = [];  // capture/fusion/damage feedback bursts, decorative
+  // score-earned float text — the actual fix for "no idea how to score":
+  // captures/fusions always computed a real point value but nothing ever
+  // showed it, only a stinger and a shake plus a silent tick-up on the
+  // corner number. Informational (answers "why did I just score that"),
+  // so — same as the aim telegraph (§3.6) — it stays visible under
+  // reduced motion; only its drift amplitude/distance scales down, never
+  // its presence. Deliberately transient (fades in well under a second,
+  // no persistent panel) so the stark field this game is built around
+  // stays untouched.
+  let floatTexts = [];
   let systemEnergyEMA = 0; // §4 mood-engine signal
 
   function freshCinder(){
@@ -665,6 +675,7 @@ const Game = (function(){
     run = freshRun();
     trail = [];
     bursts = [];
+    floatTexts = [];
     systemEnergyEMA = 0;
   }
 
@@ -768,13 +779,41 @@ const Game = (function(){
     bursts.push({ x:d.x, y:d.y, color:'#4ea8ff', life:0, maxLife:0.55, r0:10, r1:CAPTURE_RADIUS*1.4 * (0.6+0.4*motionScale()), ripple:true });
     addShake(4);
   });
+  // pushFloatText — routes through a merge check instead of always pushing a
+  // fresh entry: several debris resolving at nearly the same well/instant
+  // (a normal outcome of the core gravity-fusion loop, not a contrived
+  // stress case — qa-playtest reproduced it with 3 fusions landing within
+  // ~250ms at one well) previously stacked into an unreadable glyph pile.
+  // A young, nearby text absorbs the new points and restarts its own fade
+  // instead, so a fast run of captures reads as one escalating number
+  // rather than an illegible smear.
+  const FLOATTEXT_MERGE_DIST = 22, FLOATTEXT_MERGE_WINDOW = 0.18;
+  function pushFloatText(x, y, pts, color){
+    for(const t of floatTexts){
+      if(t.life < FLOATTEXT_MERGE_WINDOW && Math.hypot(t.x-x, t.y-y) < FLOATTEXT_MERGE_DIST){
+        t.pts += pts;
+        t.text = '+' + t.pts;
+        t.color = color;
+        t.life = 0;
+        return;
+      }
+    }
+    floatTexts.push({ x, y, text:'+'+pts, pts, color, life:0, maxLife:0.7 });
+  }
+
   Events.on('capture', d => {
     bursts.push({ x:d.x, y:d.y, color: GOLD_REF, life:0, maxLife:0.4, r0:4, r1:24 * (0.6+0.4*motionScale()) });
     addShake(1.2);
+    pushFloatText(d.x, d.y, d.pts, GOLD_REF);
   });
   Events.on('fusion', d => {
     bursts.push({ x:d.x, y:d.y, color: '#ffffff', life:0, maxLife:0.5, r0:6, r1:32 * (0.6+0.4*motionScale()) });
     addShake(2.5);
+    // fusion's own float-text matches its burst's white, not capture's gold —
+    // preserves the visual distinction burst+shake already establish between
+    // the two event types instead of flattening both to the same color
+    // (visual-art-director flag).
+    pushFloatText(d.x, d.y, d.pts, '#ffffff');
   });
   Events.on('well_expire', d => bursts.push({ x:d.x, y:d.y, color: '#4ea8ff', life:0, maxLife:0.45, r0:8, r1:CAPTURE_RADIUS*1.3 * (0.6+0.4*motionScale()) }));
   Events.on('hull_damage', d => {
@@ -914,7 +953,7 @@ const Game = (function(){
             a.timeInRadius = 0;
             run.fusions++;
             awardScore(FUSION_BONUS);
-            Events.emit('fusion', { x: a.x, y: a.y, mass: a.mass });
+            Events.emit('fusion', { x: a.x, y: a.y, mass: a.mass, pts: FUSION_BONUS });
             break;
           }
         }
@@ -1058,6 +1097,8 @@ const Game = (function(){
   function updateEffects(dtReal){
     for(const b of bursts){ b.life += dtReal; }
     bursts = bursts.filter(b => b.life < b.maxLife);
+    for(const t of floatTexts){ t.life += dtReal; }
+    floatTexts = floatTexts.filter(t => t.life < t.maxLife);
     for(const s of stars){ s.tw += dtReal * 0.6; }
     updateShake();
   }
@@ -1285,6 +1326,36 @@ const Game = (function(){
     }
   }
 
+  // score-earned float text — the direct link between "I did that" and "I
+  // got this many points" that was missing entirely (see the floatTexts
+  // declaration above). Informational, so it always renders regardless of
+  // reduced motion; only the upward drift distance scales down under it,
+  // matching drawAimTelegraph's own §3.6 precedent.
+  function drawFloatTexts(){
+    // clamped to stay fully on-canvas — wells legitimately settle right at
+    // x=0/W or y=0/H (the literal wall-bounce clamp in stepPhysics), and an
+    // unclamped centered/baseline draw there either clipped half the glyphs
+    // (side edges) or put the whole string off-canvas and invisible (top
+    // edge/corners) — reported live by qa-playtest, confirmed via screenshot
+    // that a top-edge capture showed nothing at all, worse than no feature.
+    const marginX = 30, marginTop = 18, marginBottom = 8;
+    for(const t of floatTexts){
+      const p = t.life / t.maxLife;
+      const rise = 26 * motionScale() * Ease.easeOutCubic(p);
+      const drawX = clamp(t.x, marginX, W - marginX);
+      const drawY = clamp(t.y - 14 - rise, marginTop, H - marginBottom);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      ctx.font = "bold 15px 'IBM Plex Mono', 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      const color = t.color || GOLD_REF;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = 6;
+      ctx.fillText(t.text, drawX, drawY);
+      ctx.restore();
+    }
+  }
+
   function render(){
     ctx.fillStyle = '#0a0620';
     ctx.fillRect(0, 0, W, H);
@@ -1297,6 +1368,7 @@ const Game = (function(){
     if(state === 'playing' || state === 'paused') drawCinder();
     drawAimTelegraph();
     drawBursts();
+    drawFloatTexts();
     ctx.restore();
   }
 
@@ -1436,6 +1508,7 @@ const Game = (function(){
       MASS_MAX, HAZARD_IMPACT_MULT,
       get wells(){ return wells; },
       get debris(){ return debris; },
+      get floatTexts(){ return floatTexts; },
       setAim: (sx,sy,cx,cy) => { aimStart.x=sx; aimStart.y=sy; aimCur.x=cx; aimCur.y=cy; },
       get tutorialStep(){ return tutorialStepNumber(); },
     }
