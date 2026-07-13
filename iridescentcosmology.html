@@ -4157,6 +4157,7 @@ const Game = (function(){
         Persist.data.evolutionsDiscovered[o.key] = { at: Date.now() };
         Persist.save();
       }
+      Events.emit('evolutionUnlocked', { key: o.key });
     }
     document.getElementById('levelOverlay').classList.remove('show');
     levelChoosing = false;
@@ -5529,6 +5530,32 @@ const Music = (function(){
   Events.on('runStart', start);
   Events.on('toMenu', () => startMenuAmbience());
   Events.on('levelup', () => bell(ROOT*4*1.5, 1.2, 0.18));
+  Events.on('evolutionUnlocked', () => {
+    // picking an evolution (vs. a plain weapon/passive level-up, which
+    // already has the 'levelup' bell above) was just as silent as every
+    // other pick — no payoff distinguishing the rarer, more exciting
+    // choice. A quick 3-note fragment of THEME_MOTIF (the full quote is
+    // reserved for playVictoryPhrase) ties it back to the game's own
+    // signature instead of reusing the generic level-up bell.
+    if(!ctx || muted) return;
+    THEME_MOTIF.slice(0,3).forEach((note,i)=>setTimeout(()=>bell(note, 0.4, 0.2), i*110));
+  });
+  Events.on('achievementToast', () => {
+    // the toast had a visual pop but no sound at all. Bright ascending
+    // two-note chime, distinct in both register and shape from the evolution
+    // fragment above and the plain levelup bell.
+    if(!ctx || muted) return;
+    bell(LN.p5, 0.8, 0.16);
+    setTimeout(()=>bell(LN.oct, 0.9, 0.13), 140);
+  });
+  Events.on('revive', () => {
+    // Second Wind already gets a gold particle burst (tryRevive) but no
+    // sound — "surviving a lethal hit" was silent. Low-to-high jump mirrors
+    // the HP jumping back up from 0 to 25%.
+    if(!ctx || muted) return;
+    bell(LN.r*0.5, 0.5, 0.22);
+    setTimeout(()=>bell(LN.p5*0.5, 1.5, 0.26), 160);
+  });
   Events.on('eliteSpawn', () => bell(ROOT*2, 1.8, 0.2));
   Events.on('bossSpawn', () => bell(ROOT, 2.4, 0.25));
   Events.on('boss2Spawn', () => {
@@ -5839,6 +5866,7 @@ const Achievements = (function(){
     document.body.appendChild(el);
     requestAnimationFrame(()=>el.classList.add('show'));
     setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(), 500); }, 3600);
+    Events.emit('achievementToast', { id: a.id });
   }
 
   function render(){
