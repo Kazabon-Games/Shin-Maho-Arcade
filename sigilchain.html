@@ -1145,6 +1145,7 @@ const Juice = (function(){
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
   let muted = false, started = false;
+  let drone = null, droneFilter = null;
 
   function ensureCtx(){
     if(ctx) return;
@@ -1164,7 +1165,47 @@ const Music = (function(){
     reverbSend = ctx.createGain(); reverbSend.gain.value = 0.35;
     reverb.connect(reverbSend); reverbSend.connect(master);
     started = true;
+    buildDrone();
   }
+  // continuous pad/drone — the minimum viable mood engine (audio-designer
+  // finding: the module was three one-shot stingers and otherwise total
+  // silence; there was nothing continuous for the score to modulate at
+  // all). Two low sine tones (root + fifth) through a lowpass filter, gain
+  // permanently connected into musicGain — this is also the fix for the
+  // separately-found dead routing bug: nothing previously ever connected a
+  // signal into musicGain, so the Music volume slider did nothing audible.
+  const DRONE_ROOT = 110; // A2 — low enough to sit under every stinger without masking them
+  function buildDrone(){
+    const g = ctx.createGain(); g.gain.value = 0;
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 350; droneFilter.Q.value = 0.7;
+    g.connect(droneFilter); droneFilter.connect(musicGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.22; droneFilter.connect(wet); wet.connect(reverb);
+    const nodes = [DRONE_ROOT, DRONE_ROOT*1.5].map((f,i)=>{
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const og = ctx.createGain(); og.gain.value = i===0 ? 0.6 : 0.4;
+      o.connect(og); og.connect(g); o.start();
+      return o;
+    });
+    drone = { gain: g, nodes };
+  }
+  // per-frame mood mapping — direct value set every frame, not ramped: this
+  // already runs every frame, so re-ramping on top would just cancel
+  // itself each call and never settle (same rule iridescentcosmology.html's
+  // own tick() documents for its drone). Silent at the menu/pause/round-end;
+  // gently louder and brighter (filter opens) as phase escalates, and again
+  // in the last 10 seconds of the round — the only "time's running out"
+  // audio signal that previously didn't exist at all (it was a color).
+  function droneTick(){
+    requestAnimationFrame(droneTick);
+    if(!ctx || !drone) return;
+    const st = Game._test.state();
+    if(!st.running || st.paused || st.roundEnded){ drone.gain.gain.value = 0; return; }
+    const phaseFrac = st.phase/3;
+    const urgency = st.timeRemaining <= 10 ? (10-st.timeRemaining)/10 : 0;
+    drone.gain.gain.value = 0.05 + phaseFrac*0.05 + urgency*0.06;
+    droneFilter.frequency.value = 350 + phaseFrac*900 + urgency*700;
+  }
+  requestAnimationFrame(droneTick);
   // every gain ramp must go through this — cancel-then-set-then-ramp avoids
   // the exact "dying sticks the music" footgun documented in
   // iridescentcosmology.html:4308-4316 (an unqueued ramp silently losing to an
@@ -1265,7 +1306,10 @@ const Music = (function(){
   Events.on('chainCancel', ()=> chainCancelCue());
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, runeBell, circleChord,
-    _test: { isMuted: () => muted, isStarted: () => started } };
+    _test: { isMuted: () => muted, isStarted: () => started,
+      droneGain: () => drone ? drone.gain.gain.value : null,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+      musicGainValue: () => musicGain ? musicGain.gain.value : null } };
 })();
 
 /* =====================================================================
