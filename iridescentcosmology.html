@@ -5268,6 +5268,16 @@ const Music = (function(){
 
   function schedulerTick(){
     if(!ctx) return;
+    // mirrors tick()'s own gate below — without this, the beat keeps
+    // scheduling notes under a frozen game on pause/level-up (audio-designer
+    // finding). Holding nextStepTime at "now" while gated (instead of just
+    // returning) stops step/phraseBar from drifting during the pause and
+    // avoids a burst of catch-up notes firing all at once on resume.
+    const st = Game._test.state();
+    if(!st.running || st.paused || st.levelChoosing || resolving){
+      nextStepTime = ctx.currentTime + 0.1;
+      return;
+    }
     while(nextStepTime < ctx.currentTime + 0.1){
       scheduleStep(step, nextStepTime);
       nextStepTime += STEP_SEC();
