@@ -1727,9 +1727,30 @@ const Music = (function(){
     o.connect(g); o.start(t); o.stop(t + 1.0);
   }
   function stingerCapture(mass){ bell(massToFreq(mass), 0.4, 0.22); }
+  // capability audit finding: every noise-buffer voice in this arcade
+  // beyond the shared reverb IR lives in iridescentcosmology.html
+  // (playHat/playClap's decaying-noise-through-a-filter technique,
+  // 5164-5225) — generalizing it here rather than reusing the same tonal
+  // bell() for every event. Lowpassed (a physical "thunk"), not highpassed
+  // like IC's hats (an airy "tsss") — two masses actually colliding reads
+  // as a low, blunt impact, not a bright metallic tick.
+  function fusionThunk(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const len = 0.09;
+    const buf = ctx.createBuffer(1, ctx.sampleRate*len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 2.2);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const g = ctx.createGain(); g.gain.value = 0.28;
+    src.connect(lp); lp.connect(g); g.connect(sfxGain);
+    src.start(t);
+  }
   function stingerFusion(){
     mergeStep = Math.min(mergeStep + 1, MAX_MERGE_STEP);
     bell(220 * Math.pow(2, mergeStep/12), 0.35, 0.18 + mergeStep*0.01);
+    fusionThunk();
   }
   function stingerGameOver(){
     if(!ctx) return;
