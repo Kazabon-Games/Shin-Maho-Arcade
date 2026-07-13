@@ -5458,6 +5458,17 @@ const Music = (function(){
   Events.on('levelup', () => bell(ROOT*4*1.5, 1.2, 0.18));
   Events.on('eliteSpawn', () => bell(ROOT*2, 1.8, 0.2));
   Events.on('bossSpawn', () => bell(ROOT, 2.4, 0.25));
+  Events.on('boss2Spawn', () => {
+    // the Fracture had no arrival cue at all — it just started fighting.
+    // Built from the same dissonant b3/b7 pair buildBossPad('fracture')
+    // sustains under the fight (see below), so the ear hears this stinger
+    // as the harmonic signature about to arrive, not a generic new bell.
+    // Rising and two-note (vs. Ramiel's single flat root bell) so the two
+    // bosses are tellable apart by ear alone.
+    if(!ctx || muted) return;
+    bell(LN.b3*0.5, 2.2, 0.22);
+    setTimeout(()=>bell(LN.b7*0.5, 2.6, 0.2), 300);
+  });
   Events.on('boss1Defeat', () => {
     // non-terminal — Ramiel's defeat advances to stage 2, it does not end
     // the run, so this must NOT touch resolving/stopForRun/playVictoryPhrase
