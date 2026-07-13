@@ -1562,9 +1562,18 @@ const Music = (function(){
     // a new mapping.
     droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 200; droneFilter.Q.value = 0.7;
     droneGain.connect(droneFilter); droneFilter.connect(musicGain);
+    // capability audit finding: stacking two detuned oscillators without
+    // spreading them across the stereo field makes them thicker in theory
+    // but not wider in practice — they're both fighting for the same point
+    // in the image. Same StereoPannerNode widening trick as
+    // iridescentcosmology.html:5125-5130's supersaw lead voices, applied
+    // here to the drone pair instead.
     const d1 = ctx.createOscillator(); d1.type='sine'; d1.frequency.value=60;
     const d2 = ctx.createOscillator(); d2.type='sine'; d2.frequency.value=60.7;
-    d1.connect(droneGain); d2.connect(droneGain);
+    const dp1 = ctx.createStereoPanner(); dp1.pan.value = -0.25;
+    const dp2 = ctx.createStereoPanner(); dp2.pan.value = 0.25;
+    d1.connect(dp1); dp1.connect(droneGain);
+    d2.connect(dp2); dp2.connect(droneGain);
     d1.start(); d2.start();
     started = true;
   }
