@@ -1289,18 +1289,32 @@ const Juice = (function(){
    set doesn't need the trance-mix "glue" Wonderland's score needs.
 ===================================================================== */
 const Music = (function(){
-  let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
+  let ctx, master, distortion, compressor, musicGain, sfxGain, reverb, reverbSend;
   let muted = false, started = false;
   let drone = null, droneFilter = null;
 
+  // capability audit finding: WaveShaperNode distortion is real and
+  // correctly wired in iridescentcosmology.html (master->distortion->
+  // compressor, setDistortionAmount driven by intensity every frame,
+  // 4946-5008) but had never been tried in this game. Standard soft-clip
+  // curve generator, amount 0 = transparent — copied verbatim rather than
+  // reinventing the curve math.
+  let lastDistortionAmount = 0;
+  function setDistortionAmount(amount){
+    lastDistortionAmount = amount;
+    const n = 256, curve = new Float32Array(n), k = amount*40;
+    for(let i=0;i<n;i++){ const x = i/(n-1)*2-1; curve[i] = (1+k)*x/(1+k*Math.abs(x)); }
+    distortion.curve = curve;
+  }
   function ensureCtx(){
     if(ctx) return;
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = muted?0:0.5;
+    distortion = ctx.createWaveShaper(); setDistortionAmount(0);
     compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value=-20; compressor.knee.value=12; compressor.ratio.value=4;
     compressor.attack.value=0.003; compressor.release.value=0.25;
-    master.connect(compressor); compressor.connect(ctx.destination);
+    master.connect(distortion); distortion.connect(compressor); compressor.connect(ctx.destination);
     musicGain = ctx.createGain(); musicGain.gain.value = Persist.data.settings.musicVol; musicGain.connect(master);
     sfxGain = ctx.createGain(); sfxGain.gain.value = Persist.data.settings.sfxVol; sfxGain.connect(master);
     reverb = ctx.createConvolver();
@@ -1351,11 +1365,16 @@ const Music = (function(){
     requestAnimationFrame(droneTick);
     if(!ctx || !drone) return;
     const st = Game._test.state();
-    if(!st.running || st.paused || st.roundEnded){ drone.gain.gain.value = 0; return; }
+    if(!st.running || st.paused || st.roundEnded){ drone.gain.gain.value = 0; setDistortionAmount(0); return; }
     const phaseFrac = st.phase/3;
     const urgency = st.timeRemaining <= 10 ? (10-st.timeRemaining)/10 : 0;
     drone.gain.gain.value = 0.05 + phaseFrac*0.05 + urgency*0.06;
     droneFilter.frequency.value = 350 + phaseFrac*900 + urgency*700;
+    // light distortion, phase-3 only (cursed tiles active) — extends the
+    // dissonance identity cursedThud()/the phase-3 vignette already
+    // established, rather than introducing a fourth unrelated cue. Direct
+    // value set each frame, same reasoning as the gain/filter writes above.
+    setDistortionAmount(st.phase >= 3 ? 0.12 : 0);
   }
   requestAnimationFrame(droneTick);
   // every gain ramp must go through this — cancel-then-set-then-ramp avoids
@@ -1507,7 +1526,8 @@ const Music = (function(){
     _test: { isMuted: () => muted, isStarted: () => started,
       droneGain: () => drone ? drone.gain.gain.value : null,
       droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
-      musicGainValue: () => musicGain ? musicGain.gain.value : null } };
+      musicGainValue: () => musicGain ? musicGain.gain.value : null,
+      distortionAmount: () => lastDistortionAmount } };
 })();
 
 /* =====================================================================
