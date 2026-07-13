@@ -1487,6 +1487,13 @@ const Juice = (function(){
       const t = p.t/p.dur;
       const s = Ease.popSettle(t) * (1-t*0.4) * (SPRITE_SIZE*0.5);
       ctx.save();
+      // capability audit finding: this was one of three games whose burst/
+      // pop particles drew with plain alpha fades only — real bloom-like
+      // additive stacking (iridescentcosmology.html:4019-4036) had never
+      // propagated here. Scoped to pops (the actual glow/flare moment),
+      // not shockwaves below (a ring + darkening iris, not a glow — additive
+      // blending doesn't serve that effect the same way).
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = Math.max(0, 1-t);
       ctx.fillStyle = shadeHex(p.color, 34, 12);
       ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI*2); ctx.fill();
