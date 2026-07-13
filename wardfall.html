@@ -1525,7 +1525,7 @@ const Juice = (function(){
 ===================================================================== */
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
-  let droneGain, droneActive=false;
+  let droneGain, droneFilter, droneActive=false;
   let muted = false, started = false;
 
   function ensureCtx(){
@@ -1547,7 +1547,14 @@ const Music = (function(){
     reverb.connect(reverbSend); reverbSend.connect(master);
 
     droneGain = ctx.createGain(); droneGain.gain.value = 0;
-    droneGain.connect(musicGain);
+    // capability audit finding: this was the one game in the arcade with no
+    // filter node anywhere in its music graph — intensity already drove
+    // droneGain.gain (below) but had nothing else to modulate. Infall/Sigil
+    // Chain/Iridescent Cosmology all already drive filter cutoff from an
+    // equivalent live variable; this closes that gap rather than inventing
+    // a new mapping.
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 200; droneFilter.Q.value = 0.7;
+    droneGain.connect(droneFilter); droneFilter.connect(musicGain);
     const d1 = ctx.createOscillator(); d1.type='sine'; d1.frequency.value=60;
     const d2 = ctx.createOscillator(); d2.type='sine'; d2.frequency.value=60.7;
     d1.connect(droneGain); d2.connect(droneGain);
@@ -1620,6 +1627,12 @@ const Music = (function(){
     // routine action sound.
     const intensity = clamp((clamp(proximity,0,1) - 0.35) / 0.65, 0, 1);
     droneGain.gain.value = 0.35 * intensity;
+    // direct value set, not ramped — this already runs every frame the
+    // drone is active, so re-ramping on top would just cancel itself each
+    // call (same rule iridescentcosmology.html's own tick() documents).
+    // Opens from a dull 200Hz murmur toward a brighter 2000Hz as danger
+    // rises, mirroring Infall/Sigil Chain's own filter-as-tension mapping.
+    droneFilter.frequency.value = 200 + intensity*1800;
   }
   function toggleMute(){
     muted = !muted;
@@ -1635,7 +1648,8 @@ const Music = (function(){
   Events.on('roundEnd', ()=> roundEndCue());
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
-    _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive } };
+    _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null } };
 })();
 
 /* =====================================================================
