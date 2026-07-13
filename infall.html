@@ -1624,10 +1624,16 @@ const Music = (function(){
     droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 220;
     droneGain = ctx.createGain(); droneGain.gain.value = 0;
     droneFilter.connect(droneGain); droneGain.connect(duckBus);
-    droneOscs = [ROOT, ROOT*1.5].map(f => {
+    // capability audit finding: stacking detuned/interval-spaced oscillators
+    // without spreading them across the stereo field makes them thicker in
+    // theory but not wider in practice — both were fighting for the same
+    // point in the image. Same StereoPannerNode widening technique as
+    // iridescentcosmology.html:5125-5130's supersaw lead voices.
+    droneOscs = [ROOT, ROOT*1.5].map((f, i) => {
       const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
       const og = ctx.createGain(); og.gain.value = f === ROOT ? 0.6 : 0.35;
-      o.connect(og); og.connect(droneFilter); o.start();
+      const op = ctx.createStereoPanner(); op.pan.value = i === 0 ? -0.25 : 0.25;
+      o.connect(og); og.connect(op); op.connect(droneFilter); o.start();
       return o;
     });
     // harmonic-tension layer — silent until hullMargin thresholds fade it in
