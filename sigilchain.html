@@ -766,7 +766,7 @@ const Game = (function(){
     const t = Board.tileAt(col,row);
     if(!t || t.cursed) return false;
     dragging = true; chainCells = [{col,row}]; chainRune = t.rune;
-    Events.emit('chainStart', {col,row});
+    Events.emit('chainStart', {col,row,rune:t.rune});
     return true;
   }
   function extendChain(col,row){
@@ -777,7 +777,7 @@ const Game = (function(){
     if(cellEq(cell,last)) return;
     if(chainCells.length>=2 && cellEq(cell, chainCells[chainCells.length-2])){
       chainCells.pop();
-      Events.emit('chainExtend', {cells:[...chainCells]});
+      Events.emit('chainExtend', {cells:[...chainCells], added:false, rune:chainRune});
       return;
     }
     if(!adjacent(last, cell)) return;
@@ -799,13 +799,14 @@ const Game = (function(){
     }
     if(t.rune !== chainRune) return;
     chainCells.push(cell);
-    Events.emit('chainExtend', {cells:[...chainCells]});
+    const pos = tileCenter(col,row);
+    Events.emit('chainExtend', {cells:[...chainCells], added:true, rune:chainRune, x:pos.x, y:pos.y});
   }
   function endChain(){
     if(!dragging) return;
     if(chainCells.length >= MIN_CHAIN){ resolveRelease(); }
     else {
-      Events.emit('chainCancel', {cells:[...chainCells]});
+      Events.emit('chainCancel', {cells:[...chainCells], rune:chainRune});
       dragging=false; chainCells=[]; chainRune=null; dragPointer=null;
     }
   }
@@ -1008,6 +1009,7 @@ const Game = (function(){
 ===================================================================== */
 const Juice = (function(){
   let pops = [];
+  let extendPulses = []; // cheap per-tile flash while building a chain — chainStart/chainExtend/chainCancel had zero subscribers anywhere before this
   let comboPulse = 0, circlePulse = 0;
   let vignetteActive = false, vignette = 0;
   // shake/hitstop/haptic — Wonderland's proven technique
@@ -1043,10 +1045,16 @@ const Juice = (function(){
     vignetteActive = (p.phase===3);
     if(p.phase===3){ addShake(5); vibrate(Settings.reducedMotion() ? [] : [15]); }
   });
+  Events.on('chainExtend', (p)=>{
+    if(!p.added) return; // only flash on a genuinely new tile, not a backtrack pop
+    extendPulses.push({x:p.x, y:p.y, t:0, dur:0.22});
+  });
 
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
+    for(const p of extendPulses) p.t += dt;
+    extendPulses = extendPulses.filter(p=>p.t < p.dur);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
     circlePulse = Math.max(0, circlePulse - dt*1.6);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
@@ -1065,6 +1073,18 @@ const Juice = (function(){
       ctx.translate(p.x, p.y);
       const s = scale;
       if(p.sprite) ctx.drawImage(p.sprite, -SPRITE_SIZE*s/2, -SPRITE_SIZE*s/2, SPRITE_SIZE*s, SPRITE_SIZE*s);
+      ctx.restore();
+    }
+    for(const p of extendPulses){
+      const t = p.t/p.dur;
+      // amplitude-gated, not removed — this is the only feedback on the
+      // single most frequent action in the game (chainStart/chainExtend/
+      // chainCancel previously had zero subscribers anywhere)
+      const r = (SPRITE_SIZE*0.45) * (0.5 + t*0.6) * (Settings.reducedMotion() ? 0.4 : 1);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, (1-t)*0.55);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.stroke();
       ctx.restore();
     }
     if(vignette>0){
@@ -1167,6 +1187,42 @@ const Music = (function(){
     bell(root * Math.pow(2, 7/12), 1.3, 0.2);
   }
   function roundEndCue(){ ensureCtx(); bell(160, 1.1, 0.22); }
+  // chainStart/chainExtend/chainCancel had zero subscribers anywhere
+  // (Juice or Music) — 100% of the audio budget went to the resolution
+  // moment only, despite chain-building being most of actual play time.
+  // Cheap dedicated tick (no reverb send, short envelope) rather than
+  // routing through bell() — this fires on every tile added to a chain,
+  // reverb tails would smear into an indistinct wash at that rate. Pitch
+  // climbs gently with chain length (capped) so a growing chain audibly
+  // builds, using the same per-rune base pitch as runeBell/circleChord.
+  function chainTick(runeKey, length){
+    if(!ctx || muted) return;
+    const def = RUNE_TYPES[runeKey];
+    const base = 220 * (1 + (def?def.sides:4)*0.08);
+    const freq = base * (1 + Math.min(length,12)*0.015);
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=freq;
+    o.connect(g); o.start(t); o.stop(t+0.1);
+  }
+  // a failed chain (released below MIN_CHAIN) previously gave zero audio
+  // signal at all — a short falling thud, distinct from every rune bell.
+  function chainCancelCue(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=140;
+    o.frequency.exponentialRampToValueAtTime(90, t+0.2);
+    o.connect(g); o.start(t); o.stop(t+0.26);
+  }
   function toggleMute(){
     muted = !muted;
     if(master) rampGain(master.gain, muted?0:0.5, 0.15);
@@ -1178,6 +1234,8 @@ const Music = (function(){
   Events.on('chainCleared', (p)=>{ if(p.rune) runeBell(p.rune); });
   Events.on('circleClosed', (p)=>{ if(p.rune) circleChord(p.rune); });
   Events.on('roundEnd', ()=> roundEndCue());
+  Events.on('chainExtend', (p)=>{ if(p.added && p.rune) chainTick(p.rune, p.cells.length); });
+  Events.on('chainCancel', ()=> chainCancelCue());
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, runeBell, circleChord,
     _test: { isMuted: () => muted, isStarted: () => started } };
