@@ -276,6 +276,19 @@ function rand(a,b){ return a + Math.random()*(b-a); }
 function fmtTime(s){ const m=Math.floor(s/60), sec=Math.floor(s%60); return m+':'+String(sec).padStart(2,'0'); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// cssVar/hexToRgbStr — same pattern as iridescentcosmology.html:1484-1492's
+// OK_COLOR/DANGER_COLOR: read the CSS custom property once at load instead
+// of duplicating its hex value as a canvas literal (--danger/--ok were
+// declared but never referenced anywhere in this file — the phase-3
+// vignette hardcoded rgba(255,77,112,...), which happens to equal --danger
+// today but wasn't sourced from it).
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function hexToRgbStr(hex){
+  const n = parseInt(hex.replace('#',''),16);
+  return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
+}
+const DANGER_RGB = hexToRgbStr(cssVar('--danger'));
+
 const Ease = {
   popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
   easeOutCubic(t){ t = clamp(t,0,1); return 1 - Math.pow(1-t, 3); },
@@ -1097,8 +1110,8 @@ const Juice = (function(){
     }
     if(vignette>0){
       const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.25, W/2,H/2, Math.max(W,H)*0.75);
-      g.addColorStop(0, 'rgba(255,77,112,0)');
-      g.addColorStop(1, 'rgba(255,77,112,'+(vignette*0.5).toFixed(3)+')');
+      g.addColorStop(0, `rgba(${DANGER_RGB},0)`);
+      g.addColorStop(1, `rgba(${DANGER_RGB},${(vignette*0.5).toFixed(3)})`);
       ctx.save(); ctx.fillStyle = g; ctx.fillRect(0,0,W,H); ctx.restore();
     }
     if(circlePulse>0){
