@@ -3,7 +3,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'iridescentcosmology-v2';
+const CACHE_NAME = 'iridescentcosmology-v3'; // bumped: apex-standard pass — crest redesign, real back-to-arcade button, music pause gate/Fracture stinger/near-death pulse/stage-2 arrival/evolution+achievement+revive stingers, skip-to-boss button removal, build-path HUD indicator
 const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {

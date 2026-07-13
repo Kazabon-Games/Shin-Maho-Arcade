@@ -1004,6 +1004,18 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .hud-right{text-align:right;font-family:var(--mono);}
 #hudTimer{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:.06em;}
 #hudLevel{font-size:12px;color:var(--neon);}
+/* build-path indicator — empty/hidden by default, only appears once
+   pityTargets() reports an evolution one step from unlocking (its
+   spell OR passive half already maxed). See game-designer's finding:
+   surfacing this at every single spell pick would be noise (every spell
+   always has exactly one fixed evolution pair, so that's true from turn
+   one and never interesting) — the pity-target moment is the genuinely
+   exciting "you're one pick away" signal. */
+.hud-buildpath{display:flex;gap:6px;justify-content:flex-end;margin-top:6px;}
+.hud-buildpath-icon{width:20px;height:20px;color:var(--gold);
+  filter:drop-shadow(0 0 5px var(--gold));animation:buildPathPulse 1.8s ease-in-out infinite;}
+@keyframes buildPathPulse{0%,100%{opacity:.65;transform:scale(1);}50%{opacity:1;transform:scale(1.12);}}
+body.reduced-motion .hud-buildpath-icon{animation:none!important;opacity:1;}
 #pauseBtn{pointer-events:auto;margin-top:6px;background:var(--panel);border:1px solid var(--border);
   color:var(--ink-mid);border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;}
 
@@ -1055,8 +1067,7 @@ body.reduced-motion .pick-card,
 body.reduced-motion .stat-box,
 body.reduced-motion .shop-row,
 body.reduced-motion .ach-row,
-body.reduced-motion .stage-badge,
-body.reduced-motion .arcade-credit{
+body.reduced-motion .stage-badge{
   animation:none!important;
 }
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
@@ -1074,18 +1085,6 @@ body.reduced-motion .arcade-credit{
   animation:iridescentShift 6s linear infinite;
 }
 @keyframes iridescentShift{0%{background-position:0% 50%;}100%{background-position:300% 50%;}}
-/* STUDIO_BIBLE.md §11: this is the arcade-back-navigation reference site —
-   reuses index.html's .studio-credit gradient verbatim (var(--neon2)/
-   var(--gold), not the untokenized #9d6bff this class used to hardcode) so
-   the same visual effect is one shared pattern, not two drifted copies. */
-.arcade-credit{
-  display:block;text-align:center;font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;
-  margin-top:18px;font-weight:700;opacity:.7;text-decoration:none;cursor:pointer;
-  background:linear-gradient(90deg,var(--neon2),var(--gold),#5ec4a8,var(--neon2));
-  background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
-  animation:iridescentShift 8s linear infinite;
-}
-.arcade-credit:hover{opacity:1;}
 
 .btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
   background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
@@ -1200,12 +1199,6 @@ body.touch-mode #dashBtn{display:flex;}
 .icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
 .bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;
   width:12px;height:12px;font-size:8px;display:none;align-items:center;justify-content:center;}
-/* skip-to-boss dev shortcut mirrors the B key, but B doesn't exist on a
-   touch keyboard — only shown once touch-mode is detected, so desktop
-   keeps the undocumented key shortcut without extra UI clutter */
-.skip-boss-toggle{display:none;}
-body.touch-mode .skip-boss-toggle{display:flex;}
-
 .form-input{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;
   padding:.6rem .7rem;font-size:.9rem;color:var(--ink);font-family:inherit;margin-bottom:10px;}
 .form-input:focus{outline:none;border-color:var(--neon);}
@@ -1235,6 +1228,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="hud-right">
     <div id="hudTimer">0:00</div>
     <div id="hudLevel">LV 1</div>
+    <div id="hudBuildPath" class="hud-buildpath"></div>
   </div>
 </div>
 
@@ -1256,7 +1250,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <button class="btn" onclick="EvoLibrary.open()">✦ &nbsp;EVOLUTIONS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint">WASD / arrows to move · spells cast themselves<br>on touch: drag the joystick<br><span style="color:var(--neon2)">master a spell and its matching passive — together, they evolve</span></div>
-    <a class="arcade-credit" href="index.html" aria-label="Back to the Shin Mahou Arcade">SHIN MAHOU ARCADE</a>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
   </div>
 </div>
 
@@ -1381,7 +1375,6 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
-  <button class="icon-btn skip-boss-toggle" onclick="Game.skipToBoss()" title="Skip to boss (dev)" aria-label="Skip to boss (developer shortcut)">⏭</button>
   <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
 </div>
 
@@ -1490,6 +1483,13 @@ function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':
 // though --ok already declared that exact value).
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 const OK_COLOR = cssVar('--ok');
+// GOLD_COLOR/DANGER_COLOR — visual-art-director audit found #ffd166 (7
+// sites) and #ff5d70/#ff5d73 (6 sites) hardcoded as near-duplicates of
+// --gold/--danger (RGB-distance ~7.8 and ~16 units — the same
+// unconsolidated-drift class this file already fixed once for OK_COLOR,
+// per the comment above, just never swept for these two).
+const GOLD_COLOR = cssVar('--gold');
+const DANGER_COLOR = cssVar('--danger');
 
 // death/victory stats used to just be set as static text — a count-up tween
 // gives them the same "weight" the rest of the juice layer already has
@@ -1584,6 +1584,9 @@ const Grid = (function(){
    INPUT — keyboard + touch joystick
 ===================================================================== */
 const Input = (function(){
+  // dev/playtest shortcuts (currently just skip-to-boss) are opt-in via
+  // ?dev=1 in the URL — never on by default for a shipped player.
+  const DEV_SHORTCUTS_ENABLED = new URLSearchParams(location.search).has('dev');
   const keys = {};
   let joyX = 0, joyY = 0, joyActive = false;
   // gamepad — no persistent event stream for stick movement exists (only
@@ -1598,8 +1601,11 @@ const Input = (function(){
     if(e.key === 'Escape' || e.key.toLowerCase() === 'p') Game.togglePause();
     if((e.key === ' ' || e.key === 'Shift') && !e.repeat) Game.dash();
     // dev/playtest shortcut — not a real game feature, just skips the wait
-    // to reach the boss without needing 7.5 real minutes each time
-    if(e.key.toLowerCase() === 'b' && !e.repeat) Game.skipToBoss();
+    // to reach the boss without needing 7.5 real minutes each time. Gated
+    // behind a URL param (not just the bare B key) so a shipped player
+    // mashing keys can never trigger it by accident — the button that used
+    // to expose this on touch devices has been removed entirely.
+    if(e.key.toLowerCase() === 'b' && !e.repeat && DEV_SHORTCUTS_ENABLED) Game.skipToBoss();
     if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
   });
   window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -2996,7 +3002,7 @@ const Game = (function(){
   // Lives in Game (not Juice) because it needs the private `particles` array.
   Events.on('gemPickup', (data) => {
     if(particles.length < MAX_PARTICLES){
-      const color = data.v >= 4 ? '#ffd166' : OK_COLOR;
+      const color = data.v >= 4 ? GOLD_COLOR : OK_COLOR;
       for(let i=0;i<3;i++){
         particles.push({ x:data.x, y:data.y, vx:rand(-40,40), vy:rand(-70,-20), life:rand(0.2,0.35), color, size:rand(1,2) });
       }
@@ -3148,7 +3154,7 @@ const Game = (function(){
           player.iframes = 0.55;
           player._hurtFlash = 0.3;
           Events.emit('playerHurt', { dmg, from: e, hp: player.hp, dirX: player.x-e.x, dirY: player.y-e.y });
-          if(particles.length < MAX_PARTICLES) for(let i=0;i<5;i++) particles.push({ x:player.x, y:player.y, vx:rand(-120,120), vy:rand(-120,120), life:0.35, color:'#ff5d73' });
+          if(particles.length < MAX_PARTICLES) for(let i=0;i<5;i++) particles.push({ x:player.x, y:player.y, vx:rand(-120,120), vy:rand(-120,120), life:0.35, color:DANGER_COLOR });
           return true; // one contact hit per i-frame window
         }
         return false;
@@ -3285,7 +3291,7 @@ const Game = (function(){
         for(let i=0;i<burstCount;i++){
           const a = (Math.PI*2/burstCount)*i + rand(-0.15,0.15);
           const spd = rand(90, 190);
-          particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.4,0.65), color:'#ffd166', size:rand(1.8,3) });
+          particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*spd, vy:Math.sin(a)*spd, life:rand(0.4,0.65), color:GOLD_COLOR, size:rand(1.8,3) });
         }
         for(let i=0;i<3;i++){
           particles.push({ x:player.x, y:player.y, vx:rand(-30,30), vy:rand(-30,30), life:rand(0.3,0.5), color:'#ffffff', size:rand(1.4,2.4) });
@@ -3321,6 +3327,34 @@ const Game = (function(){
       const pct = player._dashCd > 0 ? clamp(player._dashCd / (DASH_COOLDOWN_BASE*(1-Persist.data.upgrades.shadow*0.12)), 0, 1) : 0;
       fill.style.transform = `scaleY(${pct})`;
     }
+    updateBuildPathIndicator();
+  }
+
+  // finds which evolution a pity target (one half of its spell+passive
+  // pair already maxed) belongs to, without changing pityTargets()'s own
+  // return shape (poolChoices reads that elsewhere) — a plain lookup over
+  // the same EVOLUTIONS bijection every other pity/pool function already uses.
+  function evolutionForPityTarget(t){
+    for(const ev of Object.values(EVOLUTIONS)){
+      if(t.kind === 'weapon' && ev.spell === t.key) return ev;
+      if(t.kind === 'passive' && ev.passive === t.key) return ev;
+    }
+    return null;
+  }
+  let lastBuildPathSig = '';
+  function updateBuildPathIndicator(){
+    const el = document.getElementById('hudBuildPath');
+    if(!el) return;
+    const targets = pityTargets();
+    const sig = targets.map(t=>t.kind+':'+t.key).join(',');
+    if(sig === lastBuildPathSig) return; // avoid re-parsing the SVG icons every frame for state that only changes on level-up
+    lastBuildPathSig = sig;
+    el.innerHTML = targets.map(t => {
+      const ev = evolutionForPityTarget(t);
+      if(!ev) return '';
+      const label = `${ev.name} evolution — one step away, max ${t.def.name} to unlock`;
+      return `<span class="hud-buildpath-icon" title="${label}" aria-label="${label}">${ev.icon}</span>`;
+    }).join('');
   }
 
   /* ── Charles (dkmn form) — cloak of shadow, gold halo ──
@@ -3413,7 +3447,7 @@ const Game = (function(){
     const bx = boss.x+ox, by = boss.y+oy;
     const r = boss.r * (1 + Math.sin(elapsed*2)*0.03);
     const inAttack = boss.phase==='beamTelegraph' || boss.phase==='beaming';
-    const bodyColor = boss.hitFlash>0 ? '#ffffff' : (inAttack ? '#ff5d70' : '#8ec8ff');
+    const bodyColor = boss.hitFlash>0 ? '#ffffff' : (inAttack ? DANGER_COLOR : '#8ec8ff');
 
     // shield shell — visible while charging, cracked state shown dimmer
     if(boss.phase === 'charging' && boss.shieldMax > 0){
@@ -3483,7 +3517,7 @@ const Game = (function(){
     const barW = 260;
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(W/2-barW/2, 64, barW, 8);
-    ctx.fillStyle = '#ff5d70';
+    ctx.fillStyle = DANGER_COLOR;
     ctx.fillRect(W/2-barW/2, 64, barW*Math.max(0,boss.hp/boss.maxhp), 8);
   }
 
@@ -3730,7 +3764,7 @@ const Game = (function(){
     for(const g of gems){
       const gx = g.x+ox, gy = g.y+oy;
       if(gx < -20 || gx > W+20 || gy < -20 || gy > H+20) continue;
-      const color = g.v >= 4 ? '#ffd166' : OK_COLOR;
+      const color = g.v >= 4 ? GOLD_COLOR : OK_COLOR;
       const tw = 0.7 + 0.3*Math.sin(elapsed*6 + gx*0.1);
       ctx.save();
       ctx.shadowColor = color; ctx.shadowBlur = 8*tw;
@@ -3753,7 +3787,7 @@ const Game = (function(){
     for(const m of mines){
       if(m._boomed) continue;
       const pulse = 4 + Math.sin(elapsed*14)*2;
-      ctx.fillStyle = m.fuse < 0.4 ? '#ff5d73' : '#9d6bff';
+      ctx.fillStyle = m.fuse < 0.4 ? DANGER_COLOR : '#9d6bff';
       ctx.beginPath(); ctx.arc(m.x+ox, m.y+oy, pulse, 0, Math.PI*2); ctx.fill();
     }
 
@@ -4163,6 +4197,7 @@ const Game = (function(){
         Persist.data.evolutionsDiscovered[o.key] = { at: Date.now() };
         Persist.save();
       }
+      Events.emit('evolutionUnlocked', { key: o.key });
     }
     document.getElementById('levelOverlay').classList.remove('show');
     levelChoosing = false;
@@ -4408,7 +4443,7 @@ const Juice = (function(){
     // cap float-text volume so a 500-mob nova doesn't spam the canvas
     if(floatTexts.length < 40){
       floatTexts.push({ x:data.x+rand(-6,6), y:data.y-16, text:Math.round(data.dmg), life:0.55, vy:-46,
-        color: data.dmg >= 40 ? '#ffd166' : '#eee6d4' });
+        color: data.dmg >= 40 ? GOLD_COLOR : '#eee6d4' });
     }
   });
 
@@ -4569,7 +4604,7 @@ const Juice = (function(){
     // it weight" idiom as the enemy hit-punch).
     if(streakCount >= 5){
       const tier = streakCount >= 30 ? 2 : streakCount >= 15 ? 1 : 0;
-      const color = tier === 2 ? '#ff5d73' : tier === 1 ? '#ffd166' : '#eee6d4';
+      const color = tier === 2 ? DANGER_COLOR : tier === 1 ? GOLD_COLOR : '#eee6d4';
       const fontPx = 15 + tier*4;
       const effectivePulse = Settings.reducedMotion() ? streakPulse*0.2 : streakPulse;
       const scale = Ease.popSettle(1 - effectivePulse);
@@ -4622,7 +4657,7 @@ const Juice = (function(){
       ctx.textAlign = 'center';
       ctx.font = "bold 34px 'Cormorant Garamond', Georgia, serif";
       ctx.shadowColor = 'rgba(255,93,115,0.6)'; ctx.shadowBlur = 18;
-      ctx.fillStyle = '#ff5d73';
+      ctx.fillStyle = DANGER_COLOR;
       ctx.fillText(bossNamePlateText, 0, 0);
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -4873,14 +4908,35 @@ const Music = (function(){
     return 0;
   }
 
+  // ---- STAGE 2 SECTION TIMELINE — without this, stage 2 had no arrival of
+  // its own: computeSection(st.elapsed) uses total run time, which is
+  // already past SECTION_BOUNDS[3] by the time Ramiel falls, so the
+  // arrangement just held at its stage-1 "peak" (LEAD_PHRASE_B, full band)
+  // for the entire stage-2 traversal — a new area with the *same* music
+  // stage 1 already built up to, not a new build. Keyed off stage2EnteredAt
+  // (mirroring how tick()'s own timeBuild math already treats stage 2 as
+  // its own clock) and compressed to fit BOSS2_TRIGGER_DELAY's ~240s
+  // window instead of stage 1's 410s. Reuses the exact same section
+  // thresholds scheduleStep already branches on (>=1 hats, >=2 lead,
+  // >=3 LEAD_PHRASE_B), so dropping `section` back to 0 on entry reads as
+  // the arrangement genuinely stripping back down and rebuilding, not
+  // silence — the real "stage 2 begins" moment.
+  const STAGE2_SECTION_BOUNDS = [30, 90, 160];
+  function computeStage2Section(stage2Elapsed){
+    for(let i=STAGE2_SECTION_BOUNDS.length-1; i>=0; i--) if(stage2Elapsed >= STAGE2_SECTION_BOUNDS[i]) return i+1;
+    return 0;
+  }
+
   let compressor = null, duckBus = null, reverb = null, reverbSend = null;
   let phraseBar = 0; // 0-3, cycles the 4-bar bass/lead phrase; bar 3 is the fill
   let section = 0;
+  let musicStage = 1; // 1 | 2 — tracks Game's own `stage`, separately from `section`, so entering stage 2 is a detectable edge
   let bossMode = false;
   let activeBossKind = null; // 'ramiel' | 'fracture' | null — which boss's pad/lead/bass material is live
   let bossPad = null; // sustained dissonant tone that fades in for the boss section only
   let riserNodes = null, riserActive = false;
   let menuCtxNodes = null, menuScheduleHandle = null, menuActive = false;
+  let nextLowHpPulseTime = 0; // ctx.currentTime-based, same idiom as nextStepTime — near-death tension pulse
 
   function ensureCtx(){
     if(ctx) return;
@@ -4988,6 +5044,25 @@ const Music = (function(){
     g.connect(wet); wet.connect(reverb);
     o1.start(t); o2.start(t);
     o1.stop(t+(dur||1.4)+0.05); o2.stop(t+(dur||1.4)+0.05);
+  }
+
+  // near-death tension pulse — a low sine "heartbeat" thump (same
+  // pitch-envelope idiom as playKick below), scaled 0..1 by how deep into
+  // the danger zone HP is. Runs on sfxGain, not musicGain, so it reads as
+  // a diegetic warning cue layered over the beat rather than another
+  // scheduled instrument — fixes "no signal at all when close to death"
+  // (audio-designer finding).
+  function playLowHpPulse(severity){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.32 + severity*0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t+0.3);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(38, t+0.22);
+    o.connect(g); o.start(t); o.stop(t+0.32);
   }
 
   // kick — pitch-envelope synthesis: a sine sweeping fast from ~150Hz to
@@ -5274,6 +5349,16 @@ const Music = (function(){
 
   function schedulerTick(){
     if(!ctx) return;
+    // mirrors tick()'s own gate below — without this, the beat keeps
+    // scheduling notes under a frozen game on pause/level-up (audio-designer
+    // finding). Holding nextStepTime at "now" while gated (instead of just
+    // returning) stops step/phraseBar from drifting during the pause and
+    // avoids a burst of catch-up notes firing all at once on resume.
+    const st = Game._test.state();
+    if(!st.running || st.paused || st.levelChoosing || resolving){
+      nextStepTime = ctx.currentTime + 0.1;
+      return;
+    }
     while(nextStepTime < ctx.currentTime + 0.1){
       scheduleStep(step, nextStepTime);
       nextStepTime += STEP_SEC();
@@ -5300,6 +5385,22 @@ const Music = (function(){
     debugTickCount++;
     const st = Game._test.state();
     if(!st.running || st.paused || st.levelChoosing || resolving) return;
+
+    // near-death tension pulse — silent above 30% HP, then a heartbeat-like
+    // thump that speeds up (0.82s down to 0.4s between beats) and gets
+    // louder the closer HP is to zero. Previously there was no audio signal
+    // at all for being close to death (audio-designer finding) — the HUD
+    // HP bar was the only cue.
+    const hpFrac = (st.maxhp && st.hp != null) ? Math.max(0, st.hp/st.maxhp) : 1;
+    if(hpFrac > 0 && hpFrac <= 0.3){
+      if(ctx.currentTime >= nextLowHpPulseTime){
+        const severity = 1 - hpFrac/0.3; // 0 at the 30% threshold, 1 at empty
+        playLowHpPulse(severity);
+        nextLowHpPulseTime = ctx.currentTime + (0.82 - severity*0.42);
+      }
+    } else {
+      nextLowHpPulseTime = 0; // reset so healing back above 30% doesn't leave a stale future pulse hanging
+    }
 
     const boss = st.boss;
     const boss2 = st.boss2;
@@ -5349,10 +5450,26 @@ const Music = (function(){
     // driving discrete "something new just happened" moments). Either boss
     // overrides the timeline entirely once it's up (bossMode below).
     if(!activeBoss){
-      const newSection = computeSection(st.elapsed);
-      if(newSection !== section){
-        section = newSection;
-        if(section === 4) startRiser(BOSS_MARKER - SECTION_BOUNDS[3]);
+      if(st.stage === 2 && st.stage2EnteredAt > 0){
+        if(musicStage !== 2){
+          // just crossed into stage-2 traversal — drop back to the bare
+          // kick+bass opening and rebuild on stage 2's own clock (below),
+          // instead of holding at whatever section stage 1 already peaked
+          // at. That drop-then-rebuild IS the arrival; no extra stinger
+          // needed on top of boss1Defeat's own resolving cue.
+          musicStage = 2;
+          section = 0;
+        }
+        const stage2Elapsed = st.elapsed - st.stage2EnteredAt;
+        const newSection = computeStage2Section(stage2Elapsed);
+        if(newSection !== section) section = newSection;
+      } else {
+        musicStage = 1;
+        const newSection = computeSection(st.elapsed);
+        if(newSection !== section){
+          section = newSection;
+          if(section === 4) startRiser(BOSS_MARKER - SECTION_BOUNDS[3]);
+        }
       }
     }
 
@@ -5429,6 +5546,7 @@ const Music = (function(){
     bossMode = false;
     activeBossKind = null;
     section = 0;
+    musicStage = 1;
     phraseBar = 0;
     resolving = false; // death never reset this on its own path - would otherwise silently freeze intensity updates on every run after the first death
     step = 0;
@@ -5452,8 +5570,45 @@ const Music = (function(){
   Events.on('runStart', start);
   Events.on('toMenu', () => startMenuAmbience());
   Events.on('levelup', () => bell(ROOT*4*1.5, 1.2, 0.18));
+  Events.on('evolutionUnlocked', () => {
+    // picking an evolution (vs. a plain weapon/passive level-up, which
+    // already has the 'levelup' bell above) was just as silent as every
+    // other pick — no payoff distinguishing the rarer, more exciting
+    // choice. A quick 3-note fragment of THEME_MOTIF (the full quote is
+    // reserved for playVictoryPhrase) ties it back to the game's own
+    // signature instead of reusing the generic level-up bell.
+    if(!ctx || muted) return;
+    THEME_MOTIF.slice(0,3).forEach((note,i)=>setTimeout(()=>bell(note, 0.4, 0.2), i*110));
+  });
+  Events.on('achievementToast', () => {
+    // the toast had a visual pop but no sound at all. Bright ascending
+    // two-note chime, distinct in both register and shape from the evolution
+    // fragment above and the plain levelup bell.
+    if(!ctx || muted) return;
+    bell(LN.p5, 0.8, 0.16);
+    setTimeout(()=>bell(LN.oct, 0.9, 0.13), 140);
+  });
+  Events.on('revive', () => {
+    // Second Wind already gets a gold particle burst (tryRevive) but no
+    // sound — "surviving a lethal hit" was silent. Low-to-high jump mirrors
+    // the HP jumping back up from 0 to 25%.
+    if(!ctx || muted) return;
+    bell(LN.r*0.5, 0.5, 0.22);
+    setTimeout(()=>bell(LN.p5*0.5, 1.5, 0.26), 160);
+  });
   Events.on('eliteSpawn', () => bell(ROOT*2, 1.8, 0.2));
   Events.on('bossSpawn', () => bell(ROOT, 2.4, 0.25));
+  Events.on('boss2Spawn', () => {
+    // the Fracture had no arrival cue at all — it just started fighting.
+    // Built from the same dissonant b3/b7 pair buildBossPad('fracture')
+    // sustains under the fight (see below), so the ear hears this stinger
+    // as the harmonic signature about to arrive, not a generic new bell.
+    // Rising and two-note (vs. Ramiel's single flat root bell) so the two
+    // bosses are tellable apart by ear alone.
+    if(!ctx || muted) return;
+    bell(LN.b3*0.5, 2.2, 0.22);
+    setTimeout(()=>bell(LN.b7*0.5, 2.6, 0.2), 300);
+  });
   Events.on('boss1Defeat', () => {
     // non-terminal — Ramiel's defeat advances to stage 2, it does not end
     // the run, so this must NOT touch resolving/stopForRun/playVictoryPhrase
@@ -5751,6 +5906,7 @@ const Achievements = (function(){
     document.body.appendChild(el);
     requestAnimationFrame(()=>el.classList.add('show'));
     setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>el.remove(), 500); }, 3600);
+    Events.emit('achievementToast', { id: a.id });
   }
 
   function render(){
@@ -5894,20 +6050,38 @@ const Bugrep = (function(){
 })();
 
 /* =====================================================================
-   TITLE CREST — based directly on the family-crest reference sketch
-   (peaked roof w/ wood-grain + eave "eyes", central medallion, crossed
-   blades, tapering stem below). Own small canvas, separate from the main
-   game canvas, specifically because the menu overlay's backdrop-filter
-   blur sits on top of the main canvas — anything drawn there would be
-   dimmed into nothing right when it needs to be visible. Two capacities
-   genuinely unused anywhere else in this file until now:
-   - Path2D: the roof geometry is defined once and stroked, instead of
-     rebuilding beginPath/moveTo/lineTo every single frame like every other
-     shape in the file does.
-   - createConicGradient: a true angular sweep gradient for the rotating
-     glow behind the crest — every other glow in the file is radial or
-     linear; conic is the one that actually reads as a slowly-turning
-     magic-circle rather than a pulsing disc.
+   TITLE CREST v2 — redesign, replacing the original family-crest-sketch
+   transcription (peaked roof + wood-grain + eave "eyes" + a medallion
+   literally reading "IX"/"O"/"K" in 9px serif + crossed blades + a
+   stem). Verified-bad at actual render size, not on taste alone: a
+   visual-art-director audit screenshotted it at its real 150x150 and
+   found the medallion text reads as stray placeholder lettering (a
+   plain ellipse + generic serif font gives it no signal that it's
+   intentional occult lettering), and the six separate elements (roof/
+   hatching/eyes/medallion/blades/stem) never resolve into one legible
+   symbol — plus the whole thing is thematically orphaned from every
+   other visual in this game, which is built entirely on the faceted-
+   gem cut-crystal language (Husks, Ramiel, gem drops, the portal
+   card's own preview art).
+   This version fixes both problems by being the thing this game
+   actually already has as its own icon: the ✦ mark used 13 times
+   throughout this file's own UI (every primary button, every menu
+   panel header) is the closest thing Iridescent Cosmology has to an
+   existing logo. Rendered here as a real faceted gem — hand-authored
+   asymmetric 8-point vertex list (per the faceted-gem-rendering skill:
+   a singular/named mark gets bespoke geometry, not a symmetric
+   formula-generated star), center-to-vertex facets alternating lit/
+   dark, and a genuine per-facet hue cycle rather than one flat color —
+   through the exact violet→gold→teal iridescent palette already
+   established twice in this file's own CSS (.stage-badge/.arcade-
+   credit's iridescentShift gradient stops), not a new palette. A thin
+   rotating ring stands in for "cosmology" without literally drawing
+   constellations. No text anywhere.
+   Kept from the original: its own small canvas (the menu overlay's
+   backdrop-filter blur sits on top of the main game canvas, so
+   anything drawn there would dim into nothing) and createConicGradient
+   for the sweep glow — both were sound, only the shape drawn on top of
+   them was the problem.
 ===================================================================== */
 (function(){
   const cv = document.getElementById('crestCanvas');
@@ -5915,67 +6089,93 @@ const Bugrep = (function(){
   const c2 = cv.getContext('2d');
   const W = cv.width, H = cv.height, cx = W/2, cy = H/2;
 
-  const roofPath = new Path2D();
-  roofPath.moveTo(cx, 14);
-  roofPath.lineTo(cx+34, 34);
-  roofPath.lineTo(cx+26, 40);
-  roofPath.lineTo(cx, 24);
-  roofPath.lineTo(cx-26, 40);
-  roofPath.lineTo(cx-34, 34);
-  roofPath.closePath();
+  // local shadeHex copy — this canvas is its own small IIFE outside the
+  // Game module (same reason as always: the menu backdrop blur sits on
+  // top of the main canvas), so it can't reach Game's private shadeHex;
+  // duplicating a small pure helper here matches this file's own
+  // precedent (index.html's card-preview IIFEs each keep their own copy
+  // rather than reaching into a sibling module).
+  function shadeHex(hex, dLight){
+    const n = parseInt(hex.slice(1),16);
+    let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
+    return `rgb(${r},${g},${b})`;
+  }
 
-  function draw(t){
+  // hand-authored asymmetric 8-point star (4 long spikes + 4 short
+  // between-points, echoing the ✦ glyph's silhouette) — angles and
+  // radius multipliers deliberately uneven, not a computed regular
+  // star, per the faceted-gem-rendering skill's rule for a singular
+  // named mark.
+  const CREST_VERTS = [
+    {a:0.00, m:1.00}, {a:0.095,m:0.27}, {a:0.24, m:0.94}, {a:0.345,m:0.30},
+    {a:0.51, m:1.03}, {a:0.605,m:0.25}, {a:0.755,m:0.97}, {a:0.865,m:0.29},
+  ];
+  // the exact 3-stop iridescent palette already established in this
+  // file's own CSS (.stage-badge's iridescentShift gradient) — reused
+  // verbatim, not a new hex trio.
+  const IRIDESCENT_HUES = ['#b98aff', '#ffd76b', '#5ec4a8'];
+  const gemR = 40;
+
+  function draw(t, reduced){
     c2.clearRect(0,0,W,H);
+    const spin = reduced ? 0 : t;
 
-    const conic = c2.createConicGradient(t*0.3, cx, cy+8);
+    const conic = c2.createConicGradient(spin*0.3, cx, cy);
     conic.addColorStop(0,    'rgba(255,203,92,0.05)');
     conic.addColorStop(0.25, 'rgba(185,138,255,0.13)');
     conic.addColorStop(0.5,  'rgba(255,203,92,0.05)');
     conic.addColorStop(0.75, 'rgba(185,138,255,0.13)');
     conic.addColorStop(1,    'rgba(255,203,92,0.05)');
     c2.fillStyle = conic;
-    c2.beginPath(); c2.arc(cx, cy+8, 66, 0, Math.PI*2); c2.fill();
+    c2.beginPath(); c2.arc(cx, cy, 68, 0, Math.PI*2); c2.fill();
 
-    c2.strokeStyle = 'rgba(255,215,107,0.85)';
-    c2.fillStyle = 'rgba(255,215,107,0.9)';
-    c2.lineWidth = 1.5;
-    c2.stroke(roofPath);
-
-    // wood-grain hatching under the roof
-    c2.globalAlpha = 0.35;
-    for(let i=-4;i<=4;i++){
-      c2.beginPath(); c2.moveTo(cx+i*6, 20); c2.lineTo(cx+i*7, 38); c2.stroke();
+    // thin cosmology ring — a slow orbit standing in for the "cosmology"
+    // half of the name, without literally drawing constellations
+    c2.save();
+    c2.translate(cx, cy); c2.rotate(spin*0.12); c2.translate(-cx, -cy);
+    c2.strokeStyle = 'rgba(255,215,107,0.55)'; c2.lineWidth = 1;
+    c2.beginPath(); c2.arc(cx, cy, gemR+16, 0, Math.PI*2); c2.stroke();
+    for(let i=0;i<3;i++){
+      const a = (Math.PI*2/3)*i;
+      c2.beginPath(); c2.arc(cx+Math.cos(a)*(gemR+16), cy+Math.sin(a)*(gemR+16), 1.6, 0, Math.PI*2);
+      c2.fillStyle = 'rgba(255,215,107,0.85)'; c2.fill();
     }
-    c2.globalAlpha = 1;
+    c2.restore();
 
-    // eave "eyes"
-    c2.beginPath(); c2.arc(cx-30,36,2,0,Math.PI*2); c2.arc(cx+30,36,2,0,Math.PI*2); c2.fill();
-
-    // central medallion with the sketch's glyph marks
-    c2.beginPath(); c2.ellipse(cx, 62, 13, 16, 0, 0, Math.PI*2); c2.stroke();
-    c2.font = '9px serif'; c2.textAlign = 'center';
-    c2.fillText('IX', cx, 58); c2.fillText('O', cx, 67); c2.fillText('K', cx, 75);
-
-    // crossed blades flanking the medallion
+    // the faceted gem itself — center-to-vertex triangles, each a
+    // different point along the iridescent hue cycle rather than a
+    // binary lit/dark alternation (same "genuinely multi-hued, not a
+    // two-color gem" technique wardfall.html's rainbow orb already
+    // proves), plus per-facet lit/dark shading on top so it still reads
+    // as cut-crystal, not a flat pinwheel.
+    c2.save();
+    c2.translate(cx, cy); c2.rotate(spin*0.05); c2.translate(-cx, -cy);
+    const n = CREST_VERTS.length;
+    const vx = i => cx + Math.cos(CREST_VERTS[i].a*Math.PI*2)*gemR*CREST_VERTS[i].m;
+    const vy = i => cy + Math.sin(CREST_VERTS[i].a*Math.PI*2)*gemR*CREST_VERTS[i].m;
+    c2.shadowColor = 'rgba(255,215,107,0.6)'; c2.shadowBlur = 12;
+    for(let i=0;i<n;i++){
+      const j = (i+1)%n;
+      const hue = IRIDESCENT_HUES[i%IRIDESCENT_HUES.length];
+      c2.fillStyle = i%2===0 ? shadeHex(hue,26) : shadeHex(hue,-22);
+      c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(vx(i),vy(i)); c2.lineTo(vx(j),vy(j)); c2.closePath(); c2.fill();
+    }
+    c2.shadowBlur = 0;
+    c2.strokeStyle = 'rgba(255,255,255,0.45)'; c2.lineWidth = 1.1;
     c2.beginPath();
-    c2.moveTo(cx-30,50); c2.lineTo(cx-14,66);
-    c2.moveTo(cx-30,50); c2.lineTo(cx-26,46);
-    c2.moveTo(cx-30,50); c2.lineTo(cx-34,54);
-    c2.stroke();
-    c2.beginPath();
-    c2.moveTo(cx+30,50); c2.lineTo(cx+14,66);
-    c2.moveTo(cx+24,44); c2.lineTo(cx+34,52);
-    c2.stroke();
-
-    // tapering stem below — echoes the sketch's lower plate without
-    // reproducing all its interior linework
-    c2.globalAlpha = 0.5;
-    c2.beginPath(); c2.moveTo(cx-16,78); c2.lineTo(cx+16,78); c2.lineTo(cx,100); c2.closePath(); c2.stroke();
-    c2.globalAlpha = 1;
+    for(let i=0;i<n;i++){ const p=vx(i),q=vy(i); i===0?c2.moveTo(p,q):c2.lineTo(p,q); }
+    c2.closePath(); c2.stroke();
+    // one brightened specular facet, matching every other faceted sprite
+    // in this file (buildEnemySprite's own "plus one brightened specular
+    // facet" convention)
+    c2.fillStyle = 'rgba(255,255,255,0.5)';
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(vx(0),vy(0)); c2.lineTo(vx(1),vy(1)); c2.closePath(); c2.fill();
+    c2.restore();
   }
 
   const t0 = performance.now();
-  function loop(ts){ draw((ts-t0)/1000); requestAnimationFrame(loop); }
+  function loop(ts){ draw((ts-t0)/1000, Settings.reducedMotion()); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 })();
 
