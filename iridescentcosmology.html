@@ -4867,9 +4867,29 @@ const Music = (function(){
     return 0;
   }
 
+  // ---- STAGE 2 SECTION TIMELINE — without this, stage 2 had no arrival of
+  // its own: computeSection(st.elapsed) uses total run time, which is
+  // already past SECTION_BOUNDS[3] by the time Ramiel falls, so the
+  // arrangement just held at its stage-1 "peak" (LEAD_PHRASE_B, full band)
+  // for the entire stage-2 traversal — a new area with the *same* music
+  // stage 1 already built up to, not a new build. Keyed off stage2EnteredAt
+  // (mirroring how tick()'s own timeBuild math already treats stage 2 as
+  // its own clock) and compressed to fit BOSS2_TRIGGER_DELAY's ~240s
+  // window instead of stage 1's 410s. Reuses the exact same section
+  // thresholds scheduleStep already branches on (>=1 hats, >=2 lead,
+  // >=3 LEAD_PHRASE_B), so dropping `section` back to 0 on entry reads as
+  // the arrangement genuinely stripping back down and rebuilding, not
+  // silence — the real "stage 2 begins" moment.
+  const STAGE2_SECTION_BOUNDS = [30, 90, 160];
+  function computeStage2Section(stage2Elapsed){
+    for(let i=STAGE2_SECTION_BOUNDS.length-1; i>=0; i--) if(stage2Elapsed >= STAGE2_SECTION_BOUNDS[i]) return i+1;
+    return 0;
+  }
+
   let compressor = null, duckBus = null, reverb = null, reverbSend = null;
   let phraseBar = 0; // 0-3, cycles the 4-bar bass/lead phrase; bar 3 is the fill
   let section = 0;
+  let musicStage = 1; // 1 | 2 — tracks Game's own `stage`, separately from `section`, so entering stage 2 is a detectable edge
   let bossMode = false;
   let activeBossKind = null; // 'ramiel' | 'fracture' | null — which boss's pad/lead/bass material is live
   let bossPad = null; // sustained dissonant tone that fades in for the boss section only
@@ -5389,10 +5409,26 @@ const Music = (function(){
     // driving discrete "something new just happened" moments). Either boss
     // overrides the timeline entirely once it's up (bossMode below).
     if(!activeBoss){
-      const newSection = computeSection(st.elapsed);
-      if(newSection !== section){
-        section = newSection;
-        if(section === 4) startRiser(BOSS_MARKER - SECTION_BOUNDS[3]);
+      if(st.stage === 2 && st.stage2EnteredAt > 0){
+        if(musicStage !== 2){
+          // just crossed into stage-2 traversal — drop back to the bare
+          // kick+bass opening and rebuild on stage 2's own clock (below),
+          // instead of holding at whatever section stage 1 already peaked
+          // at. That drop-then-rebuild IS the arrival; no extra stinger
+          // needed on top of boss1Defeat's own resolving cue.
+          musicStage = 2;
+          section = 0;
+        }
+        const stage2Elapsed = st.elapsed - st.stage2EnteredAt;
+        const newSection = computeStage2Section(stage2Elapsed);
+        if(newSection !== section) section = newSection;
+      } else {
+        musicStage = 1;
+        const newSection = computeSection(st.elapsed);
+        if(newSection !== section){
+          section = newSection;
+          if(section === 4) startRiser(BOSS_MARKER - SECTION_BOUNDS[3]);
+        }
       }
     }
 
@@ -5469,6 +5505,7 @@ const Music = (function(){
     bossMode = false;
     activeBossKind = null;
     section = 0;
+    musicStage = 1;
     phraseBar = 0;
     resolving = false; // death never reset this on its own path - would otherwise silently freeze intensity updates on every run after the first death
     step = 0;
