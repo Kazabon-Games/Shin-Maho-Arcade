@@ -486,13 +486,20 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
   io.observe(cv);
 })();
 
-// Sigil Chain card art — a few drifting/rotating faceted rune polygons
-// (the game's own shadeHex facet-shading technique, generalized to an
-// N-gon here at small scale) plus a faint rotating ring echoing the hero
-// sigil, so the card reads as a window into a live magic circle rather
-// than a generic thumbnail. Same offscreen-pause IntersectionObserver
-// pattern as the Iridescent Cosmology card above — not optional, a previously-caught
-// real perf/battery consideration.
+// Sigil Chain card art — a few drifting/rotating faceted runes plus a faint
+// rotating ring echoing the hero sigil, so the card reads as a window into
+// a live magic circle rather than a generic thumbnail. Same offscreen-pause
+// IntersectionObserver pattern as the Iridescent Cosmology card above — not
+// optional, a previously-caught real perf/battery consideration.
+//
+// Previously drew each rune as a plain regular N-gon — exactly the generic
+// shape the game's own board rendering already moved away from
+// (sigilchain.html's RUNE_VERT_DEFS comment: "a uniform regular polygon per
+// rune read as one shape with a different vertex count, hard to tell apart
+// by shape alone"). This card is a new player's first-ever visual contact
+// with the game, so it was still shipping the outdated technique after the
+// game itself was fixed. Reuses the exact same hand-authored vertex data
+// (visual-art-director finding) instead of inventing new shapes.
 (function(){
   const cv = document.getElementById('sigilchainArt');
   if(!cv) return;
@@ -505,24 +512,36 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
     return `rgb(${r},${g},${b})`;
   }
-  function runeShard(x, y, r, sides, rot, color){
+  // copied verbatim from sigilchain.html's RUNE_VERT_DEFS (fire/water/wind/
+  // earth — the four runes this card already showed) — same {angle-in-
+  // turns, radius multiplier} data shape as every other hand-authored
+  // silhouette in this studio's games.
+  const RUNE_VERT_DEFS = {
+    fire:  [ {a:0.00,m:1.30},{a:0.14,m:0.50},{a:0.32,m:0.90},{a:0.50,m:0.42},{a:0.66,m:1.00},{a:0.85,m:0.55} ],
+    earth: [ {a:0.00,m:0.95},{a:0.18,m:1.05},{a:0.38,m:0.80},{a:0.55,m:1.10},{a:0.75,m:0.75},{a:0.90,m:1.00} ],
+    wind:  [ {a:0.00,m:1.35},{a:0.12,m:0.65},{a:0.28,m:1.00},{a:0.45,m:0.50},{a:0.60,m:0.85},{a:0.76,m:0.55},{a:0.90,m:0.95} ],
+    water: [ {a:0.00,m:0.70},{a:0.15,m:1.05},{a:0.32,m:0.85},{a:0.50,m:1.20},{a:0.68,m:0.85},{a:0.85,m:1.05} ],
+  };
+  function runeShard(x, y, r, key, rot, color){
+    const defs = RUNE_VERT_DEFS[key];
+    const verts = defs.map(d => ({ x:Math.cos(d.a*Math.PI*2+rot)*r*d.m, y:Math.sin(d.a*Math.PI*2+rot)*r*d.m }));
     c.save();
-    c.translate(x,y); c.rotate(rot);
-    for(let i=0;i<sides;i++){
-      const a1 = (Math.PI*2/sides)*i - Math.PI/2, a2 = (Math.PI*2/sides)*(i+1) - Math.PI/2;
+    c.translate(x,y);
+    for(let i=0;i<verts.length;i++){
+      const a = verts[i], b = verts[(i+1)%verts.length];
       c.fillStyle = shadeHex(color, i%2===0?22:-18);
       c.beginPath(); c.moveTo(0,0);
-      c.lineTo(Math.cos(a1)*r, Math.sin(a1)*r);
-      c.lineTo(Math.cos(a2)*r, Math.sin(a2)*r);
+      c.lineTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
       c.closePath(); c.fill();
     }
     c.restore();
   }
   const runes = [
-    { x:0.22, y:0.42, r:20, sides:3, color:'#ff5c3d', spd:0.32, phase:0 },
-    { x:0.45, y:0.62, r:26, sides:6, color:'#4ea8ff', spd:0.24, phase:1 },
-    { x:0.68, y:0.38, r:18, sides:5, color:'#8de0c9', spd:0.4, phase:2 },
-    { x:0.80, y:0.65, r:15, sides:4, color:'#8fce5c', spd:0.5, phase:3 },
+    { x:0.22, y:0.42, r:20, key:'fire',  color:'#ff5c3d', spd:0.32, phase:0 },
+    { x:0.45, y:0.62, r:26, key:'water', color:'#4ea8ff', spd:0.24, phase:1 },
+    { x:0.68, y:0.38, r:18, key:'wind',  color:'#8de0c9', spd:0.4, phase:2 },
+    { x:0.80, y:0.65, r:15, key:'earth', color:'#8fce5c', spd:0.5, phase:3 },
   ];
   function draw(t){
     c.clearRect(0,0,W,H);
@@ -532,7 +551,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     c.restore();
     for(const rn of runes){
       const bob = Math.sin(t*rn.spd + rn.phase)*6;
-      runeShard(rn.x*W, rn.y*H + bob, rn.r, rn.sides, t*0.2 + rn.phase, rn.color);
+      runeShard(rn.x*W, rn.y*H + bob, rn.r, rn.key, t*0.2 + rn.phase, rn.color);
     }
   }
   const t0 = performance.now();

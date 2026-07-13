@@ -157,7 +157,11 @@ body.reduced-motion .panel{
     <h1>SIGIL CHAIN</h1>
     <div class="tagline">trace the circle, close the loop</div>
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
+    <div class="stat-line">Rounds played <b id="menuRoundsVal">0</b></div>
+    <div class="stat-line">Lifetime tiles cleared <b id="menuLifetimeTilesVal">0</b></div>
+    <div class="stat-line" id="menuDailyRow"><span id="menuDailyLabel">Day #0 best</span> <b id="menuDailyBestVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a round">TRACE THE CIRCLE</button>
+    <button class="btn" onclick="Game.startRound({daily:true})" aria-label="Play today's Sigil Chain — a shared board everyone sees the same day">☀ TODAY'S CIRCLE</button>
     <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
     <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
@@ -189,7 +193,13 @@ body.reduced-motion .panel{
     <div class="new-best" id="newBestBadge" style="display:none;">✦ New Best ✦</div>
     <div class="stat-line">Score <b id="finalScoreVal">0</b></div>
     <div class="stat-line">Best <b id="bestScoreVal">0</b></div>
-    <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
+    <div class="stat-line">Longest chain <b id="longestChainVal">0</b></div>
+    <div class="stat-line">Circles closed <b id="circlesClosedVal">0</b></div>
+    <div class="stat-line">Tiles cleared <b id="tilesClearedVal">0</b></div>
+    <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this round">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
+    <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
 </div>
@@ -232,6 +242,7 @@ const Persist = (function(){
     best: { score: 0, longestChain: 0, circlesClosed: 0 },
     totalRounds: 0,
     lifetimeTilesCleared: 0,
+    daily: { date: null, bestScore: 0 },
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
     achievements: {},
   };
@@ -246,6 +257,7 @@ const Persist = (function(){
         if(data.best.circlesClosed === undefined) data.best.circlesClosed = 0;
         if(data.totalRounds === undefined) data.totalRounds = 0;
         if(data.lifetimeTilesCleared === undefined) data.lifetimeTilesCleared = 0;
+        if(!data.daily) data.daily = { date: null, bestScore: 0 };
         if(!data.settings) data.settings = { musicVol:0.5, sfxVol:0.5, reducedMotion:null };
         if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
         if(data.settings.sfxVol === undefined) data.settings.sfxVol = 0.5;
@@ -270,6 +282,60 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 function rand(a,b){ return a + Math.random()*(b-a); }
 function fmtTime(s){ const m=Math.floor(s/60), sec=Math.floor(s%60); return m+':'+String(sec).padStart(2,'0'); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// cssVar/hexToRgbStr — same pattern as iridescentcosmology.html:1484-1492's
+// OK_COLOR/DANGER_COLOR: read the CSS custom property once at load instead
+// of duplicating its hex value as a canvas literal (--danger/--ok were
+// declared but never referenced anywhere in this file — the phase-3
+// vignette hardcoded rgba(255,77,112,...), which happens to equal --danger
+// today but wasn't sourced from it).
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function hexToRgbStr(hex){
+  const n = parseInt(hex.replace('#',''),16);
+  return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
+}
+const DANGER_RGB = hexToRgbStr(cssVar('--danger'));
+
+// ---- SEEDED RNG — for Daily Sigil Chain only (copied verbatim from
+// wardfall.html:298-331). Free play stays on Math.random, untouched;
+// Board holds its own swappable rng (default Math.random), set once at
+// round start via Board.setRng and reset to null (= Math.random) when
+// leaving daily mode.
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seedFromString(str){
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 2654435761); h ^= h >>> 16; }
+  return h >>> 0;
+}
+// local calendar date (not UTC) so "today" matches the player's own day
+function localDateString(d){
+  d = d || new Date();
+  const tzAdjusted = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tzAdjusted.toISOString().slice(0,10);
+}
+const DAILY_EPOCH = '2026-07-08'; // Sigil Chain's PWA-ship date (per SIGIL_CHAIN_HANDOVER.md) — Day #1
+function dayNumberFor(dateStr){
+  const a = Date.parse(DAILY_EPOCH+'T00:00:00Z');
+  const b = Date.parse(dateStr+'T00:00:00Z');
+  return Math.floor((b-a)/86400000) + 1;
+}
+// shared by every menu-render call site (showMenu, Settings.close, initial
+// page load) — top-level since it only needs Persist's public data.
+function renderMenuDailyRow(){
+  const todayStr = localDateString();
+  const todayNum = dayNumberFor(todayStr);
+  const todayBest = Persist.data.daily.date === todayStr ? Persist.data.daily.bestScore : 0;
+  document.getElementById('menuDailyLabel').textContent = 'Day #'+todayNum+' best';
+  document.getElementById('menuDailyBestVal').textContent = todayBest;
+}
 
 const Ease = {
   popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
@@ -320,7 +386,13 @@ const RUNE_TYPES = {
   earth:  { sides: 4, color: '#8fce5c' },
   wind:   { sides: 5, color: '#8de0c9' },
   water:  { sides: 6, color: '#4ea8ff' },
-  light:  { sides: 7, color: '#ffe066' },
+  // was #ffe066 — only 10.3 RGB units from --gold:#ffd76b (every other rune
+  // clears the gold/reward band by 50+ units), which undercut the radiant
+  // tile's own bonus ring (a lightened version of the tile's own hue) on
+  // this specific rune — the ring and the gold HUD/UI text read as the
+  // same color family. Shifted toward a paler yellow-green (52.2 units
+  // from --gold, still clears every other rune/danger color by 50+).
+  light:  { sides: 7, color: '#f2ff8a' },
   shadow: { sides: 8, color: '#b98aff' },
 };
 const RUNE_KEYS = Object.keys(RUNE_TYPES);
@@ -501,12 +573,17 @@ const MAX_SOLVE_ATTEMPTS = 30; // bounded reroll retry — see hasValidMove()
 const Board = (function(){
   let cols = COLS, rows = ROWS;
   let grid = [];
+  // swappable rng — Math.random by default, swapped to a seeded fn for
+  // Daily Sigil Chain only (see Game.startRound), same isolated-swap
+  // pattern as Wardfall's Grid.setRng/Queue.setRng. Free play is untouched.
+  let rng = Math.random;
+  function setRng(fn){ rng = fn || Math.random; }
 
   function randomTileFor(phase){
     const runes = PHASE_RUNES[phase] || PHASE_RUNES[0];
-    if(Math.random() < (CURSED_CHANCE[phase]||0)) return { cursed:true, rune:null, radiant:false };
-    const rune = runes[Math.floor(Math.random()*runes.length)];
-    const radiant = Math.random() < (RADIANT_CHANCE[phase]||0);
+    if(rng() < (CURSED_CHANCE[phase]||0)) return { cursed:true, rune:null, radiant:false };
+    const rune = runes[Math.floor(rng()*runes.length)];
+    const radiant = rng() < (RADIANT_CHANCE[phase]||0);
     return { cursed:false, rune, radiant };
   }
   function makeTile(tileData, col, row, spawnAboveBy){
@@ -627,7 +704,7 @@ const Board = (function(){
   }
   return {
     init, setFromPattern, tileAt, forEachTile, inBounds, findAllOfRune, clearCells, collapseAndRefill,
-    hasValidMove,
+    hasValidMove, setRng,
     get cols(){ return cols; }, get rows(){ return rows; },
   };
 })();
@@ -668,6 +745,8 @@ const Game = (function(){
   let totalScore=0, comboStreak=0, lastClearTime=-Infinity;
   let roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0, runesCleared:new Set() };
   let lastEventType = null;
+  let dailyMode = false, dailyDateStr = null; // Daily Sigil Chain — seeded board, see startRound()
+  let lastRunStats = null;
   const frameTimes = [];
 
   // Wake Lock — same pattern as iridescentcosmology.html:1855-1861: guarded behind a
@@ -761,7 +840,7 @@ const Game = (function(){
     const t = Board.tileAt(col,row);
     if(!t || t.cursed) return false;
     dragging = true; chainCells = [{col,row}]; chainRune = t.rune;
-    Events.emit('chainStart', {col,row});
+    Events.emit('chainStart', {col,row,rune:t.rune});
     return true;
   }
   function extendChain(col,row){
@@ -772,7 +851,7 @@ const Game = (function(){
     if(cellEq(cell,last)) return;
     if(chainCells.length>=2 && cellEq(cell, chainCells[chainCells.length-2])){
       chainCells.pop();
-      Events.emit('chainExtend', {cells:[...chainCells]});
+      Events.emit('chainExtend', {cells:[...chainCells], added:false, rune:chainRune});
       return;
     }
     if(!adjacent(last, cell)) return;
@@ -794,13 +873,14 @@ const Game = (function(){
     }
     if(t.rune !== chainRune) return;
     chainCells.push(cell);
-    Events.emit('chainExtend', {cells:[...chainCells]});
+    const pos = tileCenter(col,row);
+    Events.emit('chainExtend', {cells:[...chainCells], added:true, rune:chainRune, x:pos.x, y:pos.y});
   }
   function endChain(){
     if(!dragging) return;
     if(chainCells.length >= MIN_CHAIN){ resolveRelease(); }
     else {
-      Events.emit('chainCancel', {cells:[...chainCells]});
+      Events.emit('chainCancel', {cells:[...chainCells], rune:chainRune});
       dragging=false; chainCells=[]; chainRune=null; dragPointer=null;
     }
   }
@@ -859,8 +939,14 @@ const Game = (function(){
     ctx.strokeStyle = 'rgba(255,203,92,0.22)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.restore();
 
+    // tile-fall/refill overshoot bounce (Ease.easeOutBack) plays on every
+    // single clear, for the entire round — the highest-frequency animation
+    // in the game, and it was never checked against reducedMotion() at all.
+    // easeOutCubic keeps the real, informational motion (new tiles visibly
+    // arriving) but drops the decorative overshoot/bounce flourish.
+    const fallEase = Settings.reducedMotion() ? Ease.easeOutCubic : Ease.easeOutBack;
     Board.forEachTile((t,col,row)=>{
-      const rowNow = t.animT>=1 ? t.row : t.rowFrom + (t.row-t.rowFrom)*Ease.easeOutBack(t.animT);
+      const rowNow = t.animT>=1 ? t.row : t.rowFrom + (t.row-t.rowFrom)*fallEase(t.animT);
       const x = boardX+col*TILE+TILE/2, y = boardY+rowNow*TILE+TILE/2;
       const sprite = t.cursed ? CURSED_SPRITE : (t.radiant?RADIANT_SPRITES[t.rune]:RUNE_SPRITES[t.rune]);
       const scale = (TILE*0.82)/SPRITE_SIZE;
@@ -906,7 +992,20 @@ const Game = (function(){
     requestAnimationFrame(loop);
   }
 
-  function startRound(){
+  function startRound(opts){
+    // Daily Sigil Chain — a deterministic seeded board keyed off the local
+    // calendar date, so every player who plays "today's" board sees the
+    // identical rune/cursed/radiant sequence and scores are genuinely
+    // comparable without any backend. Additive only: normal free-play
+    // always resets Board's rng back to Math.random.
+    dailyMode = !!(opts && opts.daily);
+    if(dailyMode){
+      dailyDateStr = localDateString();
+      Board.setRng(mulberry32(seedFromString(dailyDateStr)));
+    } else {
+      dailyDateStr = null;
+      Board.setRng(null);
+    }
     running=true; paused=false; roundEnded=false;
     elapsed=0; timeRemaining=ROUND_SECONDS; phase=0;
     totalScore=0; comboStreak=0; lastClearTime=-Infinity;
@@ -935,6 +1034,9 @@ const Game = (function(){
     document.getElementById('roundEndOverlay').classList.remove('show');
     document.getElementById('pauseOverlay').classList.remove('show');
     document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+    document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+    document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+    renderMenuDailyRow();
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRound(){
@@ -947,13 +1049,36 @@ const Game = (function(){
     if(roundStats.circlesClosed > best.circlesClosed) best.circlesClosed = roundStats.circlesClosed;
     Persist.data.totalRounds += 1;
     Persist.data.lifetimeTilesCleared += roundStats.tilesCleared;
+    let dailyNewBest = false;
+    if(dailyMode){
+      const daily = Persist.data.daily;
+      if(daily.date !== dailyDateStr){ daily.date = dailyDateStr; daily.bestScore = 0; }
+      if(totalScore > daily.bestScore){ daily.bestScore = totalScore; dailyNewBest = true; }
+    }
     Persist.save();
-    Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared });
+    Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared,
+      totalRounds: Persist.data.totalRounds, lifetimeTilesCleared: Persist.data.lifetimeTilesCleared });
     Events.emit('roundEnd', { score: totalScore, best: best.score, newBest });
     lastEventType = 'roundEnd';
     document.getElementById('hud').classList.remove('show');
     document.getElementById('finalScoreVal').textContent = totalScore;
     document.getElementById('bestScoreVal').textContent = best.score;
+    document.getElementById('longestChainVal').textContent = roundStats.maxChain;
+    document.getElementById('circlesClosedVal').textContent = roundStats.circlesClosed;
+    document.getElementById('tilesClearedVal').textContent = roundStats.tilesCleared;
+    const dailyRow = document.getElementById('dailyResultRow');
+    let dayNumber = null;
+    if(dailyMode){
+      dayNumber = dayNumberFor(dailyDateStr);
+      document.getElementById('dailyDayLabel').textContent = 'Day #'+dayNumber+' best';
+      document.getElementById('dailyBestVal').textContent = Persist.data.daily.bestScore;
+      dailyRow.style.display = '';
+    } else {
+      dailyRow.style.display = 'none';
+    }
+    lastRunStats = { score: totalScore, longestChain: roundStats.maxChain, circlesClosed: roundStats.circlesClosed,
+      tilesCleared: roundStats.tilesCleared, newBest, dailyMode, dayNumber,
+      dailyBestScore: dailyMode ? Persist.data.daily.bestScore : null, dailyNewBest };
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -962,7 +1087,8 @@ const Game = (function(){
   function countTiles(){ let c=0; Board.forEachTile(()=>c++); return c; }
   const _test = {
     state: () => ({ running, paused, roundEnded, elapsed, timeRemaining, phase, score: totalScore,
-      comboStreak, chainLength: chainCells.length, dragging, tilesInGrid: countTiles() }),
+      comboStreak, chainLength: chainCells.length, dragging, tilesInGrid: countTiles(),
+      dailyMode, dailyDateStr }),
     simulateChain: (cellCoords) => {
       if(!cellCoords || !cellCoords.length) return { started:false };
       const scoreBefore = totalScore;
@@ -988,7 +1114,7 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
-  return { startRound, togglePause, showMenu, _test };
+  return { startRound, togglePause, showMenu, isDailyMode: () => dailyMode, getLastRunStats: () => lastRunStats, _test };
 })();
 
 /* =====================================================================
@@ -997,6 +1123,29 @@ const Game = (function(){
 ===================================================================== */
 const Juice = (function(){
   let pops = [];
+  let extendPulses = []; // cheap per-tile flash while building a chain — chainStart/chainExtend/chainCancel had zero subscribers anywhere before this
+  // score-earned float text — mirrors infall.html's own pushFloatText/
+  // drawFloatTexts (game-designer finding: Infall already has exactly this,
+  // proven and shipped; Sigil Chain had no per-clear feedback beyond the
+  // aggregate HUD count-up). Same merge-on-proximity guard: several small
+  // clears landing in quick succession (a normal outcome of rapid chaining,
+  // not a contrived edge case) would otherwise stack into an illegible pile.
+  let floatTexts = [];
+  const FLOATTEXT_MERGE_DIST = 22, FLOATTEXT_MERGE_WINDOW = 0.18;
+  function pushFloatText(x, y, pts, color){
+    for(const t of floatTexts){
+      if(t.life < FLOATTEXT_MERGE_WINDOW && Math.hypot(t.x-x, t.y-y) < FLOATTEXT_MERGE_DIST){
+        t.pts += pts; t.text = '+'+t.pts; t.color = color; t.life = 0;
+        return;
+      }
+    }
+    floatTexts.push({ x, y, text:'+'+pts, pts, color, life:0, maxLife:0.7 });
+  }
+  function centroid(cells){
+    let sx=0, sy=0;
+    for(const c of cells){ sx+=c.x; sy+=c.y; }
+    return { x: sx/cells.length, y: sy/cells.length };
+  }
   let comboPulse = 0, circlePulse = 0;
   let vignetteActive = false, vignette = 0;
   // shake/hitstop/haptic — Wonderland's proven technique
@@ -1018,7 +1167,10 @@ const Juice = (function(){
 
   Events.on('chainCleared', (p)=>{
     for(const c of p.cells) pops.push({x:c.x,y:c.y,sprite:c.sprite,t:0,dur:0.3});
-    comboPulse = 1;
+    // was never checked against reducedMotion() at all, unlike its near-twin
+    // circlePulse right below (same mechanism, same dampen-not-remove treatment)
+    comboPulse = Settings.reducedMotion() ? 0.3 : 1;
+    if(p.cells.length){ const c = centroid(p.cells); pushFloatText(c.x, c.y, p.score, RUNE_TYPES[p.rune]?.color); }
   });
   Events.on('circleClosed', (p)=>{
     for(const c of p.cells) pops.push({x:c.x,y:c.y,sprite:c.sprite,t:0,dur:0.42});
@@ -1027,15 +1179,24 @@ const Juice = (function(){
     addShake(Math.min(4 + n*0.35, 14));
     hitstopUntil = Math.max(hitstopUntil, performance.now() + (Settings.reducedMotion() ? 0 : 70));
     vibrate(Settings.reducedMotion() ? [] : [20, 30, 40]);
+    if(p.cells.length){ const c = centroid(p.cells); pushFloatText(c.x, c.y, p.score, RUNE_TYPES[p.rune]?.color); }
   });
   Events.on('phaseChange', (p)=>{
     vignetteActive = (p.phase===3);
     if(p.phase===3){ addShake(5); vibrate(Settings.reducedMotion() ? [] : [15]); }
   });
+  Events.on('chainExtend', (p)=>{
+    if(!p.added) return; // only flash on a genuinely new tile, not a backtrack pop
+    extendPulses.push({x:p.x, y:p.y, t:0, dur:0.22});
+  });
 
   function update(dt){
     for(const p of pops) p.t += dt;
     pops = pops.filter(p=>p.t < p.dur);
+    for(const p of extendPulses) p.t += dt;
+    extendPulses = extendPulses.filter(p=>p.t < p.dur);
+    for(const t of floatTexts) t.life += dt;
+    floatTexts = floatTexts.filter(t=>t.life < t.maxLife);
     comboPulse = Math.max(0, comboPulse - dt*2.5);
     circlePulse = Math.max(0, circlePulse - dt*1.6);
     if(shakeMag > 0){ shakeMag *= Math.max(0, 1 - dt*10); if(shakeMag < 0.3) shakeMag = 0; }
@@ -1056,10 +1217,22 @@ const Juice = (function(){
       if(p.sprite) ctx.drawImage(p.sprite, -SPRITE_SIZE*s/2, -SPRITE_SIZE*s/2, SPRITE_SIZE*s, SPRITE_SIZE*s);
       ctx.restore();
     }
+    for(const p of extendPulses){
+      const t = p.t/p.dur;
+      // amplitude-gated, not removed — this is the only feedback on the
+      // single most frequent action in the game (chainStart/chainExtend/
+      // chainCancel previously had zero subscribers anywhere)
+      const r = (SPRITE_SIZE*0.45) * (0.5 + t*0.6) * (Settings.reducedMotion() ? 0.4 : 1);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, (1-t)*0.55);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
     if(vignette>0){
       const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.25, W/2,H/2, Math.max(W,H)*0.75);
-      g.addColorStop(0, 'rgba(255,77,112,0)');
-      g.addColorStop(1, 'rgba(255,77,112,'+(vignette*0.5).toFixed(3)+')');
+      g.addColorStop(0, `rgba(${DANGER_RGB},0)`);
+      g.addColorStop(1, `rgba(${DANGER_RGB},${(vignette*0.5).toFixed(3)})`);
       ctx.save(); ctx.fillStyle = g; ctx.fillRect(0,0,W,H); ctx.restore();
     }
     if(circlePulse>0){
@@ -1067,6 +1240,30 @@ const Juice = (function(){
       ctx.globalAlpha = circlePulse*0.4;
       ctx.strokeStyle = '#ffd76b'; ctx.lineWidth = 6;
       ctx.beginPath(); ctx.arc(W/2,H/2, Math.min(W,H)*0.4*(1.6-circlePulse), 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    drawFloatTexts(ctx, W, H);
+  }
+  // score-earned float text — mirrors infall.html's drawFloatTexts exactly:
+  // edge-clamped (a clear can legitimately land right at the board's own
+  // edge cells, not just a contrived case) and informational (always
+  // renders regardless of reduced motion; only the rise distance scales
+  // down under it, matching that file's own §3.6 precedent).
+  function drawFloatTexts(ctx, W, H){
+    const marginX = 30, marginTop = 18, marginBottom = 8;
+    for(const t of floatTexts){
+      const p = t.life / t.maxLife;
+      const rise = 22 * (Settings.reducedMotion() ? 0.4 : 1) * Ease.easeOutCubic(p);
+      const drawX = clamp(t.x, marginX, W - marginX);
+      const drawY = clamp(t.y - 12 - rise, marginTop, H - marginBottom);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      ctx.font = "bold 14px 'IBM Plex Mono', 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      const color = t.color || '#ffd76b';
+      ctx.fillStyle = color;
+      ctx.shadowColor = color; ctx.shadowBlur = 6;
+      ctx.fillText(t.text, drawX, drawY);
       ctx.restore();
     }
   }
@@ -1087,6 +1284,7 @@ const Juice = (function(){
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
   let muted = false, started = false;
+  let drone = null, droneFilter = null;
 
   function ensureCtx(){
     if(ctx) return;
@@ -1106,7 +1304,47 @@ const Music = (function(){
     reverbSend = ctx.createGain(); reverbSend.gain.value = 0.35;
     reverb.connect(reverbSend); reverbSend.connect(master);
     started = true;
+    buildDrone();
   }
+  // continuous pad/drone — the minimum viable mood engine (audio-designer
+  // finding: the module was three one-shot stingers and otherwise total
+  // silence; there was nothing continuous for the score to modulate at
+  // all). Two low sine tones (root + fifth) through a lowpass filter, gain
+  // permanently connected into musicGain — this is also the fix for the
+  // separately-found dead routing bug: nothing previously ever connected a
+  // signal into musicGain, so the Music volume slider did nothing audible.
+  const DRONE_ROOT = 110; // A2 — low enough to sit under every stinger without masking them
+  function buildDrone(){
+    const g = ctx.createGain(); g.gain.value = 0;
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 350; droneFilter.Q.value = 0.7;
+    g.connect(droneFilter); droneFilter.connect(musicGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.22; droneFilter.connect(wet); wet.connect(reverb);
+    const nodes = [DRONE_ROOT, DRONE_ROOT*1.5].map((f,i)=>{
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const og = ctx.createGain(); og.gain.value = i===0 ? 0.6 : 0.4;
+      o.connect(og); og.connect(g); o.start();
+      return o;
+    });
+    drone = { gain: g, nodes };
+  }
+  // per-frame mood mapping — direct value set every frame, not ramped: this
+  // already runs every frame, so re-ramping on top would just cancel
+  // itself each call and never settle (same rule iridescentcosmology.html's
+  // own tick() documents for its drone). Silent at the menu/pause/round-end;
+  // gently louder and brighter (filter opens) as phase escalates, and again
+  // in the last 10 seconds of the round — the only "time's running out"
+  // audio signal that previously didn't exist at all (it was a color).
+  function droneTick(){
+    requestAnimationFrame(droneTick);
+    if(!ctx || !drone) return;
+    const st = Game._test.state();
+    if(!st.running || st.paused || st.roundEnded){ drone.gain.gain.value = 0; return; }
+    const phaseFrac = st.phase/3;
+    const urgency = st.timeRemaining <= 10 ? (10-st.timeRemaining)/10 : 0;
+    drone.gain.gain.value = 0.05 + phaseFrac*0.05 + urgency*0.06;
+    droneFilter.frequency.value = 350 + phaseFrac*900 + urgency*700;
+  }
+  requestAnimationFrame(droneTick);
   // every gain ramp must go through this — cancel-then-set-then-ramp avoids
   // the exact "dying sticks the music" footgun documented in
   // iridescentcosmology.html:4308-4316 (an unqueued ramp silently losing to an
@@ -1155,7 +1393,87 @@ const Music = (function(){
     bell(root * Math.pow(2, 4/12), 1.3, 0.22);
     bell(root * Math.pow(2, 7/12), 1.3, 0.2);
   }
-  function roundEndCue(){ ensureCtx(); bell(160, 1.1, 0.22); }
+  // roundEndCue previously played the identical single bell regardless of
+  // outcome — the audio didn't participate in the one moment the visuals
+  // already treat as the game's biggest emotional beat (newBestPop vs.
+  // roundFade). New-best now reuses circleChord's own major-triad idea at a
+  // different, lower/resolving register instead of one louder note.
+  function roundEndCue(newBest){
+    ensureCtx();
+    if(newBest){
+      bell(160, 1.2, 0.24);
+      bell(160 * Math.pow(2, 4/12), 1.2, 0.2);
+      bell(160 * Math.pow(2, 7/12), 1.2, 0.18);
+    } else {
+      bell(160, 1.1, 0.22);
+    }
+  }
+  // the game's one hazard had zero audio at all — hitting a cursed tile
+  // ended the chain and reset the combo in total silence. Deliberately
+  // "dead"/muted rather than bright: no reverb send (unlike every rune
+  // bell), a close dissonant beat between two low sines instead of a
+  // consonant interval, distinct from every other cue in the game.
+  function cursedThud(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=95;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=95*1.06;
+    o1.connect(g); o2.connect(g);
+    o1.start(t); o2.start(t); o1.stop(t+0.4); o2.stop(t+0.4);
+  }
+  // phase transitions (a brand-new rune type arriving, or cursed tiles
+  // starting to appear) got zero audio signature — only the phase-3
+  // transition got any Juice (vignette/shake), and even that was silent.
+  // Short rising two-note cue, distinct from every rune/circle/cancel/
+  // cursed cue — "something new just arrived," paralleling what the
+  // visuals already do for phase 3 specifically.
+  function phaseArrivalCue(phase){
+    if(!ctx || muted) return;
+    ensureCtx();
+    bell(140 + phase*40, 0.4, 0.14);
+    setTimeout(()=>{ if(!muted) bell(180 + phase*50, 0.5, 0.16); }, 120);
+  }
+  // chainStart/chainExtend/chainCancel had zero subscribers anywhere
+  // (Juice or Music) — 100% of the audio budget went to the resolution
+  // moment only, despite chain-building being most of actual play time.
+  // Cheap dedicated tick (no reverb send, short envelope) rather than
+  // routing through bell() — this fires on every tile added to a chain,
+  // reverb tails would smear into an indistinct wash at that rate. Pitch
+  // climbs gently with chain length (capped) so a growing chain audibly
+  // builds, using the same per-rune base pitch as runeBell/circleChord.
+  function chainTick(runeKey, length){
+    if(!ctx || muted) return;
+    const def = RUNE_TYPES[runeKey];
+    const base = 220 * (1 + (def?def.sides:4)*0.08);
+    const freq = base * (1 + Math.min(length,12)*0.015);
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.09);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=freq;
+    o.connect(g); o.start(t); o.stop(t+0.1);
+  }
+  // a failed chain (released below MIN_CHAIN) previously gave zero audio
+  // signal at all — a short falling thud, distinct from every rune bell.
+  function chainCancelCue(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
+    g.connect(sfxGain);
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=140;
+    o.frequency.exponentialRampToValueAtTime(90, t+0.2);
+    o.connect(g); o.start(t); o.stop(t+0.26);
+  }
   function toggleMute(){
     muted = !muted;
     if(master) rampGain(master.gain, muted?0:0.5, 0.15);
@@ -1166,10 +1484,102 @@ const Music = (function(){
 
   Events.on('chainCleared', (p)=>{ if(p.rune) runeBell(p.rune); });
   Events.on('circleClosed', (p)=>{ if(p.rune) circleChord(p.rune); });
-  Events.on('roundEnd', ()=> roundEndCue());
+  Events.on('roundEnd', (p)=> roundEndCue(p && p.newBest));
+  Events.on('cursedBroken', ()=> cursedThud());
+  Events.on('phaseChange', (p)=> phaseArrivalCue(p.phase));
+  Events.on('chainExtend', (p)=>{ if(p.added && p.rune) chainTick(p.rune, p.cells.length); });
+  Events.on('chainCancel', ()=> chainCancelCue());
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, runeBell, circleChord,
-    _test: { isMuted: () => muted, isStarted: () => started } };
+    _test: { isMuted: () => muted, isStarted: () => started,
+      droneGain: () => drone ? drone.gain.gain.value : null,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+      musicGainValue: () => musicGain ? musicGain.gain.value : null } };
+})();
+
+/* =====================================================================
+   SHARECARD — mirrors wardfall.html's own ShareCard module verbatim in
+   shape (buildCanvas/share/copyText), restated with Sigil Chain's own
+   round-end stats (score/longest chain/circles closed/tiles cleared —
+   no new stats invented, same as every sibling ShareCard's own rule).
+===================================================================== */
+const ShareCard = (function(){
+  function resultText(stats){
+    // Daily runs lead with the day number — the actual comparable claim
+    // ("I got X on today's board"), a generic score means nothing without
+    // the shared-seed context that makes it comparable at all.
+    const prefix = stats.dailyMode ? `Sigil Chain — Day #${stats.dayNumber}` : 'Sigil Chain';
+    return `${prefix} — ${stats.score} pts — longest chain ${stats.longestChain} — circles closed ${stats.circlesClosed} — tiles cleared ${stats.tilesCleared}`;
+  }
+  function buildCanvas(stats){
+    const cv = document.createElement('canvas');
+    cv.width = 600; cv.height = 315;
+    const c = cv.getContext('2d');
+    const bgGrad = c.createLinearGradient(0,0,0,cv.height);
+    bgGrad.addColorStop(0, '#231442'); bgGrad.addColorStop(1, '#140b30');
+    c.fillStyle = bgGrad; c.fillRect(0,0,cv.width,cv.height);
+    c.strokeStyle = 'rgba(255,203,92,0.55)'; c.lineWidth = 2;
+    c.strokeRect(8,8,cv.width-16,cv.height-16);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ffcb5c';
+    c.font = stats.dailyMode ? "bold 24px 'Cormorant Garamond', Georgia, serif" : "bold 30px 'Cormorant Garamond', Georgia, serif";
+    c.fillText(stats.dailyMode ? 'SIGIL CHAIN — DAY #'+stats.dayNumber : 'SIGIL CHAIN', cv.width/2, 66);
+    c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
+    c.fillStyle = '#c2b3e8';
+    c.fillText(stats.dailyMode ? 'today\'s shared board — same circle for everyone' : 'trace the circle, close the loop', cv.width/2, 92);
+
+    // mirrors exactly what the round-end overlay already shows — no new
+    // stats invented
+    const cols = [['SCORE', stats.score], ['LONGEST CHAIN', stats.longestChain],
+      ['CIRCLES CLOSED', stats.circlesClosed], ['TILES CLEARED', stats.tilesCleared]];
+    const colW = cv.width / cols.length;
+    cols.forEach(([label, val], i) => {
+      const x = colW*i + colW/2;
+      c.fillStyle = '#ffe6a8';
+      c.font = "bold 28px 'IBM Plex Mono', monospace";
+      c.fillText(String(val), x, 195);
+      c.fillStyle = '#8674b8';
+      c.font = "11px 'Quicksand', sans-serif";
+      c.fillText(label, x, 220);
+    });
+
+    c.fillStyle = '#6b6050';
+    c.font = "12px 'IBM Plex Mono', monospace";
+    c.fillText('SHIN MAHOU ARCADE', cv.width/2, cv.height-24);
+    return cv;
+  }
+
+  function share(){
+    const stats = Game.getLastRunStats();
+    if(!stats) return;
+    const cv = buildCanvas(stats);
+    cv.toBlob(async (blob) => {
+      if(!blob) return;
+      const file = new File([blob], 'sigilchain-run.png', { type:'image/png' });
+      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+        try{ await navigator.share({ files:[file], title:'SIGIL CHAIN', text: resultText(stats) }); return; }
+        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      }
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = 'sigilchain-run.png';
+      a.click();
+    }, 'image/png');
+  }
+  // plain-text fallback, deliberately separate from share()'s image path —
+  // returns a Promise<boolean> so the caller's feedback reflects the
+  // clipboard write actually resolving, not just having been kicked off
+  // (the exact async-honesty fix wardfall.html's own ShareCard.copyText
+  // already applies — mirrored here from the start instead of shipping
+  // the synchronous-true version and fixing it later).
+  function copyText(){
+    const stats = Game.getLastRunStats();
+    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return Promise.resolve(false);
+    return navigator.clipboard.writeText(resultText(stats)).then(()=>true).catch(()=>false);
+  }
+
+  return { share, copyText, resultText, _test: { buildCanvas } };
 })();
 
 /* =====================================================================
@@ -1211,6 +1621,9 @@ const Settings = (function(){
     document.getElementById('settingsOverlay').classList.remove('show');
     if(openedFromMenu){
       document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+      document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+      document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+      renderMenuDailyRow();
       document.getElementById('menuOverlay').classList.add('show');
     }
   }
@@ -1242,7 +1655,14 @@ const Achievements = (function(){
   const DEFS = [
     { id:'circle_master', name:'Circle Master', desc:'Close 3 circles in one round.', check:d=>d.circlesClosed>=3 },
     { id:'full_spectrum', name:'Full Spectrum', desc:'Chain all 6 rune types in one round.', check:d=>(d.runesCleared?d.runesCleared.size:0)>=6 },
-    { id:'high_roller', name:'High Roller', desc:'Score 500 or more in one round.', check:d=>d.score>=500 },
+    // Retuned from 500 — a real single round nets ~2,000-4,200 (measured
+    // live off the actual scoring formula/board generation, not assumed),
+    // so 500 cleared in the first ~10-20 seconds of nearly any round and
+    // gated nothing. 3000 sits meaningfully above the median without
+    // requiring a near-perfect round.
+    { id:'high_roller', name:'High Roller', desc:'Score 3,000 or more in one round.', check:d=>d.score>=3000 },
+    { id:'dedicated', name:'Dedicated', desc:'Complete 25 rounds.', check:d=>d.totalRounds>=25 },
+    { id:'tile_breaker', name:'Tile Breaker', desc:'Clear 1,000 tiles across all rounds.', check:d=>d.lifetimeTilesCleared>=1000 },
   ];
   function checkAll(roundSummary){
     if(!Persist.data.achievements) Persist.data.achievements = {};
@@ -1306,6 +1726,9 @@ const FullscreenCtrl = (function(){
 })();
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
+document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
+document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+renderMenuDailyRow();
 
 // PWA registration — see the pwa-offline-games skill. Explicit scope keeps
 // this service worker from ever intercepting fetches for the other games
