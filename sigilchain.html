@@ -159,7 +159,9 @@ body.reduced-motion .panel{
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
     <div class="stat-line">Rounds played <b id="menuRoundsVal">0</b></div>
     <div class="stat-line">Lifetime tiles cleared <b id="menuLifetimeTilesVal">0</b></div>
+    <div class="stat-line" id="menuDailyRow"><span id="menuDailyLabel">Day #0 best</span> <b id="menuDailyBestVal">0</b></div>
     <button class="btn" onclick="Game.startRound()" aria-label="Start a round">TRACE THE CIRCLE</button>
+    <button class="btn" onclick="Game.startRound({daily:true})" aria-label="Play today's Sigil Chain — a shared board everyone sees the same day">☀ TODAY'S CIRCLE</button>
     <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
     <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
     <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
@@ -194,7 +196,10 @@ body.reduced-motion .panel{
     <div class="stat-line">Longest chain <b id="longestChainVal">0</b></div>
     <div class="stat-line">Circles closed <b id="circlesClosedVal">0</b></div>
     <div class="stat-line">Tiles cleared <b id="tilesClearedVal">0</b></div>
-    <button class="btn" onclick="Game.startRound()" aria-label="Replay">REPLAY</button>
+    <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
+    <button class="btn" onclick="ShareCard.share()" aria-label="Share this round">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
+    <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
     <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
 </div>
@@ -237,6 +242,7 @@ const Persist = (function(){
     best: { score: 0, longestChain: 0, circlesClosed: 0 },
     totalRounds: 0,
     lifetimeTilesCleared: 0,
+    daily: { date: null, bestScore: 0 },
     settings: { musicVol: 0.5, sfxVol: 0.5, reducedMotion: null },
     achievements: {},
   };
@@ -251,6 +257,7 @@ const Persist = (function(){
         if(data.best.circlesClosed === undefined) data.best.circlesClosed = 0;
         if(data.totalRounds === undefined) data.totalRounds = 0;
         if(data.lifetimeTilesCleared === undefined) data.lifetimeTilesCleared = 0;
+        if(!data.daily) data.daily = { date: null, bestScore: 0 };
         if(!data.settings) data.settings = { musicVol:0.5, sfxVol:0.5, reducedMotion:null };
         if(data.settings.musicVol === undefined) data.settings.musicVol = 0.5;
         if(data.settings.sfxVol === undefined) data.settings.sfxVol = 0.5;
@@ -288,6 +295,47 @@ function hexToRgbStr(hex){
   return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
 }
 const DANGER_RGB = hexToRgbStr(cssVar('--danger'));
+
+// ---- SEEDED RNG — for Daily Sigil Chain only (copied verbatim from
+// wardfall.html:298-331). Free play stays on Math.random, untouched;
+// Board holds its own swappable rng (default Math.random), set once at
+// round start via Board.setRng and reset to null (= Math.random) when
+// leaving daily mode.
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seedFromString(str){
+  let h = 0;
+  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 2654435761); h ^= h >>> 16; }
+  return h >>> 0;
+}
+// local calendar date (not UTC) so "today" matches the player's own day
+function localDateString(d){
+  d = d || new Date();
+  const tzAdjusted = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return tzAdjusted.toISOString().slice(0,10);
+}
+const DAILY_EPOCH = '2026-07-08'; // Sigil Chain's PWA-ship date (per SIGIL_CHAIN_HANDOVER.md) — Day #1
+function dayNumberFor(dateStr){
+  const a = Date.parse(DAILY_EPOCH+'T00:00:00Z');
+  const b = Date.parse(dateStr+'T00:00:00Z');
+  return Math.floor((b-a)/86400000) + 1;
+}
+// shared by every menu-render call site (showMenu, Settings.close, initial
+// page load) — top-level since it only needs Persist's public data.
+function renderMenuDailyRow(){
+  const todayStr = localDateString();
+  const todayNum = dayNumberFor(todayStr);
+  const todayBest = Persist.data.daily.date === todayStr ? Persist.data.daily.bestScore : 0;
+  document.getElementById('menuDailyLabel').textContent = 'Day #'+todayNum+' best';
+  document.getElementById('menuDailyBestVal').textContent = todayBest;
+}
 
 const Ease = {
   popSettle(t){ t = clamp(t,0,1); return 1 + t*(1-t); },
@@ -525,12 +573,17 @@ const MAX_SOLVE_ATTEMPTS = 30; // bounded reroll retry — see hasValidMove()
 const Board = (function(){
   let cols = COLS, rows = ROWS;
   let grid = [];
+  // swappable rng — Math.random by default, swapped to a seeded fn for
+  // Daily Sigil Chain only (see Game.startRound), same isolated-swap
+  // pattern as Wardfall's Grid.setRng/Queue.setRng. Free play is untouched.
+  let rng = Math.random;
+  function setRng(fn){ rng = fn || Math.random; }
 
   function randomTileFor(phase){
     const runes = PHASE_RUNES[phase] || PHASE_RUNES[0];
-    if(Math.random() < (CURSED_CHANCE[phase]||0)) return { cursed:true, rune:null, radiant:false };
-    const rune = runes[Math.floor(Math.random()*runes.length)];
-    const radiant = Math.random() < (RADIANT_CHANCE[phase]||0);
+    if(rng() < (CURSED_CHANCE[phase]||0)) return { cursed:true, rune:null, radiant:false };
+    const rune = runes[Math.floor(rng()*runes.length)];
+    const radiant = rng() < (RADIANT_CHANCE[phase]||0);
     return { cursed:false, rune, radiant };
   }
   function makeTile(tileData, col, row, spawnAboveBy){
@@ -651,7 +704,7 @@ const Board = (function(){
   }
   return {
     init, setFromPattern, tileAt, forEachTile, inBounds, findAllOfRune, clearCells, collapseAndRefill,
-    hasValidMove,
+    hasValidMove, setRng,
     get cols(){ return cols; }, get rows(){ return rows; },
   };
 })();
@@ -692,6 +745,8 @@ const Game = (function(){
   let totalScore=0, comboStreak=0, lastClearTime=-Infinity;
   let roundStats = { tilesCleared:0, maxChain:0, circlesClosed:0, runesCleared:new Set() };
   let lastEventType = null;
+  let dailyMode = false, dailyDateStr = null; // Daily Sigil Chain — seeded board, see startRound()
+  let lastRunStats = null;
   const frameTimes = [];
 
   // Wake Lock — same pattern as iridescentcosmology.html:1855-1861: guarded behind a
@@ -937,7 +992,20 @@ const Game = (function(){
     requestAnimationFrame(loop);
   }
 
-  function startRound(){
+  function startRound(opts){
+    // Daily Sigil Chain — a deterministic seeded board keyed off the local
+    // calendar date, so every player who plays "today's" board sees the
+    // identical rune/cursed/radiant sequence and scores are genuinely
+    // comparable without any backend. Additive only: normal free-play
+    // always resets Board's rng back to Math.random.
+    dailyMode = !!(opts && opts.daily);
+    if(dailyMode){
+      dailyDateStr = localDateString();
+      Board.setRng(mulberry32(seedFromString(dailyDateStr)));
+    } else {
+      dailyDateStr = null;
+      Board.setRng(null);
+    }
     running=true; paused=false; roundEnded=false;
     elapsed=0; timeRemaining=ROUND_SECONDS; phase=0;
     totalScore=0; comboStreak=0; lastClearTime=-Infinity;
@@ -968,6 +1036,7 @@ const Game = (function(){
     document.getElementById('menuBestVal').textContent = Persist.data.best.score;
     document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
     document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+    renderMenuDailyRow();
     document.getElementById('menuOverlay').classList.add('show');
   }
   function endRound(){
@@ -980,6 +1049,12 @@ const Game = (function(){
     if(roundStats.circlesClosed > best.circlesClosed) best.circlesClosed = roundStats.circlesClosed;
     Persist.data.totalRounds += 1;
     Persist.data.lifetimeTilesCleared += roundStats.tilesCleared;
+    let dailyNewBest = false;
+    if(dailyMode){
+      const daily = Persist.data.daily;
+      if(daily.date !== dailyDateStr){ daily.date = dailyDateStr; daily.bestScore = 0; }
+      if(totalScore > daily.bestScore){ daily.bestScore = totalScore; dailyNewBest = true; }
+    }
     Persist.save();
     Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared,
       totalRounds: Persist.data.totalRounds, lifetimeTilesCleared: Persist.data.lifetimeTilesCleared });
@@ -991,6 +1066,19 @@ const Game = (function(){
     document.getElementById('longestChainVal').textContent = roundStats.maxChain;
     document.getElementById('circlesClosedVal').textContent = roundStats.circlesClosed;
     document.getElementById('tilesClearedVal').textContent = roundStats.tilesCleared;
+    const dailyRow = document.getElementById('dailyResultRow');
+    let dayNumber = null;
+    if(dailyMode){
+      dayNumber = dayNumberFor(dailyDateStr);
+      document.getElementById('dailyDayLabel').textContent = 'Day #'+dayNumber+' best';
+      document.getElementById('dailyBestVal').textContent = Persist.data.daily.bestScore;
+      dailyRow.style.display = '';
+    } else {
+      dailyRow.style.display = 'none';
+    }
+    lastRunStats = { score: totalScore, longestChain: roundStats.maxChain, circlesClosed: roundStats.circlesClosed,
+      tilesCleared: roundStats.tilesCleared, newBest, dailyMode, dayNumber,
+      dailyBestScore: dailyMode ? Persist.data.daily.bestScore : null, dailyNewBest };
     document.getElementById('newBestBadge').style.display = newBest ? 'block' : 'none';
     document.querySelector('#roundEndOverlay .panel').classList.toggle('new-best-entrance', newBest);
     document.getElementById('roundEndOverlay').classList.add('show');
@@ -999,7 +1087,8 @@ const Game = (function(){
   function countTiles(){ let c=0; Board.forEachTile(()=>c++); return c; }
   const _test = {
     state: () => ({ running, paused, roundEnded, elapsed, timeRemaining, phase, score: totalScore,
-      comboStreak, chainLength: chainCells.length, dragging, tilesInGrid: countTiles() }),
+      comboStreak, chainLength: chainCells.length, dragging, tilesInGrid: countTiles(),
+      dailyMode, dailyDateStr }),
     simulateChain: (cellCoords) => {
       if(!cellCoords || !cellCoords.length) return { started:false };
       const scoreBefore = totalScore;
@@ -1025,7 +1114,7 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
-  return { startRound, togglePause, showMenu, _test };
+  return { startRound, togglePause, showMenu, isDailyMode: () => dailyMode, getLastRunStats: () => lastRunStats, _test };
 })();
 
 /* =====================================================================
@@ -1409,6 +1498,91 @@ const Music = (function(){
 })();
 
 /* =====================================================================
+   SHARECARD — mirrors wardfall.html's own ShareCard module verbatim in
+   shape (buildCanvas/share/copyText), restated with Sigil Chain's own
+   round-end stats (score/longest chain/circles closed/tiles cleared —
+   no new stats invented, same as every sibling ShareCard's own rule).
+===================================================================== */
+const ShareCard = (function(){
+  function resultText(stats){
+    // Daily runs lead with the day number — the actual comparable claim
+    // ("I got X on today's board"), a generic score means nothing without
+    // the shared-seed context that makes it comparable at all.
+    const prefix = stats.dailyMode ? `Sigil Chain — Day #${stats.dayNumber}` : 'Sigil Chain';
+    return `${prefix} — ${stats.score} pts — longest chain ${stats.longestChain} — circles closed ${stats.circlesClosed} — tiles cleared ${stats.tilesCleared}`;
+  }
+  function buildCanvas(stats){
+    const cv = document.createElement('canvas');
+    cv.width = 600; cv.height = 315;
+    const c = cv.getContext('2d');
+    const bgGrad = c.createLinearGradient(0,0,0,cv.height);
+    bgGrad.addColorStop(0, '#231442'); bgGrad.addColorStop(1, '#140b30');
+    c.fillStyle = bgGrad; c.fillRect(0,0,cv.width,cv.height);
+    c.strokeStyle = 'rgba(255,203,92,0.55)'; c.lineWidth = 2;
+    c.strokeRect(8,8,cv.width-16,cv.height-16);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ffcb5c';
+    c.font = stats.dailyMode ? "bold 24px 'Cormorant Garamond', Georgia, serif" : "bold 30px 'Cormorant Garamond', Georgia, serif";
+    c.fillText(stats.dailyMode ? 'SIGIL CHAIN — DAY #'+stats.dayNumber : 'SIGIL CHAIN', cv.width/2, 66);
+    c.font = "italic 16px 'Cormorant Garamond', Georgia, serif";
+    c.fillStyle = '#c2b3e8';
+    c.fillText(stats.dailyMode ? 'today\'s shared board — same circle for everyone' : 'trace the circle, close the loop', cv.width/2, 92);
+
+    // mirrors exactly what the round-end overlay already shows — no new
+    // stats invented
+    const cols = [['SCORE', stats.score], ['LONGEST CHAIN', stats.longestChain],
+      ['CIRCLES CLOSED', stats.circlesClosed], ['TILES CLEARED', stats.tilesCleared]];
+    const colW = cv.width / cols.length;
+    cols.forEach(([label, val], i) => {
+      const x = colW*i + colW/2;
+      c.fillStyle = '#ffe6a8';
+      c.font = "bold 28px 'IBM Plex Mono', monospace";
+      c.fillText(String(val), x, 195);
+      c.fillStyle = '#8674b8';
+      c.font = "11px 'Quicksand', sans-serif";
+      c.fillText(label, x, 220);
+    });
+
+    c.fillStyle = '#6b6050';
+    c.font = "12px 'IBM Plex Mono', monospace";
+    c.fillText('SHIN MAHOU ARCADE', cv.width/2, cv.height-24);
+    return cv;
+  }
+
+  function share(){
+    const stats = Game.getLastRunStats();
+    if(!stats) return;
+    const cv = buildCanvas(stats);
+    cv.toBlob(async (blob) => {
+      if(!blob) return;
+      const file = new File([blob], 'sigilchain-run.png', { type:'image/png' });
+      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+        try{ await navigator.share({ files:[file], title:'SIGIL CHAIN', text: resultText(stats) }); return; }
+        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      }
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = 'sigilchain-run.png';
+      a.click();
+    }, 'image/png');
+  }
+  // plain-text fallback, deliberately separate from share()'s image path —
+  // returns a Promise<boolean> so the caller's feedback reflects the
+  // clipboard write actually resolving, not just having been kicked off
+  // (the exact async-honesty fix wardfall.html's own ShareCard.copyText
+  // already applies — mirrored here from the start instead of shipping
+  // the synchronous-true version and fixing it later).
+  function copyText(){
+    const stats = Game.getLastRunStats();
+    if(!stats || !navigator.clipboard || !navigator.clipboard.writeText) return Promise.resolve(false);
+    return navigator.clipboard.writeText(resultText(stats)).then(()=>true).catch(()=>false);
+  }
+
+  return { share, copyText, resultText, _test: { buildCanvas } };
+})();
+
+/* =====================================================================
    SETTINGS — near-verbatim from iridescentcosmology.html:4932-4989
    (corrected citation — the pre-rename range 4869-4926 this pointed to was
    already wrong before the rename, landing inside the ShareCard function
@@ -1449,6 +1623,7 @@ const Settings = (function(){
       document.getElementById('menuBestVal').textContent = Persist.data.best.score;
       document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
       document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+      renderMenuDailyRow();
       document.getElementById('menuOverlay').classList.add('show');
     }
   }
@@ -1553,6 +1728,7 @@ const FullscreenCtrl = (function(){
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
 document.getElementById('menuRoundsVal').textContent = Persist.data.totalRounds;
 document.getElementById('menuLifetimeTilesVal').textContent = Persist.data.lifetimeTilesCleared;
+renderMenuDailyRow();
 
 // PWA registration — see the pwa-offline-games skill. Explicit scope keeps
 // this service worker from ever intercepting fetches for the other games
