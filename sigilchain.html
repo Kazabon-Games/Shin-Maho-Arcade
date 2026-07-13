@@ -1254,7 +1254,51 @@ const Music = (function(){
     bell(root * Math.pow(2, 4/12), 1.3, 0.22);
     bell(root * Math.pow(2, 7/12), 1.3, 0.2);
   }
-  function roundEndCue(){ ensureCtx(); bell(160, 1.1, 0.22); }
+  // roundEndCue previously played the identical single bell regardless of
+  // outcome — the audio didn't participate in the one moment the visuals
+  // already treat as the game's biggest emotional beat (newBestPop vs.
+  // roundFade). New-best now reuses circleChord's own major-triad idea at a
+  // different, lower/resolving register instead of one louder note.
+  function roundEndCue(newBest){
+    ensureCtx();
+    if(newBest){
+      bell(160, 1.2, 0.24);
+      bell(160 * Math.pow(2, 4/12), 1.2, 0.2);
+      bell(160 * Math.pow(2, 7/12), 1.2, 0.18);
+    } else {
+      bell(160, 1.1, 0.22);
+    }
+  }
+  // the game's one hazard had zero audio at all — hitting a cursed tile
+  // ended the chain and reset the combo in total silence. Deliberately
+  // "dead"/muted rather than bright: no reverb send (unlike every rune
+  // bell), a close dissonant beat between two low sines instead of a
+  // consonant interval, distinct from every other cue in the game.
+  function cursedThud(){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.35);
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=95;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=95*1.06;
+    o1.connect(g); o2.connect(g);
+    o1.start(t); o2.start(t); o1.stop(t+0.4); o2.stop(t+0.4);
+  }
+  // phase transitions (a brand-new rune type arriving, or cursed tiles
+  // starting to appear) got zero audio signature — only the phase-3
+  // transition got any Juice (vignette/shake), and even that was silent.
+  // Short rising two-note cue, distinct from every rune/circle/cancel/
+  // cursed cue — "something new just arrived," paralleling what the
+  // visuals already do for phase 3 specifically.
+  function phaseArrivalCue(phase){
+    if(!ctx || muted) return;
+    ensureCtx();
+    bell(140 + phase*40, 0.4, 0.14);
+    setTimeout(()=>{ if(!muted) bell(180 + phase*50, 0.5, 0.16); }, 120);
+  }
   // chainStart/chainExtend/chainCancel had zero subscribers anywhere
   // (Juice or Music) — 100% of the audio budget went to the resolution
   // moment only, despite chain-building being most of actual play time.
@@ -1301,7 +1345,9 @@ const Music = (function(){
 
   Events.on('chainCleared', (p)=>{ if(p.rune) runeBell(p.rune); });
   Events.on('circleClosed', (p)=>{ if(p.rune) circleChord(p.rune); });
-  Events.on('roundEnd', ()=> roundEndCue());
+  Events.on('roundEnd', (p)=> roundEndCue(p && p.newBest));
+  Events.on('cursedBroken', ()=> cursedThud());
+  Events.on('phaseChange', (p)=> phaseArrivalCue(p.phase));
   Events.on('chainExtend', (p)=>{ if(p.added && p.rune) chainTick(p.rune, p.cells.length); });
   Events.on('chainCancel', ()=> chainCancelCue());
 
