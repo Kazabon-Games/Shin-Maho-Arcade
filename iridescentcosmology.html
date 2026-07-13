@@ -1004,6 +1004,18 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 .hud-right{text-align:right;font-family:var(--mono);}
 #hudTimer{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:.06em;}
 #hudLevel{font-size:12px;color:var(--neon);}
+/* build-path indicator — empty/hidden by default, only appears once
+   pityTargets() reports an evolution one step from unlocking (its
+   spell OR passive half already maxed). See game-designer's finding:
+   surfacing this at every single spell pick would be noise (every spell
+   always has exactly one fixed evolution pair, so that's true from turn
+   one and never interesting) — the pity-target moment is the genuinely
+   exciting "you're one pick away" signal. */
+.hud-buildpath{display:flex;gap:6px;justify-content:flex-end;margin-top:6px;}
+.hud-buildpath-icon{width:20px;height:20px;color:var(--gold);
+  filter:drop-shadow(0 0 5px var(--gold));animation:buildPathPulse 1.8s ease-in-out infinite;}
+@keyframes buildPathPulse{0%,100%{opacity:.65;transform:scale(1);}50%{opacity:1;transform:scale(1.12);}}
+body.reduced-motion .hud-buildpath-icon{animation:none!important;opacity:1;}
 #pauseBtn{pointer-events:auto;margin-top:6px;background:var(--panel);border:1px solid var(--border);
   color:var(--ink-mid);border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;}
 
@@ -1216,6 +1228,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="hud-right">
     <div id="hudTimer">0:00</div>
     <div id="hudLevel">LV 1</div>
+    <div id="hudBuildPath" class="hud-buildpath"></div>
   </div>
 </div>
 
@@ -3314,6 +3327,34 @@ const Game = (function(){
       const pct = player._dashCd > 0 ? clamp(player._dashCd / (DASH_COOLDOWN_BASE*(1-Persist.data.upgrades.shadow*0.12)), 0, 1) : 0;
       fill.style.transform = `scaleY(${pct})`;
     }
+    updateBuildPathIndicator();
+  }
+
+  // finds which evolution a pity target (one half of its spell+passive
+  // pair already maxed) belongs to, without changing pityTargets()'s own
+  // return shape (poolChoices reads that elsewhere) — a plain lookup over
+  // the same EVOLUTIONS bijection every other pity/pool function already uses.
+  function evolutionForPityTarget(t){
+    for(const ev of Object.values(EVOLUTIONS)){
+      if(t.kind === 'weapon' && ev.spell === t.key) return ev;
+      if(t.kind === 'passive' && ev.passive === t.key) return ev;
+    }
+    return null;
+  }
+  let lastBuildPathSig = '';
+  function updateBuildPathIndicator(){
+    const el = document.getElementById('hudBuildPath');
+    if(!el) return;
+    const targets = pityTargets();
+    const sig = targets.map(t=>t.kind+':'+t.key).join(',');
+    if(sig === lastBuildPathSig) return; // avoid re-parsing the SVG icons every frame for state that only changes on level-up
+    lastBuildPathSig = sig;
+    el.innerHTML = targets.map(t => {
+      const ev = evolutionForPityTarget(t);
+      if(!ev) return '';
+      const label = `${ev.name} evolution — one step away, max ${t.def.name} to unlock`;
+      return `<span class="hud-buildpath-icon" title="${label}" aria-label="${label}">${ev.icon}</span>`;
+    }).join('');
   }
 
   /* ── Charles (dkmn form) — cloak of shadow, gold halo ──
