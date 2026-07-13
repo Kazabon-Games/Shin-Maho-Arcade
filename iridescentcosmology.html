@@ -5894,20 +5894,38 @@ const Bugrep = (function(){
 })();
 
 /* =====================================================================
-   TITLE CREST — based directly on the family-crest reference sketch
-   (peaked roof w/ wood-grain + eave "eyes", central medallion, crossed
-   blades, tapering stem below). Own small canvas, separate from the main
-   game canvas, specifically because the menu overlay's backdrop-filter
-   blur sits on top of the main canvas — anything drawn there would be
-   dimmed into nothing right when it needs to be visible. Two capacities
-   genuinely unused anywhere else in this file until now:
-   - Path2D: the roof geometry is defined once and stroked, instead of
-     rebuilding beginPath/moveTo/lineTo every single frame like every other
-     shape in the file does.
-   - createConicGradient: a true angular sweep gradient for the rotating
-     glow behind the crest — every other glow in the file is radial or
-     linear; conic is the one that actually reads as a slowly-turning
-     magic-circle rather than a pulsing disc.
+   TITLE CREST v2 — redesign, replacing the original family-crest-sketch
+   transcription (peaked roof + wood-grain + eave "eyes" + a medallion
+   literally reading "IX"/"O"/"K" in 9px serif + crossed blades + a
+   stem). Verified-bad at actual render size, not on taste alone: a
+   visual-art-director audit screenshotted it at its real 150x150 and
+   found the medallion text reads as stray placeholder lettering (a
+   plain ellipse + generic serif font gives it no signal that it's
+   intentional occult lettering), and the six separate elements (roof/
+   hatching/eyes/medallion/blades/stem) never resolve into one legible
+   symbol — plus the whole thing is thematically orphaned from every
+   other visual in this game, which is built entirely on the faceted-
+   gem cut-crystal language (Husks, Ramiel, gem drops, the portal
+   card's own preview art).
+   This version fixes both problems by being the thing this game
+   actually already has as its own icon: the ✦ mark used 13 times
+   throughout this file's own UI (every primary button, every menu
+   panel header) is the closest thing Iridescent Cosmology has to an
+   existing logo. Rendered here as a real faceted gem — hand-authored
+   asymmetric 8-point vertex list (per the faceted-gem-rendering skill:
+   a singular/named mark gets bespoke geometry, not a symmetric
+   formula-generated star), center-to-vertex facets alternating lit/
+   dark, and a genuine per-facet hue cycle rather than one flat color —
+   through the exact violet→gold→teal iridescent palette already
+   established twice in this file's own CSS (.stage-badge/.arcade-
+   credit's iridescentShift gradient stops), not a new palette. A thin
+   rotating ring stands in for "cosmology" without literally drawing
+   constellations. No text anywhere.
+   Kept from the original: its own small canvas (the menu overlay's
+   backdrop-filter blur sits on top of the main game canvas, so
+   anything drawn there would dim into nothing) and createConicGradient
+   for the sweep glow — both were sound, only the shape drawn on top of
+   them was the problem.
 ===================================================================== */
 (function(){
   const cv = document.getElementById('crestCanvas');
@@ -5915,67 +5933,93 @@ const Bugrep = (function(){
   const c2 = cv.getContext('2d');
   const W = cv.width, H = cv.height, cx = W/2, cy = H/2;
 
-  const roofPath = new Path2D();
-  roofPath.moveTo(cx, 14);
-  roofPath.lineTo(cx+34, 34);
-  roofPath.lineTo(cx+26, 40);
-  roofPath.lineTo(cx, 24);
-  roofPath.lineTo(cx-26, 40);
-  roofPath.lineTo(cx-34, 34);
-  roofPath.closePath();
+  // local shadeHex copy — this canvas is its own small IIFE outside the
+  // Game module (same reason as always: the menu backdrop blur sits on
+  // top of the main canvas), so it can't reach Game's private shadeHex;
+  // duplicating a small pure helper here matches this file's own
+  // precedent (index.html's card-preview IIFEs each keep their own copy
+  // rather than reaching into a sibling module).
+  function shadeHex(hex, dLight){
+    const n = parseInt(hex.slice(1),16);
+    let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+    r = Math.max(0,Math.min(255,r+dLight)); g = Math.max(0,Math.min(255,g+dLight)); b = Math.max(0,Math.min(255,b+dLight));
+    return `rgb(${r},${g},${b})`;
+  }
 
-  function draw(t){
+  // hand-authored asymmetric 8-point star (4 long spikes + 4 short
+  // between-points, echoing the ✦ glyph's silhouette) — angles and
+  // radius multipliers deliberately uneven, not a computed regular
+  // star, per the faceted-gem-rendering skill's rule for a singular
+  // named mark.
+  const CREST_VERTS = [
+    {a:0.00, m:1.00}, {a:0.095,m:0.27}, {a:0.24, m:0.94}, {a:0.345,m:0.30},
+    {a:0.51, m:1.03}, {a:0.605,m:0.25}, {a:0.755,m:0.97}, {a:0.865,m:0.29},
+  ];
+  // the exact 3-stop iridescent palette already used twice in this
+  // file's own CSS (.stage-badge / .arcade-credit's iridescentShift
+  // gradient) — reused verbatim, not a new hex trio.
+  const IRIDESCENT_HUES = ['#b98aff', '#ffd76b', '#5ec4a8'];
+  const gemR = 40;
+
+  function draw(t, reduced){
     c2.clearRect(0,0,W,H);
+    const spin = reduced ? 0 : t;
 
-    const conic = c2.createConicGradient(t*0.3, cx, cy+8);
+    const conic = c2.createConicGradient(spin*0.3, cx, cy);
     conic.addColorStop(0,    'rgba(255,203,92,0.05)');
     conic.addColorStop(0.25, 'rgba(185,138,255,0.13)');
     conic.addColorStop(0.5,  'rgba(255,203,92,0.05)');
     conic.addColorStop(0.75, 'rgba(185,138,255,0.13)');
     conic.addColorStop(1,    'rgba(255,203,92,0.05)');
     c2.fillStyle = conic;
-    c2.beginPath(); c2.arc(cx, cy+8, 66, 0, Math.PI*2); c2.fill();
+    c2.beginPath(); c2.arc(cx, cy, 68, 0, Math.PI*2); c2.fill();
 
-    c2.strokeStyle = 'rgba(255,215,107,0.85)';
-    c2.fillStyle = 'rgba(255,215,107,0.9)';
-    c2.lineWidth = 1.5;
-    c2.stroke(roofPath);
-
-    // wood-grain hatching under the roof
-    c2.globalAlpha = 0.35;
-    for(let i=-4;i<=4;i++){
-      c2.beginPath(); c2.moveTo(cx+i*6, 20); c2.lineTo(cx+i*7, 38); c2.stroke();
+    // thin cosmology ring — a slow orbit standing in for the "cosmology"
+    // half of the name, without literally drawing constellations
+    c2.save();
+    c2.translate(cx, cy); c2.rotate(spin*0.12); c2.translate(-cx, -cy);
+    c2.strokeStyle = 'rgba(255,215,107,0.55)'; c2.lineWidth = 1;
+    c2.beginPath(); c2.arc(cx, cy, gemR+16, 0, Math.PI*2); c2.stroke();
+    for(let i=0;i<3;i++){
+      const a = (Math.PI*2/3)*i;
+      c2.beginPath(); c2.arc(cx+Math.cos(a)*(gemR+16), cy+Math.sin(a)*(gemR+16), 1.6, 0, Math.PI*2);
+      c2.fillStyle = 'rgba(255,215,107,0.85)'; c2.fill();
     }
-    c2.globalAlpha = 1;
+    c2.restore();
 
-    // eave "eyes"
-    c2.beginPath(); c2.arc(cx-30,36,2,0,Math.PI*2); c2.arc(cx+30,36,2,0,Math.PI*2); c2.fill();
-
-    // central medallion with the sketch's glyph marks
-    c2.beginPath(); c2.ellipse(cx, 62, 13, 16, 0, 0, Math.PI*2); c2.stroke();
-    c2.font = '9px serif'; c2.textAlign = 'center';
-    c2.fillText('IX', cx, 58); c2.fillText('O', cx, 67); c2.fillText('K', cx, 75);
-
-    // crossed blades flanking the medallion
+    // the faceted gem itself — center-to-vertex triangles, each a
+    // different point along the iridescent hue cycle rather than a
+    // binary lit/dark alternation (same "genuinely multi-hued, not a
+    // two-color gem" technique wardfall.html's rainbow orb already
+    // proves), plus per-facet lit/dark shading on top so it still reads
+    // as cut-crystal, not a flat pinwheel.
+    c2.save();
+    c2.translate(cx, cy); c2.rotate(spin*0.05); c2.translate(-cx, -cy);
+    const n = CREST_VERTS.length;
+    const vx = i => cx + Math.cos(CREST_VERTS[i].a*Math.PI*2)*gemR*CREST_VERTS[i].m;
+    const vy = i => cy + Math.sin(CREST_VERTS[i].a*Math.PI*2)*gemR*CREST_VERTS[i].m;
+    c2.shadowColor = 'rgba(255,215,107,0.6)'; c2.shadowBlur = 12;
+    for(let i=0;i<n;i++){
+      const j = (i+1)%n;
+      const hue = IRIDESCENT_HUES[i%IRIDESCENT_HUES.length];
+      c2.fillStyle = i%2===0 ? shadeHex(hue,26) : shadeHex(hue,-22);
+      c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(vx(i),vy(i)); c2.lineTo(vx(j),vy(j)); c2.closePath(); c2.fill();
+    }
+    c2.shadowBlur = 0;
+    c2.strokeStyle = 'rgba(255,255,255,0.45)'; c2.lineWidth = 1.1;
     c2.beginPath();
-    c2.moveTo(cx-30,50); c2.lineTo(cx-14,66);
-    c2.moveTo(cx-30,50); c2.lineTo(cx-26,46);
-    c2.moveTo(cx-30,50); c2.lineTo(cx-34,54);
-    c2.stroke();
-    c2.beginPath();
-    c2.moveTo(cx+30,50); c2.lineTo(cx+14,66);
-    c2.moveTo(cx+24,44); c2.lineTo(cx+34,52);
-    c2.stroke();
-
-    // tapering stem below — echoes the sketch's lower plate without
-    // reproducing all its interior linework
-    c2.globalAlpha = 0.5;
-    c2.beginPath(); c2.moveTo(cx-16,78); c2.lineTo(cx+16,78); c2.lineTo(cx,100); c2.closePath(); c2.stroke();
-    c2.globalAlpha = 1;
+    for(let i=0;i<n;i++){ const p=vx(i),q=vy(i); i===0?c2.moveTo(p,q):c2.lineTo(p,q); }
+    c2.closePath(); c2.stroke();
+    // one brightened specular facet, matching every other faceted sprite
+    // in this file (buildEnemySprite's own "plus one brightened specular
+    // facet" convention)
+    c2.fillStyle = 'rgba(255,255,255,0.5)';
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(vx(0),vy(0)); c2.lineTo(vx(1),vy(1)); c2.closePath(); c2.fill();
+    c2.restore();
   }
 
   const t0 = performance.now();
-  function loop(ts){ draw((ts-t0)/1000); requestAnimationFrame(loop); }
+  function loop(ts){ draw((ts-t0)/1000, Settings.reducedMotion()); requestAnimationFrame(loop); }
   requestAnimationFrame(loop);
 })();
 
