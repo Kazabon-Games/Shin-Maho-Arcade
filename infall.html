@@ -1306,6 +1306,14 @@ const Game = (function(){
   }
 
   function drawBursts(){
+    // capability audit finding: these ring bursts (capture/fusion/damage/
+    // well-expire feedback) drew with plain alpha fades only, unlike
+    // iridescentcosmology.html's real bloom-like additive stacking
+    // (globalCompositeOperation='lighter', 4019-4036) — this technique had
+    // never propagated here. Every burst here is glow-style feedback, so
+    // additive suits all of them (unlike Wardfall's shockwave iris, which
+    // deliberately stayed source-over).
+    ctx.globalCompositeOperation = 'lighter';
     for(const b of bursts){
       const p = b.life / b.maxLife;
       const r = b.r0 + (b.r1 - b.r0) * Ease.easeOutCubic(p);
@@ -1324,6 +1332,7 @@ const Game = (function(){
       }
       ctx.globalAlpha = 1;
     }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   // score-earned float text — the direct link between "I did that" and "I
