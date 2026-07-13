@@ -1326,10 +1326,16 @@ const Music = (function(){
     droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 350; droneFilter.Q.value = 0.7;
     g.connect(droneFilter); droneFilter.connect(musicGain);
     const wet = ctx.createGain(); wet.gain.value = 0.22; droneFilter.connect(wet); wet.connect(reverb);
+    // capability audit finding: stacking two voices (root + fifth) without
+    // spreading them across the stereo field makes them thicker in theory
+    // but not wider in practice — both were fighting for the same point in
+    // the image. Same StereoPannerNode widening technique as
+    // iridescentcosmology.html:5125-5130's supersaw lead voices.
     const nodes = [DRONE_ROOT, DRONE_ROOT*1.5].map((f,i)=>{
       const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
       const og = ctx.createGain(); og.gain.value = i===0 ? 0.6 : 0.4;
-      o.connect(og); og.connect(g); o.start();
+      const op = ctx.createStereoPanner(); op.pan.value = i===0 ? -0.25 : 0.25;
+      o.connect(og); og.connect(op); op.connect(g); o.start();
       return o;
     });
     drone = { gain: g, nodes };
