@@ -1487,6 +1487,13 @@ const Juice = (function(){
       const t = p.t/p.dur;
       const s = Ease.popSettle(t) * (1-t*0.4) * (SPRITE_SIZE*0.5);
       ctx.save();
+      // capability audit finding: this was one of three games whose burst/
+      // pop particles drew with plain alpha fades only — real bloom-like
+      // additive stacking (iridescentcosmology.html:4019-4036) had never
+      // propagated here. Scoped to pops (the actual glow/flare moment),
+      // not shockwaves below (a ring + darkening iris, not a glow — additive
+      // blending doesn't serve that effect the same way).
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = Math.max(0, 1-t);
       ctx.fillStyle = shadeHex(p.color, 34, 12);
       ctx.beginPath(); ctx.arc(p.x, p.y, s, 0, Math.PI*2); ctx.fill();
@@ -1525,7 +1532,7 @@ const Juice = (function(){
 ===================================================================== */
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
-  let droneGain, droneActive=false;
+  let droneGain, droneFilter, droneActive=false;
   let muted = false, started = false;
 
   function ensureCtx(){
@@ -1547,10 +1554,26 @@ const Music = (function(){
     reverb.connect(reverbSend); reverbSend.connect(master);
 
     droneGain = ctx.createGain(); droneGain.gain.value = 0;
-    droneGain.connect(musicGain);
+    // capability audit finding: this was the one game in the arcade with no
+    // filter node anywhere in its music graph — intensity already drove
+    // droneGain.gain (below) but had nothing else to modulate. Infall/Sigil
+    // Chain/Iridescent Cosmology all already drive filter cutoff from an
+    // equivalent live variable; this closes that gap rather than inventing
+    // a new mapping.
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 200; droneFilter.Q.value = 0.7;
+    droneGain.connect(droneFilter); droneFilter.connect(musicGain);
+    // capability audit finding: stacking two detuned oscillators without
+    // spreading them across the stereo field makes them thicker in theory
+    // but not wider in practice — they're both fighting for the same point
+    // in the image. Same StereoPannerNode widening trick as
+    // iridescentcosmology.html:5125-5130's supersaw lead voices, applied
+    // here to the drone pair instead.
     const d1 = ctx.createOscillator(); d1.type='sine'; d1.frequency.value=60;
     const d2 = ctx.createOscillator(); d2.type='sine'; d2.frequency.value=60.7;
-    d1.connect(droneGain); d2.connect(droneGain);
+    const dp1 = ctx.createStereoPanner(); dp1.pan.value = -0.25;
+    const dp2 = ctx.createStereoPanner(); dp2.pan.value = 0.25;
+    d1.connect(dp1); dp1.connect(droneGain);
+    d2.connect(dp2); dp2.connect(droneGain);
     d1.start(); d2.start();
     started = true;
   }
@@ -1620,6 +1643,12 @@ const Music = (function(){
     // routine action sound.
     const intensity = clamp((clamp(proximity,0,1) - 0.35) / 0.65, 0, 1);
     droneGain.gain.value = 0.35 * intensity;
+    // direct value set, not ramped — this already runs every frame the
+    // drone is active, so re-ramping on top would just cancel itself each
+    // call (same rule iridescentcosmology.html's own tick() documents).
+    // Opens from a dull 200Hz murmur toward a brighter 2000Hz as danger
+    // rises, mirroring Infall/Sigil Chain's own filter-as-tension mapping.
+    droneFilter.frequency.value = 200 + intensity*1800;
   }
   function toggleMute(){
     muted = !muted;
@@ -1635,7 +1664,8 @@ const Music = (function(){
   Events.on('roundEnd', ()=> roundEndCue());
 
   return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
-    _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive } };
+    _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null } };
 })();
 
 /* =====================================================================
