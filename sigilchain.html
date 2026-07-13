@@ -955,7 +955,8 @@ const Game = (function(){
     Persist.data.totalRounds += 1;
     Persist.data.lifetimeTilesCleared += roundStats.tilesCleared;
     Persist.save();
-    Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared });
+    Achievements.checkAll({ score: totalScore, circlesClosed: roundStats.circlesClosed, runesCleared: roundStats.runesCleared,
+      totalRounds: Persist.data.totalRounds, lifetimeTilesCleared: Persist.data.lifetimeTilesCleared });
     Events.emit('roundEnd', { score: totalScore, best: best.score, newBest });
     lastEventType = 'roundEnd';
     document.getElementById('hud').classList.remove('show');
@@ -1254,7 +1255,14 @@ const Achievements = (function(){
   const DEFS = [
     { id:'circle_master', name:'Circle Master', desc:'Close 3 circles in one round.', check:d=>d.circlesClosed>=3 },
     { id:'full_spectrum', name:'Full Spectrum', desc:'Chain all 6 rune types in one round.', check:d=>(d.runesCleared?d.runesCleared.size:0)>=6 },
-    { id:'high_roller', name:'High Roller', desc:'Score 500 or more in one round.', check:d=>d.score>=500 },
+    // Retuned from 500 — a real single round nets ~2,000-4,200 (measured
+    // live off the actual scoring formula/board generation, not assumed),
+    // so 500 cleared in the first ~10-20 seconds of nearly any round and
+    // gated nothing. 3000 sits meaningfully above the median without
+    // requiring a near-perfect round.
+    { id:'high_roller', name:'High Roller', desc:'Score 3,000 or more in one round.', check:d=>d.score>=3000 },
+    { id:'dedicated', name:'Dedicated', desc:'Complete 25 rounds.', check:d=>d.totalRounds>=25 },
+    { id:'tile_breaker', name:'Tile Breaker', desc:'Clear 1,000 tiles across all rounds.', check:d=>d.lifetimeTilesCleared>=1000 },
   ];
   function checkAll(roundSummary){
     if(!Persist.data.achievements) Persist.data.achievements = {};
