@@ -4616,7 +4616,13 @@ const Juice = (function(){
       const effectivePulse = Settings.reducedMotion() ? streakPulse*0.2 : streakPulse;
       const scale = Ease.popSettle(1 - effectivePulse);
       ctx.save();
-      ctx.translate(W/2, 54);
+      // y=54 used to sit inside #hud's own left column, which — padding,
+      // hp bar, xp bar, kill/essence stats line, and the pause button
+      // below it (each with its own margin/gap) — occupies roughly the
+      // top ~96px of the viewport. Pushed below that real footprint with
+      // margin instead of guessing, so it can't collide regardless of
+      // streak digit count.
+      ctx.translate(W/2, 130);
       ctx.scale(scale, scale);
       ctx.fillStyle = color;
       ctx.font = `bold ${fontPx}px "Courier New",monospace`;
