@@ -2250,7 +2250,25 @@ const Game = (function(){
   function magnetR(){ return player.magnetBase * (1 + (passives.magnet||0)*0.35); }
 
   /* ── spawning ── */
-  function difficulty(){ return elapsed/60; } // minutes elapsed
+  // was uncapped (elapsed/60 forever) — real playtest finding: "the stars
+  // [shards] don't die" at high level. Verified independently: every axis of
+  // player power is hard-capped (dmgMult tops out at 2.24x via maxLvl-5
+  // Empower + rank-5 Output, rateMult at 1.5x, MAX_SPELL_SLOTS=6 weapons),
+  // but this fed enemy hp/speed/dmg AND spawn rate with no ceiling at all —
+  // TTK = base_hp*(1+m*0.55)/DPS_ceiling is mathematically guaranteed to
+  // diverge the longer a run goes. At m=15-18.5 (matching the reported
+  // screenshots' 15:13/18:31 timestamps) a maxed 6-weapon build's shard TTK
+  // was already 1.4-2.5s ideal-focus, worse in practice since shard is the
+  // fastest/most erratic enemy and spends less time in short-range aura
+  // fields. Capped at m=12 — roughly where a fast, engaged build's power
+  // growth already plateaus (30 weapon-leveling points typically spent well
+  // before minute 12), so the difficulty ceiling lands near where the
+  // player has nothing left to spend rather than continuing to climb after.
+  // Centralized here (not just the hp line in spawnEnemy) so it also caps
+  // speed, dmg, AND updateSpawns' spawn-rate together — leaving any one of
+  // those uncapped would keep the same unbounded-vs-capped mismatch alive
+  // through a different term.
+  function difficulty(){ return Math.min(elapsed/60, 12); } // minutes elapsed, capped
   function spawnEnemy(type){
     const def = ENEMY_TYPES[type];
     const ang = Math.random()*Math.PI*2;
