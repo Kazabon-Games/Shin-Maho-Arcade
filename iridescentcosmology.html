@@ -1984,11 +1984,37 @@ const Game = (function(){
   // fight around). One learnable rule: you can only hurt it while it's
   // anchored; when it goes unbound it's untargetable, relocates, and
   // leaves a trail that punishes standing still.
-  const BOSS2_TRIGGER_DELAY = 240; // seconds after stage2EnteredAt — estimate, pending playtest, same as every other timing constant in this fight
+  // was 240 — real playtest finding: barely half of BOSS_TRIGGER_TIME's own
+  // 450s buildup, read as "comes too quick" and "not much different from
+  // Ramiel" (the asymmetry undercut stage 2 feeling like its own arc).
+  // Enemy density (updateSpawns/difficulty()) already saturates the
+  // enemies.length<=320 cap well within the first minute of stage 2
+  // regardless of this delay, so raising it doesn't risk an empty-feeling
+  // buildup — it just holds an already-full stage 2 for as long as stage 1
+  // got. Set to exact parity with BOSS_TRIGGER_TIME rather than a partial
+  // raise: no density constraint argues for a different number, and 1:1 is
+  // the most legible rule (both bosses get the same runway). Must stay in
+  // sync with BOSS2_MARKER_DELAY (music) and STAGE2_SECTION_BOUNDS below.
+  const BOSS2_TRIGGER_DELAY = 450;
   const BOSS2_MAXHP = 3800;
   const BOSS2_ANCHOR_DURATION = 6;
   const BOSS2_UNBIND_TELEGRAPH = 0.7;
-  const BOSS2_UNBOUND_DURATION = 2.2;
+  // was 2.2 — real playtest finding: the anchored/telegraph/unbound cycle's
+  // untargetable fraction (telegraph+unbound / full cycle) inflates
+  // Fracture's *effective* HP by 1/(1-fraction), not just by the fraction
+  // itself — at 2.2 that was a 48% effective-HP tax versus Ramiel's own
+  // fight (which has no comparable dead window, just a minor recurring
+  // shield tax), the real mechanical shape behind "doesn't die." Cut only
+  // the pure-dead-time unbound phase, not the telegraph — this file already
+  // has a precedent (BEAM_TELEGRAPH raised 0.55s->0.95s) that telegraphs get
+  // LENGTHENED for readability, not shortened; unbound itself carries no
+  // warning content, so it's the correct lever. 0.9s brings the untargetable
+  // fraction to ~21% (effective-HP tax ~27%), landing Fracture's real fight
+  // length within ~4-10% of Ramiel's instead of 22-29% longer, while still
+  // reading as a real "only hurt it while anchored" rule. The ground trail
+  // hazard is a separate timer (BOSS2_TRAIL_DURATION), so this doesn't
+  // shrink the "punishes standing still" payoff at all.
+  const BOSS2_UNBOUND_DURATION = 0.9;
   const BOSS2_TELEPORT_DIST = 260;
   const BOSS2_PULSE_INTERVAL = 1.8;
   const BOSS2_PULSE_RADIUS = 130;
@@ -2224,7 +2250,25 @@ const Game = (function(){
   function magnetR(){ return player.magnetBase * (1 + (passives.magnet||0)*0.35); }
 
   /* ── spawning ── */
-  function difficulty(){ return elapsed/60; } // minutes elapsed
+  // was uncapped (elapsed/60 forever) — real playtest finding: "the stars
+  // [shards] don't die" at high level. Verified independently: every axis of
+  // player power is hard-capped (dmgMult tops out at 2.24x via maxLvl-5
+  // Empower + rank-5 Output, rateMult at 1.5x, MAX_SPELL_SLOTS=6 weapons),
+  // but this fed enemy hp/speed/dmg AND spawn rate with no ceiling at all —
+  // TTK = base_hp*(1+m*0.55)/DPS_ceiling is mathematically guaranteed to
+  // diverge the longer a run goes. At m=15-18.5 (matching the reported
+  // screenshots' 15:13/18:31 timestamps) a maxed 6-weapon build's shard TTK
+  // was already 1.4-2.5s ideal-focus, worse in practice since shard is the
+  // fastest/most erratic enemy and spends less time in short-range aura
+  // fields. Capped at m=12 — roughly where a fast, engaged build's power
+  // growth already plateaus (30 weapon-leveling points typically spent well
+  // before minute 12), so the difficulty ceiling lands near where the
+  // player has nothing left to spend rather than continuing to climb after.
+  // Centralized here (not just the hp line in spawnEnemy) so it also caps
+  // speed, dmg, AND updateSpawns' spawn-rate together — leaving any one of
+  // those uncapped would keep the same unbounded-vs-capped mismatch alive
+  // through a different term.
+  function difficulty(){ return Math.min(elapsed/60, 12); } // minutes elapsed, capped
   function spawnEnemy(type){
     const def = ENEMY_TYPES[type];
     const ang = Math.random()*Math.PI*2;
@@ -2539,7 +2583,7 @@ const Game = (function(){
       x, y, r: 50, hp: BOSS2_MAXHP, maxhp: BOSS2_MAXHP,
       phase: 'anchored', phaseTimer: BOSS2_ANCHOR_DURATION,
       pulseTimer: BOSS2_PULSE_INTERVAL,
-      rotation: 0, hitFlash: 0,
+      rotation: 0, hitFlash: 0, pulseFlash: 0,
     };
     boss2Trails = [];
     Events.emit('boss2Arrive', { x, y });
@@ -2548,12 +2592,24 @@ const Game = (function(){
   function updateBoss2(dt){
     boss2.rotation += dt * 0.3;
     if(boss2.hitFlash > 0) boss2.hitFlash -= dt;
+    if(boss2.pulseFlash > 0) boss2.pulseFlash -= dt;
     boss2.phaseTimer -= dt;
 
     if(boss2.phase === 'anchored'){
       boss2.pulseTimer -= dt;
       if(boss2.pulseTimer <= 0){
         boss2.pulseTimer = BOSS2_PULSE_INTERVAL;
+        // give the pulse real weight — this is Fracture's own signature
+        // repeated attack (the beam's equivalent), but used to be just a
+        // thin ring that reset the same frame it fired, invisible next to
+        // Ramiel's full body-flash + shake + hitstop beam.
+        boss2.pulseFlash = 0.25;
+        if(particles.length < MAX_PARTICLES){
+          for(let i=0;i<10;i++){
+            const a = (Math.PI*2/10)*i;
+            particles.push({ x:boss2.x, y:boss2.y, vx:Math.cos(a)*140, vy:Math.sin(a)*140, life:0.3, color:'#c9bdf0', size:2.4 });
+          }
+        }
         Events.emit('boss2Pulse', { x: boss2.x, y: boss2.y });
         if(player.iframes <= 0 && dist2(player.x,player.y,boss2.x,boss2.y) < BOSS2_PULSE_RADIUS*BOSS2_PULSE_RADIUS){
           const dmg = BOSS2_PULSE_DMG * fortifyMult();
@@ -2732,12 +2788,14 @@ const Game = (function(){
         // dense-wave count of ~60 enemies healed 180hp per cast — sustained
         // ~159hp/sec, worse than the ~159-300+ range this exact bug class
         // already shipped once on Drain at 358hp/sec. Capped at 10 targets
-        // instead of Drain's 5 because Rewind heals per-cast (burst, ~0.88
-        // casts/sec at max) rather than per-tick — 10 targets lands its
-        // sustained rate at ~26.5hp/sec, matching Drain's own re-verified
-        // ~32hp/sec ballpark for "real sustain, not a get-out-of-danger-free
-        // aura" rather than copying Drain's cap number onto a differently-
-        // shaped formula and ending up under-powered instead.
+        // instead of Drain's (then-5, now 3 as of v2.7.1 — see
+        // HEAL_CAP_TARGETS above) because Rewind heals per-cast (burst,
+        // ~0.88 casts/sec at max) rather than per-tick — 10 targets lands
+        // its sustained rate at ~26.5hp/sec. That's higher than Drain's
+        // post-v2.7.1 ~19.3hp/sec, but still landed below the mitigated
+        // incoming-DPS range the same v2.7.1 fix verified — not re-checked
+        // against a Nova-specific build independently, worth another look
+        // if Rewind itself turns up in a future "can't die" report.
         const REWIND_HEAL_CAP_TARGETS = 10;
         if(rewind && hitCount > 0) player.hp = Math.min(player.maxhp, player.hp + Math.min(hitCount, REWIND_HEAL_CAP_TARGETS)*3);
       }
@@ -2759,10 +2817,32 @@ const Game = (function(){
         // against a ~150-250 max-hp pool, a full heal every half-second at
         // the exact moment the player was in the most danger. Real playtest
         // finding: "makes the player effectively unkillable."
-        const HEAL_CAP_TARGETS = 5;
+        // v2.7.1 — was 5, still not the whole fix. Real playtest finding
+        // (post v2.6.1): "stopped taking damage, beat it without moving."
+        // Verified independently: contact damage is iframe-gated to one hit
+        // per 0.55s no matter how many enemies touch the player at once, so
+        // worst-case incoming DPS is bounded by a single enemy's hit, not a
+        // crowd sum — and Fortify+Afflict both maxed multiply to -65%
+        // mitigation on that one hit. At 5 targets, Drain's flat 32.1hp/sec
+        // heal beat that mitigated incoming DPS for most of a run (a
+        // stationary, max-defense build was net HP-positive standing in a
+        // typical husk/swarmer swarm from roughly mid-game on). Fortify and
+        // Afflict are each independently bounded on their own axis already
+        // (-30%/-50% caps) — the bug was nobody checking their *product*
+        // against Drain's uncapped-by-mitigation flat heal. Dropping to 3
+        // targets brings the heal to ~19.3hp/sec, below typical mitigated
+        // incoming DPS for most of a run (real, felt attrition again by
+        // mid-late game) while leaving Drain's own damage output and
+        // Fortify/Afflict's already-correct caps untouched.
+        const HEAL_CAP_TARGETS = 3;
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
-            hitEnemy(e, dmgPerTick); totalDmg += dmgPerTick; healHits++;
+            // silent: Drain ticks every 0.35s across every enemy in a radius
+            // that can cover most of the screen at max level — non-silent
+            // hits pinned entire crowds under hitFlash's opaque white-circle
+            // sprite override (same failure mode burn ticks were already
+            // fixed for below), reading as a rendering bug in dense fights.
+            hitEnemy(e, dmgPerTick, true); totalDmg += dmgPerTick; healHits++;
           }
           return false;
         });
@@ -2802,7 +2882,8 @@ const Game = (function(){
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
             applySlow(e, slowMult, 0.5);
-            if(nullifyAll) hitEnemy(e, (4+weapons.root*2)*dmgMult());
+            // silent — same continuous-tick reasoning as Drain above.
+            if(nullifyAll) hitEnemy(e, (4+weapons.root*2)*dmgMult(), true);
           }
           return false;
         });
@@ -3242,7 +3323,8 @@ const Game = (function(){
           const proj = toPx*dx + toPy*dy;
           if(proj > 0 && proj < SUNDER_RANGE){
             const perp = Math.abs(toPx*dy - toPy*dx);
-            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick);
+            // silent — channeled beam, same continuous-tick reasoning as burn/Drain.
+            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick, true);
           }
           return false;
         });
@@ -3251,7 +3333,7 @@ const Game = (function(){
           const proj = toPx*dx + toPy*dy;
           if(proj > 0 && proj < SUNDER_RANGE){
             const perp = Math.abs(toPx*dy - toPy*dx);
-            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick);
+            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick, true);
           }
         }
       }
@@ -3381,7 +3463,8 @@ const Game = (function(){
     const bx = boss2.x+ox, by = boss2.y+oy;
     const r = boss2.r * (1 + Math.sin(elapsed*2)*0.03);
     const unbound = boss2.phase === 'unbound' || boss2.phase === 'unboundTelegraph';
-    const bodyColor = boss2.hitFlash > 0 ? '#ffffff' : '#6b6089';
+    const pulsing = boss2.pulseFlash > 0;
+    const bodyColor = (boss2.hitFlash > 0 || pulsing) ? '#ffffff' : '#6b6089';
 
     ctx.save();
     ctx.translate(bx,by);
@@ -3417,12 +3500,26 @@ const Game = (function(){
       ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(bx,by, r+10, 0, Math.PI*2); ctx.stroke();
     }
-    // anchored pulse telegraph
+    // anchored pulse telegraph — the buildup anticipation ring
     if(boss2.phase === 'anchored'){
       const pp = 1 - clamp(boss2.pulseTimer/BOSS2_PULSE_INTERVAL, 0, 1);
       ctx.strokeStyle = `rgba(107,96,137,${0.15+pp*0.25})`;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(bx,by, BOSS2_PULSE_RADIUS*pp, 0, Math.PI*2); ctx.stroke();
+    }
+    // pulse payoff — this used to collapse to nothing on the exact frame it
+    // dealt damage (a stroked ring reset to r=0). Mirrors Ramiel's own beam
+    // idiom (body flash + a real filled effect, not just a thin outline):
+    // a filled shockwave that persists and expands for pulseFlash's whole
+    // window instead of vanishing instantly.
+    if(pulsing){
+      const pf = clamp(boss2.pulseFlash/0.25, 0, 1); // 1 at fire, 0 as it fades
+      const waveR = BOSS2_PULSE_RADIUS * (1 - pf);
+      ctx.fillStyle = `rgba(220,210,255,${pf*0.35})`;
+      ctx.beginPath(); ctx.arc(bx,by, waveR, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = `rgba(255,255,255,${pf*0.7})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(bx,by, waveR, 0, Math.PI*2); ctx.stroke();
     }
 
     // hp ring — reuses --danger, same semantic home as elite's own (§11:
@@ -4527,7 +4624,9 @@ const Juice = (function(){
     addShake(20); vignetteFlash = 1;
     eliteRingTimer = eliteRingDur = 0.6; eliteRingX = data.x; eliteRingY = data.y;
   });
-  Events.on('boss2Pulse', () => { addShake(6); });
+  // scaled-down version of the beam's own hitstop (line ~4499, 90ms) — the
+  // pulse is a smaller threat than the beam, so it gets a smaller beat.
+  Events.on('boss2Pulse', () => { addShake(6); hitstopUntil = Math.max(hitstopUntil, performance.now()+50); });
   Events.on('boss2Unbind', () => { addShake(4); });
   Events.on('boss2Teleport', (data) => {
     addShake(14); vibrate([30,20,30]);
@@ -4609,7 +4708,13 @@ const Juice = (function(){
       const effectivePulse = Settings.reducedMotion() ? streakPulse*0.2 : streakPulse;
       const scale = Ease.popSettle(1 - effectivePulse);
       ctx.save();
-      ctx.translate(W/2, 54);
+      // y=54 used to sit inside #hud's own left column, which — padding,
+      // hp bar, xp bar, kill/essence stats line, and the pause button
+      // below it (each with its own margin/gap) — occupies roughly the
+      // top ~96px of the viewport. Pushed below that real footprint with
+      // margin instead of guessing, so it can't collide regardless of
+      // streak digit count.
+      ctx.translate(W/2, 130);
       ctx.scale(scale, scale);
       ctx.fillStyle = color;
       ctx.font = `bold ${fontPx}px "Courier New",monospace`;
@@ -4915,13 +5020,17 @@ const Music = (function(){
   // for the entire stage-2 traversal — a new area with the *same* music
   // stage 1 already built up to, not a new build. Keyed off stage2EnteredAt
   // (mirroring how tick()'s own timeBuild math already treats stage 2 as
-  // its own clock) and compressed to fit BOSS2_TRIGGER_DELAY's ~240s
-  // window instead of stage 1's 410s. Reuses the exact same section
-  // thresholds scheduleStep already branches on (>=1 hats, >=2 lead,
-  // >=3 LEAD_PHRASE_B), so dropping `section` back to 0 on entry reads as
-  // the arrangement genuinely stripping back down and rebuilding, not
-  // silence — the real "stage 2 begins" moment.
-  const STAGE2_SECTION_BOUNDS = [30, 90, 160];
+  // its own clock) and scaled to fit BOSS2_TRIGGER_DELAY's window (now
+  // 450s, matching stage 1's own BOSS_MARKER — was 240s/[30,90,160] before
+  // BOSS2_TRIGGER_DELAY was raised to fix the boss arriving too quickly;
+  // rescaled by the same 450/240 ratio so the arrangement still finishes
+  // its stage-2 build right as the boss arrives instead of sitting at its
+  // peak section for ~185s of dead air first). Reuses the exact same
+  // section thresholds scheduleStep already branches on (>=1 hats, >=2
+  // lead, >=3 LEAD_PHRASE_B), so dropping `section` back to 0 on entry
+  // reads as the arrangement genuinely stripping back down and rebuilding,
+  // not silence — the real "stage 2 begins" moment.
+  const STAGE2_SECTION_BOUNDS = [56, 169, 300];
   function computeStage2Section(stage2Elapsed){
     for(let i=STAGE2_SECTION_BOUNDS.length-1; i>=0; i--) if(stage2Elapsed >= STAGE2_SECTION_BOUNDS[i]) return i+1;
     return 0;
@@ -5414,13 +5523,13 @@ const Music = (function(){
     // at BOSS_MARKER (450s / 7:30, matching Game's BOSS_TRIGGER_TIME) for
     // stage 1, or — once stage 2 is entered — a second, independent climb
     // keyed off stage2EnteredAt (mirroring Game's own BOSS2_TRIGGER_DELAY=
-    // 240s the same way BOSS_MARKER already mirrors BOSS_TRIGGER_TIME).
+    // 450s the same way BOSS_MARKER already mirrors BOSS_TRIGGER_TIME).
     // Without this second marker, timeBuild flatlines at its stage-1
     // ceiling for the entire second half of the run instead of climbing
     // again toward the Fracture. Squared easing (not linear) on both so
     // each reads as an accelerating build, not a straight ramp.
     const BOSS_MARKER = 450;
-    const BOSS2_MARKER_DELAY = 240; // must stay in sync with Game's BOSS2_TRIGGER_DELAY
+    const BOSS2_MARKER_DELAY = 450; // must stay in sync with Game's BOSS2_TRIGGER_DELAY
     let timeBuild;
     if(st.stage === 2 && st.stage2EnteredAt > 0){
       const progress2 = Math.min(1, (st.elapsed - st.stage2EnteredAt)/BOSS2_MARKER_DELAY);
