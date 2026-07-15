@@ -2762,7 +2762,12 @@ const Game = (function(){
         const HEAL_CAP_TARGETS = 5;
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
-            hitEnemy(e, dmgPerTick); totalDmg += dmgPerTick; healHits++;
+            // silent: Drain ticks every 0.35s across every enemy in a radius
+            // that can cover most of the screen at max level — non-silent
+            // hits pinned entire crowds under hitFlash's opaque white-circle
+            // sprite override (same failure mode burn ticks were already
+            // fixed for below), reading as a rendering bug in dense fights.
+            hitEnemy(e, dmgPerTick, true); totalDmg += dmgPerTick; healHits++;
           }
           return false;
         });
@@ -2802,7 +2807,8 @@ const Game = (function(){
         Grid.queryCircle(player.x, player.y, radius+34, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
             applySlow(e, slowMult, 0.5);
-            if(nullifyAll) hitEnemy(e, (4+weapons.root*2)*dmgMult());
+            // silent — same continuous-tick reasoning as Drain above.
+            if(nullifyAll) hitEnemy(e, (4+weapons.root*2)*dmgMult(), true);
           }
           return false;
         });
@@ -3242,7 +3248,8 @@ const Game = (function(){
           const proj = toPx*dx + toPy*dy;
           if(proj > 0 && proj < SUNDER_RANGE){
             const perp = Math.abs(toPx*dy - toPy*dx);
-            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick);
+            // silent — channeled beam, same continuous-tick reasoning as burn/Drain.
+            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick, true);
           }
           return false;
         });
@@ -3251,7 +3258,7 @@ const Game = (function(){
           const proj = toPx*dx + toPy*dy;
           if(proj > 0 && proj < SUNDER_RANGE){
             const perp = Math.abs(toPx*dy - toPy*dx);
-            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick);
+            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick, true);
           }
         }
       }
