@@ -11,6 +11,34 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.12 — 2026-07-20 — Rendering pass, prompted directly by producer
+                          feedback that the rig read as "drawn in paint" --
+                          a flat single-width stroked line per limb, plain
+                          filled circle for a head. That was a rendering-
+                          technique gap, not a pose/proportion bug: no
+                          amount of angle-tuning fixes a flat stick-figure
+                          stroke. Replaced drawLine()/renderRig()'s flat
+                          fill with drawLimb(): tapered (wider at the
+                          proximal joint, narrower distal, the natural
+                          shape of a limb), gradient-shaded quads instead
+                          of uniform-width strokes, plus a translucent-
+                          white specular highlight strip and rounded joint
+                          caps so segments blend instead of showing a hard
+                          seam. Also copied shadeHex()/clamp() verbatim
+                          from iridescentcosmology.html/sigilchain.html --
+                          this studio's own proven color-shading utility,
+                          the same one behind the faceted-gem-rendering
+                          technique -- rather than inventing a new one.
+                          The head is now a radial gradient (light
+                          upper-left, shaded edge) instead of a flat fill,
+                          the same lightness-shift tool, gradient stops
+                          instead of a linear axis. Pure rendering change,
+                          verified against the full existing suite with
+                          zero test changes needed (rendering isn't
+                          exercised by any assertion, only by screenshot):
+                          42/42 rig-sequence + 20/20 rig-2player + 14/14
+                          rig-audio.
+
   v0.1.11 — 2026-07-20 — Game 5 2-player extension. Refactored the
                           player-1 animation state into
                           createRigController(), a factory (pure refactor,
@@ -392,7 +420,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.11</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.12</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -852,40 +880,112 @@
   // ---- Drawing (pure rendering — no math, reads joints from solveRig) ----
   // color defaults to the original single-rig white so every existing
   // caller that never passes one renders exactly as before. The 2-player
-  // extension passes distinct per-player colors (see RIG_COLORS) --
+  // extension passes distinct per-player colors (P1_COLOR/P2_COLOR) --
   // verified-safe hues against this studio's reserved gold/red/green bands
   // (STUDIO_BIBLE.md §11), per the visual-art-director draft this session.
-  function drawLine(p1, p2, width, color) {
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  // Copied verbatim from iridescentcosmology.html/sigilchain.html -- this
+  // studio's proven color-shading utility (the same one behind the
+  // faceted-gem-rendering technique), not a new one invented for this rig.
+  function shadeHex(hex, dLight, dSat) {
+    dSat = dSat || 0;
+    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    if (max === min) { h = s = 0; }
+    else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
+      }
+      h /= 6;
+    }
+    h *= 360; s = clamp(s * 100 + dSat, 0, 100); l = clamp(l * 100 + dLight, 0, 100);
+    return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  }
+
+  // Tapered, gradient-shaded limb segment -- replaces a flat single-width
+  // stroked line (the "drawn in paint" stick-figure look) with something
+  // that reads as having actual volume. widthStart/widthEnd taper the
+  // segment (wider at the proximal joint, narrower distal, the natural
+  // shape of a limb) and the gradient runs perpendicular to the limb's own
+  // axis, light to dark, a fixed light-from-one-side convention across
+  // every limb so the whole rig reads as lit consistently. The
+  // light/dark shift amounts (+16/-14 lightness, +/-6-8 saturation) match
+  // this studio's own faceted-gem alternating-facet shading exactly (see
+  // the faceted-gem-rendering skill) -- same technique, applied to a
+  // tapered quad instead of a triangle-fan facet.
+  function drawLimb(p1, p2, widthStart, widthEnd, baseColor) {
+    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    const nx = Math.cos(angle + Math.PI / 2), ny = Math.sin(angle + Math.PI / 2);
+    const p1a = { x: p1.x + nx * widthStart / 2, y: p1.y + ny * widthStart / 2 };
+    const p1b = { x: p1.x - nx * widthStart / 2, y: p1.y - ny * widthStart / 2 };
+    const p2a = { x: p2.x + nx * widthEnd / 2, y: p2.y + ny * widthEnd / 2 };
+    const p2b = { x: p2.x - nx * widthEnd / 2, y: p2.y - ny * widthEnd / 2 };
+    const grad = ctx.createLinearGradient(p1a.x, p1a.y, p1b.x, p1b.y);
+    grad.addColorStop(0, shadeHex(baseColor, 16, 8));
+    grad.addColorStop(1, shadeHex(baseColor, -14, -6));
     ctx.beginPath();
-    ctx.moveTo(p1.x, p1.y);
-    ctx.lineTo(p2.x, p2.y);
-    ctx.lineWidth = width;
+    ctx.moveTo(p1a.x, p1a.y);
+    ctx.lineTo(p2a.x, p2a.y);
+    ctx.lineTo(p2b.x, p2b.y);
+    ctx.lineTo(p1b.x, p1b.y);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+    // Specular highlight -- a slim translucent-white strip along the lit
+    // edge, the same "fake a highlight catching the light" idea the
+    // faceted-gem technique already uses (one flat white facet at ~40%
+    // alpha), applied to a tapered limb instead of a polygon facet fan.
+    ctx.beginPath();
+    ctx.moveTo(p1.x + nx * widthStart * 0.32, p1.y + ny * widthStart * 0.32);
+    ctx.lineTo(p2.x + nx * widthEnd * 0.32, p2.y + ny * widthEnd * 0.32);
+    ctx.lineWidth = Math.max(1, widthStart * 0.22);
     ctx.lineCap = 'round';
-    ctx.strokeStyle = color || '#e8e8f0';
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.stroke();
+    // Rounded end caps so adjacent segments blend at the joint instead of
+    // a hard seam -- filled with the flat base color, which sits close to
+    // the gradient's own midpoint so the seam doesn't read as a visible
+    // ring.
+    ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
+    ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
   }
 
   function renderRig(j, color) {
     const c = color || '#e8e8f0';
-    // legs first (drawn behind torso)
-    drawLine(j.hipL, j.kneeL, 7, c);
-    drawLine(j.kneeL, j.footL, 6, c);
-    drawLine(j.hipR, j.kneeR, 7, c);
-    drawLine(j.kneeR, j.footR, 6, c);
+    // legs first (drawn behind torso) -- tapered wider at hip/knee,
+    // narrower at knee/foot, the natural shape of a thigh/shin
+    drawLimb(j.hipL, j.kneeL, 11, 7, c);
+    drawLimb(j.kneeL, j.footL, 7, 5, c);
+    drawLimb(j.hipR, j.kneeR, 11, 7, c);
+    drawLimb(j.kneeR, j.footR, 7, 5, c);
 
-    // spine
-    drawLine(j.pelvis, j.chest, 9, c);
+    // spine -- widens toward the chest/shoulders rather than a uniform bar
+    drawLimb(j.pelvis, j.chest, 9, 12, c);
 
     // arms
-    drawLine(j.shoulderL, j.elbowL, 6, c);
-    drawLine(j.elbowL, j.handL, 5, c);
-    drawLine(j.shoulderR, j.elbowR, 6, c);
-    drawLine(j.elbowR, j.handR, 5, c);
+    drawLimb(j.shoulderL, j.elbowL, 7, 5, c);
+    drawLimb(j.elbowL, j.handL, 5, 4, c);
+    drawLimb(j.shoulderR, j.elbowR, 7, 5, c);
+    drawLimb(j.elbowR, j.handR, 5, 4, c);
 
-    // head
+    // head -- radial gradient for a sense of volume instead of a flat fill,
+    // same lightness-shift tool as the limbs, just gradient stops instead
+    // of a linear axis (matches the faceted-gem technique's own "round
+    // pickup" variant: base color -> shaded edge, shaded-lighter center)
+    const headGrad = ctx.createRadialGradient(
+      j.head.x - LEN.headR * 0.3, j.head.y - LEN.headR * 0.3, LEN.headR * 0.15,
+      j.head.x, j.head.y, LEN.headR
+    );
+    headGrad.addColorStop(0, shadeHex(c, 26, 10));
+    headGrad.addColorStop(1, shadeHex(c, -18, 0));
     ctx.beginPath();
     ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2);
-    ctx.fillStyle = c;
+    ctx.fillStyle = headGrad;
     ctx.fill();
   }
 
