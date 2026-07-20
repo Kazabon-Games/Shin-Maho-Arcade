@@ -11,6 +11,37 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.25 — 2026-07-20 — Parry: guard now has real teeth but still no
+                          precision-timing reward for a well-timed block,
+                          a gap named directly in this project's own
+                          design docs across multiple passes. A hit
+                          landing within PARRY_WINDOW_MS (120ms) of the
+                          exact MOMENT guard was raised (isInParryWindow(),
+                          stamped only on the false->true transition, not
+                          every frame guard stays held) is a full
+                          negation, not a block: zero knockback and zero
+                          guard-meter cost for the defender, and the
+                          ATTACKER takes real knockback and gets
+                          interrupted instead -- a genuine punish, not
+                          just a different sound effect. resolveDuelHit()
+                          branches on this before its existing block
+                          logic, still one shared function called both
+                          directions. A distinct parryChime() SFX voice
+                          (bright two-harmonic ring, unlike any of the
+                          other four voices) marks it as its own event.
+                          New tests/rig-parry.js (16 assertions) drives a
+                          hit landing inside the window (parry), one
+                          landing well outside it (normal block), a
+                          re-raise opening a genuinely fresh window, and
+                          both attack directions. Also fixed two existing
+                          tests (rig-combat.js §3, rig-guard-meter.js §7)
+                          that raised guard and landed a hit ~110-130ms
+                          later -- exactly straddling the new parry
+                          boundary, making them intermittently flip from
+                          the block behavior they intended to test into a
+                          parry instead. All 214 assertions across the
+                          full suite pass.
+
   v0.1.24 — 2026-07-20 — Guard stamina meter: guard was previously free
                           for as long as the input was held, named
                           directly as a gap in this project's own design
@@ -946,7 +977,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.24</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.25</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1187,6 +1218,19 @@
   const GUARD_MIN_TO_RAISE = 15; // can't re-raise guard the instant it hits empty -- needs to recover a little first
   const GUARD_BLOCK_HIT_DRAIN = 20;
 
+  // Parry window (v0.1.25), same module-level sharing as everything else
+  // above -- one budget both rigs are held to identically. Deliberately
+  // tight: this rig's own strike-phase hit window was fixed down to the
+  // frame in v0.1.6, so a genuine read-and-react parry (not "hold guard
+  // and get lucky") needs a window that rewards anticipating the
+  // attack's start, not blocking early and coasting through it. The
+  // punish knockback itself reuses KNOCKBACK_SPEED (defined further down
+  // alongside the rest of combat resolution) rather than a second
+  // constant here -- a successful parry costs the attacker exactly as
+  // much ground as a landed hit already costs a defender, not an
+  // invented separate number.
+  const PARRY_WINDOW_MS = 120;
+
   // ---- Rig controller factory (Game 5 2-player extension) ----
   // Extracted from what was a single set of module-level `seq`/`seqIdx`/...
   // variables (through v0.1.10) into a factory so a second player's rig can
@@ -1384,11 +1428,28 @@
       guardMeter = Math.max(0, guardMeter - amount);
       if (guardMeter <= 0) guarding = false;
     }
+    // ---- Parry (v0.1.25) ----
+    // The precision-timing reward guard never had: a hit landing within
+    // PARRY_WINDOW_MS of the MOMENT guard was raised (not any time while
+    // guarding, which is just a normal block) is a parry, not a block --
+    // resolveDuelHit() checks isInParryWindow() and, on a parry, fully
+    // negates the hit against the defender (no knockback, no guard-meter
+    // cost) and punishes the ATTACKER instead. guardRaisedAt only updates
+    // on the false->true transition, not every frame guard stays held, so
+    // holding block from before an attack starts is never itself a free
+    // parry window -- the window is tied to the RAISE, matching the "read
+    // the attack and block at the right instant" skill a parry is
+    // supposed to reward.
+    let guardRaisedAt = -Infinity;
+    function isInParryWindow() {
+      return guarding && (performance.now() - guardRaisedAt) < PARRY_WINDOW_MS;
+    }
     function setGuard(active) {
       if (active) {
         if (jumping) return; // can't block mid-air -- land first
         if (seq && isCommittedPhase(seqIdx)) return;
         if (guardMeter < GUARD_MIN_TO_RAISE) return; // too exhausted to raise guard again yet -- must recover a little first
+        if (!guarding) guardRaisedAt = performance.now(); // only stamp the RAISE, not every frame guard stays held (see isInParryWindow()'s own comment)
         guarding = true;
         seq = null;
         queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
@@ -1545,13 +1606,13 @@
       posX = START_X; velX = 0; moveIntent = 0; facing = opts.startFacing || 'R';
       jumping = false; velY = 0; jumpHeight = 0;
       hasHitThisSwing = false; knockbackTimer = 0; flinchStart = -Infinity;
-      guardMeter = GUARD_METER_MAX;
+      guardMeter = GUARD_METER_MAX; guardRaisedAt = -Infinity;
     }
 
     return {
       triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
       setMoveIntent, updatePhysics, triggerFlinch, markHit, applyKnockback, teleportTo,
-      damageGuardMeter,
+      damageGuardMeter, isInParryWindow,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -2064,8 +2125,27 @@
       o.start(t); o.stop(t + def.dur + 0.02);
     }
 
+    // Parry chime (v0.1.25) — resolveDuelHit()'s parry branch, deliberately
+    // distinct from every other voice here: a bright two-harmonic ring
+    // (not strikeImpact()'s low thump, missBuzz()'s harsh buzz, or
+    // windupWhoosh()'s sweep) so a successful parry reads as its own
+    // rewarding event, not just a differently-timed block.
+    function parryChime() {
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.35, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      const o1 = ctx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = 880;
+      const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 1320; // a fifth above -- reads as a bright chime, not a single tone
+      const g2 = ctx.createGain(); g2.gain.value = 0.5;
+      o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(sfx);
+      o1.start(t); o2.start(t); o1.stop(t + 0.36); o2.stop(t + 0.36);
+    }
+
     return {
-      ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse,
+      ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse, parryChime,
       _test: { isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null }
     };
   })();
@@ -2310,6 +2390,22 @@
     attacker.markHit();
     const dir = defender.posX >= attacker.posX ? 1 : -1;
     const blocked = defender.guarding;
+    // Parry (v0.1.25): a hit landing within the defender's PARRY_WINDOW_MS
+    // of the moment guard was raised is NOT a block -- it's a full
+    // negation plus a real punish. The defender takes zero knockback and
+    // zero guard-meter cost (this is the precision-timing reward guard
+    // never had); the ATTACKER is the one who gets knocked back instead,
+    // pushed AWAY from the defender (-dir, the opposite of the direction
+    // a normal hit would push the defender), interrupting whatever THEY
+    // were doing exactly the way applyKnockback()'s unblocked branch
+    // already does for a landed hit.
+    if (blocked && defender.isInParryWindow()) {
+      attacker.applyKnockback(-dir * KNOCKBACK_SPEED, false);
+      SFX.parryChime();
+      spawnBurst(hurtbox.x, hurtbox.y);
+      shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
+      return;
+    }
     defender.applyKnockback(dir * KNOCKBACK_SPEED * (blocked ? GUARD_CHIP_SCALE : 1), blocked);
     if (blocked) defender.damageGuardMeter(GUARD_BLOCK_HIT_DRAIN); // guard mitigates knockback but isn't free -- a real stamina cost per blocked hit, on top of the continuous drain from just holding guard (see updateGuardMeter())
     SFX.strikeImpact();
@@ -2727,6 +2823,7 @@
           recoverExitVel: p1.recoverExitVel,
           recoverEnterPose: p1.recoverEnterPose,
           guardMeter: p1.guardMeter,
+          isInParryWindow: p1.isInParryWindow(),
           hasHitThisSwing: p1.hasHitThisSwing,
           knockbackTimer: p1.knockbackTimer,
           pose: p1.currentPose(),
@@ -2822,6 +2919,7 @@
           recoverExitVel: p2.recoverExitVel,
           recoverEnterPose: p2.recoverEnterPose,
           guardMeter: p2.guardMeter,
+          isInParryWindow: p2.isInParryWindow(),
           hasHitThisSwing: p2.hasHitThisSwing,
           knockbackTimer: p2.knockbackTimer,
           pose: p2.currentPose(),

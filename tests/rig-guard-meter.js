@@ -80,6 +80,13 @@ function ok(cond, label) {
   console.log('7. A landed, BLOCKED hit costs a real flat chunk of guard meter (chip stamina), on top of continuous drain');
   await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig2._test.reset(); });
   await page.evaluate(() => { window.Rig._test.teleportTo(0); window.Rig2._test.teleportTo(30); window.Rig2._test.setGuard(true); });
+  // Holds guard well past PARRY_WINDOW_MS (120ms, v0.1.25) before the
+  // attack starts, so this test unambiguously exercises a normal BLOCK's
+  // guard-meter cost -- triggering immediately after raising guard lands
+  // the hit right at that same ~110-130ms boundary and can flip this into
+  // a parry instead (zero guard-meter cost), which is a different, real
+  // mechanic covered by its own tests/rig-parry.js, not this one.
+  await page.waitForTimeout(250);
   const beforeBlockedHit = await page.evaluate(() => window.Rig2._test.state());
   await page.evaluate(() => window.Rig._test.trigger('R'));
   await page.waitForTimeout(150); // strike lands on the guarding defender

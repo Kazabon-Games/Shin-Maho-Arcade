@@ -1,18 +1,19 @@
-# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21, match structure v0.1.23, guard meter v0.1.24)
+# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21, match structure v0.1.23, guard meter v0.1.24, parry v0.1.25)
 
 **Status: substrate, physics, combat resolution, a real match structure,
-AND guard stamina all landed.** This covers what the 2-player extension
-actually built — two independent, simultaneously rendered/animated rigs,
-each with its own input, real shared physics, real rig-vs-rig hit
-detection/knockback/ring-out, an actual win condition (first to 3
-ring-outs wins the match, with a result overlay and a rematch path), and
-a real stamina cost on guard (drains while blocking, regenerates slower,
-force-drops at empty, costs extra per blocked hit — see
-`RYKNDU_MOVESET.md`'s Combat resolution and Guard meter sections for the
-mechanics) — and draws a hard line around what still deliberately isn't
-covered: combo depth and parry timing remain separate future work, but
-"rig-vs-rig combat resolution," "a round/match structure," and "guard has
-no cost" are no longer on that list.
+guard stamina, AND parry all landed.** This covers what the 2-player
+extension actually built — two independent, simultaneously rendered/
+animated rigs, each with its own input, real shared physics, real
+rig-vs-rig hit detection/knockback/ring-out, an actual win condition
+(first to 3 ring-outs wins the match, with a result overlay and a
+rematch path), a real stamina cost on guard (drains while blocking,
+regenerates slower, force-drops at empty, costs extra per blocked hit),
+and now a precision-timing reward for a well-read block — a hit landing
+within 120ms of the moment guard was raised fully negates and punishes
+the attacker instead (see `RYKNDU_MOVESET.md`'s Combat resolution, Guard
+meter, and Parry sections for the mechanics) — and draws a hard line
+around what still deliberately isn't covered: only combo-cancel depth
+remains separate future work now.
 
 ## What exists now
 
@@ -82,12 +83,12 @@ no cost" are no longer on that list.
   (slower than it drains), the meter hitting zero force-drops guard, and
   a landed blocked hit costs a flat chunk on top. See
   `RYKNDU_MOVESET.md`'s Guard meter section and `tests/rig-guard-meter.js`.
-- **No parry.** Guard has a real resource cost now, but there is still no
-  precision-timing reward for blocking a hit at a specific instant — a
-  parry would need a new narrow-timing check against the attacker's
-  strike phase, confirmed feasible (the rig's phase timing is already
-  precise enough, per the v0.1.6 fix that nailed hit-window timing to the
-  frame) but not designed here.
+- ~~No parry~~ — **built in v0.1.25.** A hit landing within
+  `PARRY_WINDOW_MS` (120ms) of the exact instant guard was raised is a
+  full negation, not a block — zero knockback and zero guard-meter cost
+  for the defender, and the attacker takes real knockback and gets
+  interrupted instead. See `RYKNDU_MOVESET.md`'s Parry section and
+  `tests/rig-parry.js`.
 - **No combo system.** Each rig's attack sequence is still exactly the
   single kick from v0.1.0 (windup → strike → recover); nothing chains,
   and a landed hit can't cancel `strike` itself into a follow-up.
@@ -140,6 +141,13 @@ per-frame shortcut), the forced drop at zero, the re-raise refusal below
 the minimum threshold, the flat cost from a blocked hit on top of
 continuous drain, `reset()` restoring a full meter, and player 2 sharing
 the exact same behavior through the same factory.
+
+`tests/rig-parry.js` covers the parry window specifically — a hit
+landing inside `PARRY_WINDOW_MS` of the raise (full negation, zero
+guard-meter cost, the attacker punished instead), one landing well
+outside it (an ordinary block, verifying the two don't get confused with
+each other), a re-raise opening a genuinely fresh window rather than
+reusing stale state, and both attack directions.
 
 ## Mobile verification status (v0.1.22 — emulation, not real hardware)
 

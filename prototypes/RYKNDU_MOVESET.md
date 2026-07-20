@@ -214,11 +214,41 @@ every other timed system in this rig already holds itself to:
   uses) shows the meter, reading amber under 25% as a real warning rather
   than just a smaller bar in the rig's own color.
 
+## Parry (v0.1.25 — the precision-timing reward guard never had)
+
+Guard got a real resource cost in v0.1.24, but no reward yet for
+*reading* an attack and blocking at the right instant versus just
+holding guard defensively. `PARRY_WINDOW_MS` (120ms) closes that:
+
+- **The window is tied to the RAISE, not to holding guard.**
+  `guardRaisedAt` (inside `createRigController()`) only stamps
+  `performance.now()` on the false→true transition of `guarding` — never
+  on any frame guard merely stays held. `isInParryWindow()` is
+  `guarding && (now - guardRaisedAt) < PARRY_WINDOW_MS`. This is
+  deliberate: a parry is supposed to reward anticipating when an attack
+  starts, not something a player gets for free by holding block from
+  well before the swing even began.
+- **A parry is a full negation, not a better block.** `resolveDuelHit()`
+  checks `defender.isInParryWindow()` before its existing block logic —
+  on a parry, the defender takes zero knockback and zero guard-meter
+  cost (skips `applyKnockback()`/`damageGuardMeter()` entirely), a
+  distinct `parryChime()` SFX voice plays, and the ATTACKER is knocked
+  back and interrupted instead (`attacker.applyKnockback(-dir *
+  KNOCKBACK_SPEED, false)` — the same real punish a landed hit already
+  deals to a defender, just pointed the other way). Still one shared,
+  both-directions function; the parry branch is a fork inside it, not a
+  second copy.
+- **A missed parry timing-wise still blocks normally.** Once
+  `PARRY_WINDOW_MS` elapses, an incoming hit against a still-guarding
+  rig falls through to the existing chip-knockback/guard-meter-cost
+  logic unchanged — guard itself didn't get worse, parry only added a
+  narrow bonus window on top of it.
+
 ## What's still deferred (not designed in this pass)
 
-This table is still the seam combo-cancel points and parry windows get
-named against later — combat resolution and guard stamina above are the
-game's core loop and its first real resource, not the full combat depth:
+Combat resolution, guard stamina, and parry above are the game's core
+loop and its full guard-vs-attack interaction — what's left is chaining
+attacks together, not defending against them:
 
 - **Combo-cancel candidate points:** the existing "buffered input fires
   immediately at recovery start" behavior is already a cancel window in
@@ -226,11 +256,6 @@ game's core loop and its first real resource, not the full combat depth:
   type that can cancel `strike` itself (not just `recover`) into a new
   `windup` on a landed hit. Not built; the seam is `isCommittedPhase()`
   and the `queuedSide` buffer, both already isolated enough to extend.
-- **Parry candidate point:** would need a new narrow-timing check against
-  an *opponent's* `strike` phase — the rig's own phase timing is already
-  precise enough for this (v0.1.6 fixed the strike-phase hit-window down
-  to the frame), and an opponent to read now exists (this section), so
-  the missing piece is purely the timing-window design, not architecture.
 
 ## Verification
 
@@ -253,4 +278,8 @@ match afterward. The guard meter itself is covered by
 `tests/rig-guard-meter.js` — real elapsed-time drain/regen rates, the
 forced drop at zero, the re-raise refusal below the minimum threshold,
 the flat cost from a blocked hit, `reset()` restoring a full meter, and
-player 2 sharing the exact same behavior through the same factory.
+player 2 sharing the exact same behavior through the same factory. Parry
+is covered by `tests/rig-parry.js` — a hit landing inside the window
+(full negation, attacker punished), one landing outside it (ordinary
+block), a re-raise opening a genuinely fresh window, and both attack
+directions.

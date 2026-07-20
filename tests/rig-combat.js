@@ -75,6 +75,13 @@ function ok(cond, label) {
   console.log('3. A guarded hit chips through with reduced knockback and does not break guard');
   await freshDuel();
   await page.evaluate(() => { window.Rig._test.teleportTo(0); window.Rig2._test.teleportTo(30); window.Rig2._test.setGuard(true); });
+  // Holds guard well past PARRY_WINDOW_MS (120ms, v0.1.25) before the
+  // attack even starts, so this test unambiguously exercises a normal
+  // BLOCK -- triggering the attack immediately after raising guard would
+  // land the hit right at that same ~110-130ms boundary and occasionally
+  // flip this into a parry instead (zero knockback, not chip knockback),
+  // exactly the flaky failure that surfaced when the parry window landed.
+  await page.waitForTimeout(250);
   await page.evaluate(() => window.Rig._test.trigger('R'));
   await page.waitForTimeout(140);
   const guardedMid = await page.evaluate(() => window.Rig2._test.state());
