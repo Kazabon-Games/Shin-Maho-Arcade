@@ -11,6 +11,59 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.19 — 2026-07-20 — Touch controls reworked to match the movement/
+                          facing/jump rework -- the original "tapping the
+                          screen just gives a knee jerk" complaint that
+                          started this whole physics arc had a second,
+                          separate cause beyond the animation itself: touch
+                          was never migrated off the old zoneL/zoneR full-
+                          screen-half tap zones, which still threw an
+                          explicit left/right kick directly, completely
+                          orphaned since v0.1.16 moved attack to a facing-
+                          based model. No amount of rig physics fixes a
+                          control scheme that's still calling the old API.
+
+                          Replaced with a real drag joystick (bottom-left)
+                          plus three action buttons -- attack/jump/block
+                          (bottom-right) -- mirroring the keyboard/gamepad
+                          scheme exactly: move via drag (feeds the same
+                          moveIntent the keyboard/gamepad do, so it gets
+                          the same real acceleration/friction, not a
+                          separate touch-only physics path), attack throws
+                          whichever kick matches current facing, jump and
+                          block are their own one-shot/hold buttons.
+                          Positioned with real vertical clearance above the
+                          #hint/.version-marker/#prealpha-badge row --
+                          learned from that exact collision bug earlier
+                          this session, not repeated.
+
+                          setPointerCapture() wrapped in try/catch on both
+                          the joystick and the buttons -- losing capture
+                          only means a fast drag off the element stops
+                          updating, not a hard failure, and this surfaced
+                          during testing (a synthetic dispatchEvent() with
+                          no real active pointer throws here, which is a
+                          real edge case worth not crashing on even though
+                          production touch/mouse events won't hit it).
+
+                          New tests/rig-touch-controls.js (13 assertions,
+                          driven through page.mouse -- a synthetic
+                          dispatchEvent() call was tried first and gives a
+                          false read here, since it fails
+                          setPointerCapture() the same way the edge case
+                          above does): joystick drag drives real velocity/
+                          friction, facing flips and the attack button
+                          reads it correctly (not hardcoded to one side
+                          the way zoneL/zoneR were), jump button triggers
+                          real takeoff velocity, block is a genuine hold
+                          (guards on press, releases on lift), and the old
+                          zoneL/zoneR elements are confirmed gone from the
+                          DOM, not just superseded in behavior.
+
+                          Full suite stable across repeated runs: 73/73
+                          rig-sequence + 20/20 rig-2player + 14/14
+                          rig-audio + 13/13 rig-touch-controls = 120/120.
+
   v0.1.18 — 2026-07-20 — Weighted attack follow-through: the recovery
                           phase (strike-end -> idle) was still a fixed-
                           duration lerpPose()+easeOutBack() blend, the same
@@ -692,20 +745,57 @@
   }
   #hud .lives-full { color: #ff4d70; }
   #hud .lives-spent { color: #4a3038; }
-  .tapzone { position: fixed; top: 0; bottom: 0; width: 50%; }
-  #zoneL { left: 0; }
-  #zoneR { right: 0; }
+  /* Touch controls (v0.1.19): replaces the old zoneL/zoneR full-screen-
+     half tap zones, which threw an explicit left/right kick directly --
+     a scheme the v0.1.16 movement/facing rework left completely
+     orphaned (a tap still "just gave a knee jerk" on touch specifically
+     because touch was never updated to match). A real virtual joystick
+     (drag-based, bottom-left) plus three action buttons (bottom-right)
+     mirror the keyboard/gamepad scheme exactly -- move / attack / jump /
+     block, not a fifth, touch-only control language. Positioned with
+     real vertical clearance above the #hint/.version-marker/#prealpha-badge
+     row so this doesn't repeat that exact collision bug a second time.
+     touch-action:none on both prevents the browser's own scroll/zoom
+     gestures from fighting these drags. */
+  #touchStick {
+    position: fixed; left: 24px; bottom: 90px; width: 108px; height: 108px;
+    border-radius: 50%; background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.18);
+    touch-action: none; z-index: 55;
+  }
+  #touchStickKnob {
+    position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px;
+    border-radius: 50%; background: rgba(255,255,255,0.28); border: 2px solid rgba(255,255,255,0.4);
+    pointer-events: none;
+  }
+  #touchButtons {
+    position: fixed; right: 18px; bottom: 84px; width: 160px; height: 120px; z-index: 55;
+  }
+  .touch-btn {
+    position: absolute; width: 58px; height: 58px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.22);
+    color: #e8e8f0; font-family: monospace; font-size: 10px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    touch-action: none; user-select: none;
+  }
+  .touch-btn.active { background: rgba(255,255,255,0.22); }
+  #btnAttack { right: 0; bottom: 0; }
+  #btnJump { right: 68px; bottom: 34px; }
+  #btnBlock { right: 0; bottom: 68px; }
 </style>
 </head>
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.18</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.19</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
-<div class="tapzone" id="zoneL"></div>
-<div class="tapzone" id="zoneR"></div>
+<div id="touchStick"><div id="touchStickKnob"></div></div>
+<div id="touchButtons">
+  <div class="touch-btn" id="btnBlock">BLOCK</div>
+  <div class="touch-btn" id="btnJump">JUMP</div>
+  <div class="touch-btn" id="btnAttack">ATK</div>
+</div>
 
 <script>
 (function () {
@@ -1966,6 +2056,7 @@
     let intent = 0;
     if (moveLeftHeld) intent -= 1;
     if (moveRightHeld) intent += 1;
+    if (touchMoveIntent !== 0) intent = touchMoveIntent; // active touch-stick drag overrides keyboard, same precedence gamepad gets below
     if (p1PadIndex !== null) {
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = pads[p1PadIndex];
@@ -1994,13 +2085,64 @@
     if (e.key === 'ArrowRight') moveRightHeld = false;
     if (e.key === 'ArrowDown') setGuard(false);
   });
-  // Tap zones predate the movement rework and still throw an explicit-
-  // side kick directly -- a real touch control scheme (a virtual
-  // joystick plus attack/jump/block buttons matching the new keyboard/
-  // gamepad model) is a genuine gap this pass doesn't close, named rather
-  // than quietly left inconsistent.
-  document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
-  document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
+  // Touch controls (v0.1.19) -- replaces the old zoneL/zoneR full-screen-
+  // half tap zones, which threw an explicit left/right kick directly and
+  // were left completely orphaned by the movement/facing rework (a tap
+  // "just gave a knee jerk" on touch specifically because touch was never
+  // updated to match). Mirrors the keyboard/gamepad scheme exactly --
+  // move via a drag joystick, attack throws whichever kick matches
+  // p1.facing (not an explicit side), jump and block are their own
+  // buttons -- not a fifth, touch-only control language.
+  let touchMoveIntent = 0;
+  (function setupTouchStick() {
+    const stick = document.getElementById('touchStick');
+    const knob = document.getElementById('touchStickKnob');
+    const MAX_RADIUS = 34; // px the knob can travel from center before clamping
+    let activePointerId = null;
+    function setKnob(dx, dy) { knob.style.transform = `translate(${dx}px, ${dy}px)`; }
+    function onMove(e) {
+      if (e.pointerId !== activePointerId) return;
+      const rect = stick.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      let dx = e.clientX - cx, dy = e.clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      if (dist > MAX_RADIUS) { dx = dx / dist * MAX_RADIUS; dy = dy / dist * MAX_RADIUS; }
+      setKnob(dx, dy);
+      touchMoveIntent = clamp(dx / MAX_RADIUS, -1, 1); // horizontal axis only -- this rig has no lateral-depth movement to drive with the vertical component
+    }
+    function release(e) {
+      if (e.pointerId !== activePointerId) return;
+      activePointerId = null;
+      touchMoveIntent = 0;
+      setKnob(0, 0);
+    }
+    stick.addEventListener('pointerdown', (e) => {
+      SFX.ensureCtx();
+      activePointerId = e.pointerId;
+      try { stick.setPointerCapture(e.pointerId); } catch (err) { /* no-op -- capture is a nice-to-have (keeps tracking a drag that leaves the element bounds), losing it just means a fast drag off the stick stops updating, not a crash */ }
+      onMove(e);
+    });
+    stick.addEventListener('pointermove', onMove);
+    stick.addEventListener('pointerup', release);
+    stick.addEventListener('pointercancel', release);
+  })();
+
+  function setupTouchButton(id, onDown, onUp) {
+    const el = document.getElementById(id);
+    el.addEventListener('pointerdown', (e) => {
+      el.classList.add('active');
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* no-op -- see the joystick's identical guard above */ }
+      onDown();
+    });
+    const release = () => { el.classList.remove('active'); if (onUp) onUp(); };
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+  }
+  setupTouchButton('btnAttack', () => handleInput(p1.facing)); // facing-based, same as the space key and gamepad attack button -- not an explicit side
+  setupTouchButton('btnJump', () => { SFX.ensureCtx(); p1.tryJump(); });
+  setupTouchButton('btnBlock',
+    () => { SFX.ensureCtx(); if (sessionState === 'playing') setGuard(true); }, // same gating as the keyboard/gamepad guard-raise
+    () => setGuard(false));
 
   // Player 2 split-keyboard fallback (Game 5 2-player extension) -- always
   // live regardless of whether a gamepad is also assigned to player 2 (see
