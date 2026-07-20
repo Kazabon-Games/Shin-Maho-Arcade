@@ -11,6 +11,56 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.16 — 2026-07-20 — Movement, facing, and jump added to
+                          createRigController(): posX (a persistent world
+                          position distinct from pose.pelvisDX's transient
+                          attack lean) and facing ('L'/'R', now driven by
+                          movement direction) plus a gated, exclusive jump
+                          state (a sine-arc pelvisDY hop, refused mid-
+                          committed-attack or while guarding; attack/guard
+                          are in turn refused while airborne -- no aerial
+                          attacks in this pass). solveRig() now reads
+                          player 1's live posX as its stand offset instead
+                          of a fixed 0.
+
+                          Player 1's whole input scheme reworked around
+                          this: arrows now move (continuous, held-key
+                          state applied once per frame) instead of
+                          directly throwing a left/right kick; a dedicated
+                          attack key (space) throws whichever kick matches
+                          current facing; a new jump key (arrow-up).
+                          Gamepad: left-stick axis for movement, a single
+                          attack button (facing-based, replacing the old
+                          two-kick-button scheme), a jump button, guard
+                          unchanged. Player 2 keeps its original explicit-
+                          side-kick scheme untouched -- this pass is
+                          player-1-only, per "let's make it one rig for
+                          now."
+
+                          Real bug caught and fixed before shipping: the
+                          first cut gated player 2's updateSeq() behind the
+                          new SHOW_P2 visibility flag, which silently
+                          froze player 2's attack-sequence state machine
+                          forever the instant anything triggered it (no
+                          frame was left to advance seqIdx) -- caught by
+                          the existing rig-2player suite failing (3 of 20),
+                          not assumed safe. Fixed by keeping updateSeq()
+                          unconditional and only gating the joint-solve/
+                          render calls -- SHOW_P2 controls visibility, not
+                          whether player 2's simulation is alive.
+
+                          Also new: SHOW_P2 = false for the live build --
+                          player 2's controller/tests/input plumbing all
+                          stay intact, just not rendered/polled visually,
+                          per "let's make it one rig for now."
+
+                          18 new assertions (tests/rig-sequence.js §§13-15:
+                          move()/facing/clamping, attack-via-facing, jump's
+                          arc and all four mutual-exclusion gates) plus the
+                          full existing suite, stable across repeated
+                          runs: 58/58 rig-sequence + 20/20 rig-2player +
+                          14/14 rig-audio.
+
   v0.1.15 — 2026-07-20 — Two producer-requested changes: joint smoothing
                           and a pre-alpha badge.
 
@@ -549,10 +599,10 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.15</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.16</div>
 <div id="debug"></div>
 <div id="hud"></div>
-<div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
+<div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
 <div class="tapzone" id="zoneL"></div>
 <div class="tapzone" id="zoneR"></div>
 
@@ -759,6 +809,39 @@
     let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
     let attackSide = null; // which side the currently-playing (or most recent) attack was on
     let guarding = false;
+    // ---- Movement (producer request: "add the game joystick... movement
+    // logic to the rig itself") ----
+    // posX is a persistent world position, distinct from pose.pelvisDX
+    // (the transient per-attack lean) -- fed into solveRig() as the stand
+    // offset instead of a fixed per-player constant. facing tracks which
+    // way an attack should throw its kick now that direction comes from
+    // movement input, not from a dedicated left/right attack button.
+    let posX = 0;
+    let facing = 'R';
+    const MOVE_MIN = -170, MOVE_MAX = 170; // arena bounds, arbitrary first guess -- same "expect to hand-tune once you see it" status every pose constant in this file already carries
+    function move(dx) {
+      if (dx === 0) return;
+      if (seq && isCommittedPhase(seqIdx)) return; // no sliding the whole body mid-kick
+      posX = clamp(posX + dx, MOVE_MIN, MOVE_MAX);
+      facing = dx > 0 ? 'R' : 'L';
+    }
+    // ---- Jump ----
+    // Exclusive with attack/guard for this pass (can't jump mid-committed-
+    // attack or while guarding, can't attack/guard while airborne) -- the
+    // same "don't add complexity ahead of a working baseline" reasoning
+    // this file's own history already names for why the consolidation
+    // pass deferred combo/parry. Aerial attacks are a real, natural
+    // extension later, not designed here.
+    let jumping = false, jumpStart = 0;
+    const JUMP_DUR = 420, JUMP_HEIGHT = 46;
+    function tryJump() {
+      if (jumping || guarding) return;
+      if (seq && isCommittedPhase(seqIdx)) return;
+      jumping = true;
+      jumpStart = performance.now();
+      seq = null;
+      queuedSide = null;
+    }
 
     // Convention: the LAST phase of any attackSequence is recovery —
     // cosmetic follow-through with no remaining gameplay function (the hit
@@ -781,6 +864,7 @@
     // attack already does.
     function setGuard(active) {
       if (active) {
+        if (jumping) return; // can't block mid-air -- land first
         if (seq && isCommittedPhase(seqIdx)) return;
         guarding = true;
         seq = null;
@@ -805,6 +889,7 @@
 
     function triggerAttack(side) {
       if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
+      if (jumping) return; // no aerial attacks in this pass -- land first
       if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
       // Either idle, or sitting in the (interruptible) recovery phase —
       // start immediately. startAttack() captures currentPose() as
@@ -814,6 +899,18 @@
     }
 
     function currentPose() {
+      if (jumping) {
+        const t = (performance.now() - jumpStart) / JUMP_DUR;
+        if (t < 1) {
+          // A simple sine arc (0->1->0 over the jump's duration), applied
+          // as a pelvisDY offset on top of idle -- not a distinct pose set,
+          // since exclusivity with attack/guard means idle is the only
+          // base this ever needs to lift off of.
+          const hop = Math.sin(t * Math.PI) * JUMP_HEIGHT;
+          return Object.assign({}, POSES.idle, { pelvisDY: POSES.idle.pelvisDY - hop });
+        }
+        jumping = false; // landed -- fall through to normal idle/guard/attack logic below
+      }
       if (guarding) return POSES.guard; // takes priority over idle/overlay -- setGuard() already refuses to set this mid-committed-attack
       if (!seq) {
         // Idle breathing so the rig isn't static between attacks. v0.1.11
@@ -877,17 +974,21 @@
     function reset() {
       seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
       queuedSide = null; attackSide = null; guarding = false;
+      posX = 0; facing = 'R'; jumping = false;
     }
 
     return {
-      triggerAttack, setGuard, currentPose, updateSeq, reset,
+      triggerAttack, setGuard, currentPose, updateSeq, reset, move, tryJump,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
       get committed() { return seq ? isCommittedPhase(seqIdx) : false; },
       get queuedSide() { return queuedSide; },
       get attackSide() { return attackSide; },
-      get idle() { return !seq; }
+      get idle() { return !seq; },
+      get posX() { return posX; },
+      get facing() { return facing; },
+      get jumping() { return jumping; }
     };
   }
 
@@ -929,6 +1030,15 @@
   // rig-vs-rig combat resolution (a hurtbox, a guard timer, parry) is real
   // combat design deferred past this consolidation pass. This only proves
   // two independently-driven, independently-animated rigs run at once.
+  // Producer request: "let's make it one rig for now" -- p2's controller,
+  // tests (window.Rig2, tests/rig-2player.js), and input plumbing all
+  // stay fully intact and correct; this just stops it from being
+  // updated/rendered/polled in the live build while movement/jump lands
+  // and gets proven on one rig first, matching the same "prove it
+  // single-threaded/single-rig before adding the second" sequencing the
+  // engineer draft recommended back at the start of the 2-player work.
+  // Flip back to true to resume the 2-player build where it left off.
+  const SHOW_P2 = false;
   const P2_STAND_OFFSET = 130;
   const P1_COLOR = '#3fd0ff'; // cyan -- verified-safe vs. this studio's reserved gold/red/green bands (STUDIO_BIBLE.md §11)
   const P2_COLOR = '#6b4dff'; // indigo-violet -- same verification
@@ -1655,17 +1765,52 @@
     if (sessionState === 'lose') { resetSession(); return; }
     triggerAttack(side);
   }
+
+  // Player 1 movement (producer request: "add the game joystick... and
+  // may add the movement logic to the rig itself"). Replaces the old
+  // scheme where ArrowLeft/ArrowRight directly threw a left/right kick --
+  // now they move the rig, and attack throws whichever kick matches
+  // p1.facing (the direction last moved). Held-key state is tracked here
+  // and applied once per frame in applyMoveInput(), the same "poll inside
+  // the game loop" shape the gamepad axis below already needs, so both
+  // input sources go through one path instead of two different timing
+  // models.
+  let moveLeftHeld = false, moveRightHeld = false;
+  const MOVE_SPEED = 220; // px/sec, a first guess like every other tuning constant in this file -- expect to hand-adjust once it's actually being played
+  function applyMoveInput(dt) {
+    let dx = 0;
+    if (moveLeftHeld) dx -= MOVE_SPEED * dt;
+    if (moveRightHeld) dx += MOVE_SPEED * dt;
+    if (p1PadIndex !== null) {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = pads[p1PadIndex];
+      // Deadzone of 0.15 -- standard-mapping analog sticks rarely rest at
+      // exactly 0, and without this the rig drifts on its own.
+      if (gp && gp.axes && Math.abs(gp.axes[0]) > 0.15) dx += gp.axes[0] * MOVE_SPEED * dt;
+    }
+    p1.move(dx);
+  }
+
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') handleInput('L');
-    if (e.key === 'ArrowRight') handleInput('R');
+    if (e.key === 'ArrowLeft') moveLeftHeld = true;
+    if (e.key === 'ArrowRight') moveRightHeld = true;
+    if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); handleInput(p1.facing); } // attack -- facing-based, not an explicit side, now that direction comes from movement
+    if (e.key === 'ArrowUp') { SFX.ensureCtx(); p1.tryJump(); }
     // Guard is a hold, not a tap -- gated on 'playing' the same as attacks
     // effectively are (resetSession() on the 'lose' screen already handles
-    // that path via handleInput()'s own side buttons).
+    // that path via handleInput()'s own attack button).
     if (e.key === 'ArrowDown' && sessionState === 'playing') { SFX.ensureCtx(); setGuard(true); }
   });
   window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft') moveLeftHeld = false;
+    if (e.key === 'ArrowRight') moveRightHeld = false;
     if (e.key === 'ArrowDown') setGuard(false);
   });
+  // Tap zones predate the movement rework and still throw an explicit-
+  // side kick directly -- a real touch control scheme (a virtual
+  // joystick plus attack/jump/block buttons matching the new keyboard/
+  // gamepad model) is a genuine gap this pass doesn't close, named rather
+  // than quietly left inconsistent.
   document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
   document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
 
@@ -1704,8 +1849,14 @@
   // 2's), each player's keyboard binding stays live in parallel regardless
   // of whether a pad is also assigned to them.
   let p1PadIndex = null, p2PadIndex = null;
-  const padPrevPressed = {}; // padIndex -> { L, R } previous-frame pressed state, for rising-edge kick detection (the API has no press-event model, only a per-frame snapshot -- a naive read fires once per frame a button is held, not once per press)
-  const BTN_KICK_L = 2, BTN_KICK_R = 1, BTN_GUARD = 4; // standard-mapping face/shoulder button indices
+  const padPrevPressed = {}; // padIndex -> per-button previous-frame pressed state, for rising-edge detection (the API has no press-event model, only a per-frame snapshot -- a naive read fires once per frame a button is held, not once per press)
+  // Player 2 keeps its original two-kick-button scheme (unchanged --
+  // player 2 isn't getting the movement rework in this pass, per "one rig
+  // for now"). Player 1's new scheme (single attack button + jump,
+  // movement comes from the analog stick handled in applyMoveInput/pollP1Pad)
+  // uses its own distinct button indices below.
+  const BTN_KICK_L = 2, BTN_KICK_R = 1, BTN_GUARD = 4; // standard-mapping face/shoulder button indices (player 2)
+  const P1_BTN_ATTACK = 0, P1_BTN_JUMP = 3; // standard-mapping bottom/top face buttons (player 1); reuses BTN_GUARD's index for the same physical shoulder button
 
   function assignPad(index) {
     if (p1PadIndex === null && p2PadIndex !== index) { p1PadIndex = index; return; }
@@ -1734,12 +1885,32 @@
     padPrevPressed[padIndex] = { L: nowL, R: nowR };
   }
 
+  // Player 1's gamepad poll: analog stick for movement (folded into
+  // applyMoveInput so keyboard-held and stick input share one path), a
+  // single attack button read via facing (not two kick buttons), and a
+  // jump button. Rising-edge detection on attack/jump for the same reason
+  // pollOnePad already needs it for kicks -- a per-frame snapshot read
+  // naively would refire every frame a button stays held.
+  function pollP1Pad() {
+    if (p1PadIndex === null) return;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = pads[p1PadIndex];
+    if (!gp) return;
+    const prev = padPrevPressed[p1PadIndex] || { attack: false, jump: false };
+    const nowAttack = !!(gp.buttons[P1_BTN_ATTACK] && gp.buttons[P1_BTN_ATTACK].pressed);
+    const nowJump = !!(gp.buttons[P1_BTN_JUMP] && gp.buttons[P1_BTN_JUMP].pressed);
+    if (nowAttack && !prev.attack) handleInput(p1.facing);
+    if (nowJump && !prev.jump) { SFX.ensureCtx(); p1.tryJump(); }
+    const guardHeld = !!(gp.buttons[BTN_GUARD] && gp.buttons[BTN_GUARD].pressed);
+    if (sessionState === 'playing' || !guardHeld) setGuard(guardHeld); // same release-always/raise-only-while-playing gating as the keyboard guard handler
+    padPrevPressed[p1PadIndex] = { attack: nowAttack, jump: nowJump };
+  }
+
   // Called once per frame from inside the main loop (gamepad state has no
   // event model -- it must be polled every tick, per the studio's own
   // named risk for this API), not from an input event handler.
   function pollGamepads() {
-    pollOnePad(p1PadIndex, (side) => handleInput(side),
-      (active) => { if (sessionState === 'playing' || !active) setGuard(active); }); // matches the keyboard guard handler's own gating: release always allowed, raise only while playing
+    pollP1Pad();
     pollOnePad(p2PadIndex, (side) => p2.triggerAttack(side), (active) => p2.setGuard(active));
   }
 
@@ -1750,7 +1921,7 @@
   window.Rig = {
     _test: {
       state: () => {
-        const joints = solveRig(p1.currentPose());
+        const joints = solveRig(p1.currentPose(), p1.posX);
         return {
           idle: p1.idle,
           seqIdx: p1.seqIdx,
@@ -1759,6 +1930,9 @@
           guarding: p1.guarding,
           queuedSide: p1.queuedSide,
           attackSide: p1.attackSide,
+          posX: p1.posX,
+          facing: p1.facing,
+          jumping: p1.jumping,
           pose: p1.currentPose(),
           joints,
           sockets: getSockets(joints),
@@ -1778,7 +1952,10 @@
       // input uses — so a trigger call while sessionState is 'lose' restarts
       // instead of attacking, exactly like a real player's next tap would.
       trigger: (side) => handleInput(side),
+      attack: () => handleInput(p1.facing), // the real attack button's actual call path -- facing-based, not an explicit side
       setGuard: (active) => setGuard(active),
+      move: (dx) => p1.move(dx),
+      jump: () => p1.tryJump(),
       resetSession: () => resetSession(),
       // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
       // path production spawning does, just backdating spawnAt so the enemy
@@ -1850,16 +2027,22 @@
     // whatever pose it was heading toward (currentPose()'s eased t clamps at
     // 1) and holds there under the game-over overlay, rather than continuing
     // to animate or letting enemies keep spawning behind it.
+    if (sessionState === 'playing') applyMoveInput(dt);
     if (sessionState === 'playing') updateSeq(now);
     const pose = currentPose();
-    const joints = solveRig(pose); // solved once per frame; rendering and hit detection both read from this
+    const joints = solveRig(pose, p1.posX); // solved once per frame; rendering and hit detection both read from this
 
-    // Player 2 (Game 5 2-player extension): always updates/renders
-    // regardless of sessionState, since it isn't part of the player-1
-    // enemy/session system -- there's nothing for it to "game over" yet.
-    pollGamepads(); // fixed-index-per-player polling; see the Input section below
+    // Player 2 (Game 5 2-player extension): the state machine keeps
+    // updating every frame regardless of SHOW_P2 -- updateSeq() is what
+    // advances seqIdx/completes an attack sequence at all, so gating it
+    // would leave p2 stuck mid-sequence forever the instant anything
+    // triggers it (a real bug this had for one commit, caught by the
+    // existing rig-2player suite failing, not assumed safe). Only the
+    // joint-solve/render calls below are gated -- SHOW_P2 controls
+    // visibility, not whether player 2 is alive.
+    pollGamepads(); // fixed-index-per-player polling; see the Input section below -- still runs unconditionally since it also drives player 1's pad
     p2.updateSeq(now);
-    const joints2 = solveRig(p2.currentPose(), P2_STAND_OFFSET);
+    const joints2 = SHOW_P2 ? solveRig(p2.currentPose(), P2_STAND_OFFSET) : null;
 
     // Screen shake is pure presentation -- a render-time offset only, never
     // touching the coordinates solveRig()/resolveHits() actually use for hit
@@ -1894,11 +2077,11 @@
     }
     updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
     drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
-    drawShadow(joints2.pelvis.x, 34, 8); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
+    if (SHOW_P2) drawShadow(joints2.pelvis.x, 34, 8); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
     drawEnemies();
     drawParticles();
     renderRig(joints, P1_COLOR);
-    renderRig(joints2, P2_COLOR);
+    if (SHOW_P2) renderRig(joints2, P2_COLOR);
     ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
 
     if (missFlash > 0.01) {

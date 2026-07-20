@@ -339,6 +339,78 @@ function ok(cond, label) {
     'setGuard(true) during the interruptible recovery phase succeeds and clears the sequence');
   await page.evaluate(() => window.Rig._test.setGuard(false));
 
+  console.log('13. Movement, facing, and jump (v0.1.16)');
+  await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
+  let beforeMove = await page.evaluate(() => window.Rig._test.state());
+  ok(beforeMove.posX === 0 && beforeMove.facing === 'R', 'posX starts at 0, facing defaults to R after reset');
+
+  await page.evaluate(() => window.Rig._test.move(40));
+  let afterRight = await page.evaluate(() => window.Rig._test.state());
+  ok(afterRight.posX === 40 && afterRight.facing === 'R', 'move(+40) advances posX and keeps facing R');
+  ok(Math.abs(afterRight.joints.pelvis.x - beforeMove.joints.pelvis.x - 40) < 0.01,
+    'the position change is reflected in solveRig()\'s actual output, not just the internal posX value');
+
+  await page.evaluate(() => window.Rig._test.move(-100));
+  let afterLeft = await page.evaluate(() => window.Rig._test.state());
+  ok(afterLeft.posX === -60 && afterLeft.facing === 'L', 'move(-100) updates posX and flips facing to L');
+
+  // Bounds clamp -- MOVE_MIN/MOVE_MAX are -170/170.
+  await page.evaluate(() => window.Rig._test.move(-1000));
+  let clamped = await page.evaluate(() => window.Rig._test.state());
+  ok(clamped.posX === -170, 'move() clamps posX at the arena bound instead of running off unbounded');
+
+  console.log('14. Attack throws the kick matching current facing, not an explicit side');
+  await page.evaluate(() => { window.Rig._test.move(1000); }); // pin facing R (clamped to +170)
+  await page.evaluate(() => window.Rig._test.attack());
+  await page.waitForTimeout(30);
+  let facingRAttack = await page.evaluate(() => window.Rig._test.state());
+  ok(facingRAttack.attackSide === 'R', 'attack() while facing R throws the R-side kick');
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.Rig._test.move(-1000)); // pin facing L
+  await page.evaluate(() => window.Rig._test.attack());
+  await page.waitForTimeout(30);
+  let facingLAttack = await page.evaluate(() => window.Rig._test.state());
+  ok(facingLAttack.attackSide === 'L', 'attack() while facing L throws the L-side kick');
+  await page.waitForTimeout(500);
+
+  console.log('15. Jump: gating rules and the arc itself');
+  let idleForJump = await page.evaluate(() => window.Rig._test.state());
+  ok(idleForJump.jumping === false, 'jumping starts false');
+  await page.evaluate(() => window.Rig._test.jump());
+  let justJumped = await page.evaluate(() => window.Rig._test.state());
+  ok(justJumped.jumping === true, 'jump() sets jumping true');
+  ok(justJumped.pose.pelvisDY < 0, 'jump pose immediately lifts pelvisDY upward (negative), not still grounded');
+  await page.waitForTimeout(210); // near the peak of the 420ms arc
+  let midJump = await page.evaluate(() => window.Rig._test.state());
+  ok(midJump.pose.pelvisDY < justJumped.pose.pelvisDY - 10,
+    'pelvisDY continues rising through the arc rather than snapping to one offset');
+  await page.waitForTimeout(230); // past the 420ms total duration
+  let landed = await page.evaluate(() => window.Rig._test.state());
+  ok(landed.jumping === false, 'jumping clears itself once the arc completes, no explicit "land" call needed');
+
+  // Mutual exclusivity: can't jump mid-committed-attack, can't jump while
+  // guarding, can't attack or guard while airborne.
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(30); // inside the committed windup/strike phase
+  await page.evaluate(() => window.Rig._test.jump());
+  let jumpDuringAttack = await page.evaluate(() => window.Rig._test.state());
+  ok(jumpDuringAttack.jumping === false, 'jump() is refused during a committed attack phase');
+  await page.waitForTimeout(500);
+
+  await page.evaluate(() => window.Rig._test.setGuard(true));
+  await page.evaluate(() => window.Rig._test.jump());
+  let jumpDuringGuard = await page.evaluate(() => window.Rig._test.state());
+  ok(jumpDuringGuard.jumping === false, 'jump() is refused while guarding');
+  await page.evaluate(() => window.Rig._test.setGuard(false));
+
+  await page.evaluate(() => window.Rig._test.jump());
+  await page.evaluate(() => window.Rig._test.setGuard(true));
+  let guardDuringJump = await page.evaluate(() => window.Rig._test.state());
+  ok(guardDuringJump.guarding === false && guardDuringJump.jumping === true, 'setGuard(true) is refused while airborne');
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  let attackDuringJump = await page.evaluate(() => window.Rig._test.state());
+  ok(attackDuringJump.idle === true && attackDuringJump.jumping === true, 'an attack input is refused while airborne (no aerial attacks in this pass)');
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
   process.exit(fail === 0 ? 0 : 1);
