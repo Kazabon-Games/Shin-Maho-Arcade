@@ -11,6 +11,48 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.15 — 2026-07-20 — Two producer-requested changes: joint smoothing
+                          and a pre-alpha badge.
+
+                          Smoothing: each leg/arm was two separate
+                          drawLimb() shapes (thigh+shin, upperArm+forearm)
+                          meeting at the knee/elbow -- correct silhouette
+                          each, but two overlapping shapes read as "parts
+                          stuck together" rather than one being, even with
+                          a joint gem on top. New drawLimbChain() builds
+                          ONE continuous polygon across all three points
+                          of a limb (hip->knee->foot, shoulder->elbow->
+                          hand), computing a mitered normal at the
+                          interior joint by averaging the two adjacent
+                          segments' unit direction vectors (not their raw
+                          angles, so there's no wraparound edge case to
+                          get wrong). Verified with a cropped close-up at
+                          idle (clean single silhouette) and again at
+                          mid-strike (the sharpest knee bend the rig ever
+                          hits) specifically because a pure miter join can
+                          pinch/self-intersect at a sharp angle -- it
+                          didn't, because every vertex (including the
+                          interior joint) already gets its own round-join
+                          circle regardless.
+
+                          Pre-alpha badge: this rig may become reachable by
+                          direct link before it's ever linked from the
+                          arcade portal, so testers landing on it
+                          shouldn't mistake it for a finished game. First
+                          placement attempt (top-left) directly overlapped
+                          the #hud kill-count text -- caught by screenshot,
+                          not assumed safe from the CSS alone, and moved to
+                          its own row at bottom-left (mirroring
+                          .version-marker's row on the opposite corner) so
+                          #hud/#hint/.version-marker/this badge all have an
+                          independent lane, the same discipline the v0.1.8
+                          pass established for exactly this class of bug.
+
+                          Pure rendering/UI change, verified against the
+                          full existing suite with zero test changes
+                          needed: 42/42 rig-sequence + 20/20 rig-2player +
+                          14/14 rig-audio.
+
   v0.1.14 — 2026-07-20 — Signature-identity pass: v0.1.13 matched the
                           supplied stickman-brawler references well, but
                           was a generic match, not a Rykndu-specific one --
@@ -480,6 +522,23 @@
     color: #e8e8f0; font-family: monospace; font-size: 14px; letter-spacing: 0.04em;
     pointer-events: none; z-index: 40;
   }
+  /* Pre-alpha badge: a real, unfinished build may be reachable by direct
+     link before it's ever linked from the arcade portal -- this exists so
+     a tester landing on it via a shared URL can't mistake it for a
+     finished game. Placed bottom-left, at .version-marker's own row
+     (bottom:26px) but the opposite corner -- NOT top-left, which was
+     tried first and directly overlapped the top-center #hud text (the
+     exact "#debug/#hud/.version-marker sharing one strip" collision the
+     v0.1.8 pass already had to fix once; caught here by screenshot before
+     shipping, not assumed safe from the CSS alone). #hint's own row sits
+     below this one at bottom:10px, so all three bottom overlays now have
+     an independent lane. */
+  #prealpha-badge {
+    position: fixed; bottom: 26px; left: 8px; z-index: 60;
+    font-family: monospace; font-size: 11px; font-weight: bold; letter-spacing: 0.06em;
+    color: #1a1408; background: #ffcb5c; padding: 3px 8px; border-radius: 4px;
+    pointer-events: none;
+  }
   #hud .lives-full { color: #ff4d70; }
   #hud .lives-spent { color: #4a3038; }
   .tapzone { position: fixed; top: 0; bottom: 0; width: 50%; }
@@ -489,7 +548,8 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.14</div>
+<div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.15</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -1024,6 +1084,61 @@
     ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
   }
 
+  // A multi-point tapered limb rendered as ONE continuous silhouette,
+  // replacing two separate drawLimb() calls meeting at a joint (thigh+
+  // shin, upperArm+forearm). Two overlapping shapes with their own
+  // rounded caps read as "parts stuck together" at the knee/elbow, even
+  // with a joint gem layered on top -- a real, valid note (producer
+  // feedback: "smooth out the joints to make it appear like a single
+  // being"). This computes a mitered normal at the interior joint --
+  // averaging the unit directions of the two adjacent segments, not their
+  // raw angles, so it can't misbehave at an angle wraparound -- and builds
+  // one polygon around all three points, so there is no internal seam for
+  // the knee/elbow to show at all. The per-vertex round-join circles
+  // (already drawn at every point, including the interior one) are what
+  // keep this artifact-free even under a sharp bend (a fully-flexed knee
+  // mid-kick) where a pure miter alone can pinch.
+  function drawLimbChain(pts, widths, baseColor, outlineColor) {
+    const n = pts.length;
+    const normal = [];
+    for (let i = 0; i < n; i++) {
+      let dx, dy;
+      if (i === 0) { dx = pts[1].x - pts[0].x; dy = pts[1].y - pts[0].y; }
+      else if (i === n - 1) { dx = pts[i].x - pts[i - 1].x; dy = pts[i].y - pts[i - 1].y; }
+      else {
+        const d1x = pts[i].x - pts[i - 1].x, d1y = pts[i].y - pts[i - 1].y;
+        const d2x = pts[i + 1].x - pts[i].x, d2y = pts[i + 1].y - pts[i].y;
+        const l1 = Math.hypot(d1x, d1y) || 1, l2 = Math.hypot(d2x, d2y) || 1;
+        dx = d1x / l1 + d2x / l2; dy = d1y / l1 + d2y / l2; // average of unit vectors, not angles -- no wraparound case to handle
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      normal.push({ x: -dy / len, y: dx / len });
+    }
+    function pass(padding, color) {
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const w = widths[i] / 2 + padding;
+        const x = pts[i].x + normal[i].x * w, y = pts[i].y + normal[i].y * w;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      for (let i = n - 1; i >= 0; i--) {
+        const w = widths[i] / 2 + padding;
+        ctx.lineTo(pts[i].x - normal[i].x * w, pts[i].y - normal[i].y * w);
+      }
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      for (let i = 0; i < n; i++) {
+        ctx.beginPath();
+        ctx.arc(pts[i].x, pts[i].y, widths[i] / 2 + padding, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+    }
+    pass(2.4, outlineColor);
+    pass(0, baseColor);
+  }
+
   // A distinct rounded "fist"/"foot" mass at a limb's terminal joint --
   // several references make hands/feet read as a clearly rounded blob,
   // not just a line tapering to a point. Drawn after the limb it caps so
@@ -1072,26 +1187,26 @@
   function renderRig(j, color) {
     const c = color || '#e8e8f0';
     const outline = shadeHex(c, -38, -10); // a darker shade of the same hue, not a universal black -- keeps P1/P2 distinguishable by outline too, not just fill
-    // legs first (drawn behind torso) -- chunkier taper (hip/knee wider,
-    // knee/foot narrower) than a classic stick figure, matching the
-    // reference set's thick-limb proportions
-    drawLimb(j.hipL, j.kneeL, 16, 11, c, outline);
-    drawLimb(j.kneeL, j.footL, 11, 8, c, outline);
-    drawLimb(j.hipR, j.kneeR, 16, 11, c, outline);
-    drawLimb(j.kneeR, j.footR, 11, 8, c, outline);
+    // legs first (drawn behind torso) -- each leg is now ONE continuous
+    // chain (hip->knee->foot) instead of two separate tapered shapes
+    // meeting at the knee, so there's no internal seam for the joint gem
+    // to have to hide. Chunkier taper than a classic stick figure, matching
+    // the reference set's thick-limb proportions.
+    drawLimbChain([j.hipL, j.kneeL, j.footL], [16, 11, 8], c, outline);
+    drawLimbChain([j.hipR, j.kneeR, j.footR], [16, 11, 8], c, outline);
     drawTerminal(j.footL, 7, c, outline);
     drawTerminal(j.footR, 7, c, outline);
     drawJointGem(j.hipL, 4.5, c); drawJointGem(j.kneeL, 4, c);
     drawJointGem(j.hipR, 4.5, c); drawJointGem(j.kneeR, 4, c);
 
-    // spine -- solid wedge widening toward the chest/shoulders
+    // spine -- solid wedge widening toward the chest/shoulders (already a
+    // single 2-point segment, no internal joint to smooth)
     drawLimb(j.pelvis, j.chest, 13, 17, c, outline);
 
-    // arms
-    drawLimb(j.shoulderL, j.elbowL, 10, 8, c, outline);
-    drawLimb(j.elbowL, j.handL, 8, 7, c, outline);
-    drawLimb(j.shoulderR, j.elbowR, 10, 8, c, outline);
-    drawLimb(j.elbowR, j.handR, 8, 7, c, outline);
+    // arms -- same one-continuous-chain treatment as the legs
+    // (shoulder->elbow->hand)
+    drawLimbChain([j.shoulderL, j.elbowL, j.handL], [10, 8, 7], c, outline);
+    drawLimbChain([j.shoulderR, j.elbowR, j.handR], [10, 8, 7], c, outline);
     drawTerminal(j.handL, 6.5, c, outline);
     drawTerminal(j.handR, 6.5, c, outline);
     drawJointGem(j.shoulderL, 4.5, c); drawJointGem(j.elbowL, 4, c);
