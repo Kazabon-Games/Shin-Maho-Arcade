@@ -11,6 +11,110 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.29 — 2026-07-20 — Ragdoll secondary motion + rim-lit volume shading
+                          + real HiDPI backing store. A capability-auditor
+                          pass (read the actual rendering code, cross-
+                          referenced infall/iridescentcosmology/sigilchain/
+                          wardfall for already-proven-but-unused Canvas 2D
+                          technique) found three concrete gaps and the
+                          producer separately called the rig's whole look
+                          and feel "poor" and pushed to stop conforming to
+                          this studio's existing conventions "and to reach
+                          the heights of [what] AI and html [can do]" --
+                          this addresses all three in one pass:
+                          (1) DPR/backing-store bug: canvas.width/height
+                          WERE window.innerWidth/innerHeight with no dpr
+                          scaling at all, unlike every other Kazabon game
+                          (infall.html:525, sigilchain.html:733,
+                          wardfall.html:771, iridescentcosmology.html:1911)
+                          -- confirmed live via Playwright at
+                          deviceScaleFactor:2, the canvas stayed at CSS
+                          pixel size, rendering at half the sharpness of
+                          every other shipped title on a real HiDPI
+                          screen. Fixed the real way (a separate W/H pair
+                          in CSS-pixel space that every physics/hit/layout
+                          calculation already reasoned in, canvas.width/
+                          height now dpr-scaled backing-store dims,
+                          ctx.setTransform(dpr,0,0,dpr,0,0)), not a
+                          display-only patch -- every remaining
+                          canvas.width/height read outside resize() itself
+                          (24 call sites: solveRig, makeEnemy, drawShadow,
+                          frame()'s background/HUD-card layout) had to
+                          move to W/H too, since leaving even one on the
+                          raw (now dpr-scaled) property would have desynced
+                          that one calculation from every other -- caught
+                          via a live pelvis-position check at dpr:2 before
+                          this was considered done, not assumed correct
+                          from the diff alone.
+                          (2) Rim-lit volume shading: v0.1.12 deliberately
+                          reverted a gradient pass to flat color for a
+                          "Stick Fight" bold-silhouette identity, and that
+                          flat-edge outline is untouched here -- but the
+                          FILL inside it was measured (the auditor's own
+                          screenshot) as genuinely flat, zero-volume single
+                          tone across every limb/torso/head, the literal
+                          shape of the "poor look and feel" complaint.
+                          drawLimb/drawLimbChain now fill with an
+                          off-center linear gradient across the limb's
+                          cross-section (highlight band offset toward one
+                          edge, not centered -- an actual light-source
+                          cue, not a centered glow); drawTerminal
+                          (hands/feet) and the head use the exact
+                          off-center radial-gradient trick wardfall.html:468
+                          already ships for its orb. The chest gem (Rykndu's
+                          own signature mark) gets a wider soft bloom pass
+                          behind it, answering the auditor's specific
+                          "the signature technique exists but you can't
+                          see it at gameplay size" finding without
+                          changing its actual faceted geometry.
+                          (3) Ragdoll secondary motion: the pose system
+                          (currentPose()/lerpPose()/the whole attack state
+                          machine) is UNCHANGED and still decides what
+                          pose the rig is heading toward -- solveRig()
+                          itself is untouched too, so hit detection,
+                          sockets, ring-outs, and every existing test still
+                          read the exact same FK joints they always did,
+                          preserving kick_strike's own hand-solved
+                          guarantee that a kick connects for the entire
+                          70ms strike window (verified: all pre-existing
+                          test files still pass unmodified, 260+
+                          assertions). What's new is a render-only layer,
+                          stepRenderJoints() inside createRigController,
+                          that takes that same FK target and chases it with
+                          a real damped spring (semi-implicit Euler,
+                          stiffness 260/damping 30, just under critically
+                          damped) per dynamic joint (chest, head, both
+                          knees/feet, both elbows/hands) instead of
+                          teleporting straight to it every frame, with a
+                          bone-length distance-constraint correction pass
+                          so a fast target change (windup snapping into
+                          strike, a knockback yanking the body sideways)
+                          can't visibly stretch a limb. Root joints
+                          (pelvis/hipL/hipR) are deliberately NOT
+                          ragdolled -- pelvis already has its own real
+                          physics (posX/velX accel+friction, integrated
+                          jump), and shoulders hang off the ACTUAL
+                          spring-settled chest position, not its target,
+                          so arms never visibly float away from a torso
+                          still catching up. applyKnockback() now also
+                          injects a real velocity impulse into the
+                          ragdoll's chest/head (head whips further than
+                          the torso) -- called strictly AFTER
+                          resolveDuelHit() already used the unragdolled
+                          joints to decide a hit landed, so this carries
+                          zero combat-timing risk, the same "pure
+                          presentation, never touching the coordinates
+                          resolveHits() actually uses" guarantee this
+                          file's own screen-shake already holds itself to.
+                          reset() clears the ragdoll so a round reset
+                          doesn't carry stale spring momentum into a fresh
+                          spawn. All pre-existing test files pass
+                          unmodified (a pre-existing, timing-related
+                          rig-side-profile.js flake was confirmed present
+                          identically on the unmodified v0.1.28 baseline
+                          via repeated A/B runs -- not a regression from
+                          this pass).
+
   v0.1.28 — 2026-07-20 — Side-profile rig redesign: producer feedback
                           named the actual root cause under the walk
                           cycle's own gap -- the rig was drawn as a
@@ -1092,7 +1196,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.28</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.29</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1130,17 +1234,35 @@
   // existing desktop-width test and screenshot in this file's history).
   let renderScale = 1;
   const RENDER_SCALE_REFERENCE_WIDTH = 700;
+  // v0.1.29 -- W/H are the CSS-pixel-space dimensions every piece of game
+  // logic (physics, hit detection, layout) actually reasons in; canvas.width/
+  // height are the (larger, on HiDPI) backing-store dimensions. Before this
+  // fix, canvas.width/height WERE window.innerWidth/innerHeight -- fine on a
+  // dpr:1 display, but on any real HiDPI screen (the majority of modern
+  // laptops/phones) the backing store should be innerWidth*dpr for a sharp
+  // image, and every other Kazabon game already does this
+  // (infall.html:525, sigilchain.html:733, wardfall.html:771,
+  // iridescentcosmology.html:1911) -- this file was the one gap. Game logic
+  // below still reads W/H exactly where it used to read canvas.width/height;
+  // only resize() itself and the ctx.setTransform dpr scale are new.
+  let W = 0, H = 0, dpr = 1;
   function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    renderScale = Math.min(1, canvas.width / RENDER_SCALE_REFERENCE_WIDTH);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    renderScale = Math.min(1, W / RENDER_SCALE_REFERENCE_WIDTH);
     // Subtle vertical gradient instead of a flat fill (v0.1.8): the large
     // empty canvas above/below the rig (roughly half the viewport at a
     // typical phone aspect ratio) read as literally nothing against a flat
     // single color, compounding the "generic prototype" feel. Cached here
     // rather than rebuilt every frame -- a gradient only needs to change
     // when the canvas itself resizes.
-    bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGradient = ctx.createLinearGradient(0, 0, 0, H);
     bgGradient.addColorStop(0, '#0d0e15');
     bgGradient.addColorStop(0.78, '#12141c');
     bgGradient.addColorStop(1, '#181a24');
@@ -1466,6 +1588,7 @@
     function applyKnockback(vx, blocked) {
       velX = vx;
       knockbackTimer = KNOCKBACK_LOCK_MS;
+      applyRagdollImpulse(vx);
       if (!blocked) {
         // A clean hit overrides whatever the defender was doing, the same
         // way a fresh attack already interrupts a recovery tail -- guard
@@ -1627,6 +1750,112 @@
     }
 
     function markHit() { hasHitThisSwing = true; } // called by resolveDuelHit() once this swing has landed, so the same strike can't score twice while the defender lingers in range
+
+    // ---- Ragdoll (v0.1.29) -- a render-only secondary-motion layer ----
+    // Everything above (movement, jump, knockback, guard, the whole attack
+    // state machine) still decides WHAT pose the rig is heading toward, and
+    // solveRig() still solves that pose's exact FK joint positions the same
+    // way it always has -- hit detection, sockets, and every existing test
+    // keep reading THAT, completely unchanged, because kick_strike's own
+    // IK was hand-solved to guarantee a hit connects for the entire 70ms
+    // strike window at an exact reach, and a lagging joint desyncing the
+    // hit-checked foot from an even slightly-different position is exactly
+    // the class of bug this file's own solveRig() comment already warns
+    // against. So this layer never touches combat: it takes the SAME FK
+    // target solveRig() already produced and, for rendering only, chases it
+    // with a real damped spring instead of teleporting straight to it --
+    // the same "pure presentation, never touching the coordinates
+    // solveRig()/resolveHits() actually use" guarantee this file's shake/
+    // particle systems already make (see frame()'s own comment on shake),
+    // just applied per-joint instead of as one screen offset.
+    //
+    // This is what a static pose-lerp rig structurally can't do: a fast
+    // target change (windup snapping into strike, a knockback yanking the
+    // whole body sideways) now arrives at the joint with real momentum,
+    // overshoots slightly, and settles -- instead of instantly matching
+    // whatever curve currentPose() happens to be evaluating this frame.
+    // Root joints (pelvis/hipL/hipR) are deliberately NOT ragdolled --
+    // pelvis already has its own real physics (posX/velX accel+friction,
+    // pelvisDY integrated jump), so spring-lagging it too would just fight
+    // that system, not add anything. shoulderL/shoulderR hang off the
+    // ACTUAL (spring-settled) chest, not the target chest -- otherwise the
+    // arms would visibly float away from a torso still catching up.
+    const RAGDOLL_KEYS = ['chest', 'head', 'kneeL', 'footL', 'kneeR', 'footR', 'elbowL', 'handL', 'elbowR', 'handR'];
+    const RAGDOLL_STIFFNESS = 260; // rad^2/s^2-ish pull toward the FK target
+    const RAGDOLL_DAMPING = 30;    // just under critically-damped (2*sqrt(260)=32.2) -- settles fast with only a slight natural overshoot, not a floaty oscillation
+    let ragdoll = null; // lazily seeded to the first target so there's no pop-in from (0,0)
+    function seedRagdoll(target) {
+      ragdoll = {};
+      for (const k of RAGDOLL_KEYS) ragdoll[k] = { x: target[k].x, y: target[k].y, vx: 0, vy: 0 };
+    }
+    function springToward(j, tx, ty, dt) {
+      const ax = (tx - j.x) * RAGDOLL_STIFFNESS - j.vx * RAGDOLL_DAMPING;
+      const ay = (ty - j.y) * RAGDOLL_STIFFNESS - j.vy * RAGDOLL_DAMPING;
+      j.vx += ax * dt; j.vy += ay * dt;
+      j.x += j.vx * dt; j.y += j.vy * dt;
+    }
+    function constrainTo(j, anchorX, anchorY, len) {
+      // Position-only correction after the spring step, same "relax back
+      // onto the bone-length circle" idea a real Verlet chain uses --
+      // keeps a fast-moving target from visibly stretching the limb past
+      // its real length while the spring is still catching up, without
+      // touching the joint's own velocity (so next frame's spring
+      // integration isn't disturbed by this frame's correction).
+      const dx = j.x - anchorX, dy = j.y - anchorY;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const diff = (dist - len) / dist;
+      j.x -= dx * diff; j.y -= dy * diff;
+    }
+    // Called from applyKnockback() below -- a landed hit (blocked or not)
+    // now kicks the visual ragdoll with a real velocity impulse scaled off
+    // the same knockback speed already computed, instead of relying only
+    // on the flinch pose-swap to sell the reaction. This runs strictly
+    // AFTER resolveDuelHit() has already used the real (unragdolled) joints
+    // to decide the hit landed, so it carries zero combat-timing risk --
+    // it only shapes what happens to the rig visually afterward.
+    const RAGDOLL_IMPULSE_SCALE = 0.5;
+    function applyRagdollImpulse(vx) {
+      if (!ragdoll) return;
+      const kick = vx * RAGDOLL_IMPULSE_SCALE * renderScale;
+      ragdoll.chest.vx += kick;
+      ragdoll.head.vx += kick * 1.35; // head whips further than the torso on a real hit
+    }
+    function stepRenderJoints(target, dt) {
+      if (!ragdoll) seedRagdoll(target);
+      const s = renderScale;
+      springToward(ragdoll.chest, target.chest.x, target.chest.y, dt);
+      constrainTo(ragdoll.chest, target.pelvis.x, target.pelvis.y, LEN.spine * s);
+      const shoulderL = { x: ragdoll.chest.x - LEN.shoulderW * 0.5 * s, y: ragdoll.chest.y + 6 * s };
+      const shoulderR = { x: ragdoll.chest.x + LEN.shoulderW * 0.5 * s, y: ragdoll.chest.y + 6 * s };
+      springToward(ragdoll.head, target.head.x, target.head.y, dt);
+      constrainTo(ragdoll.head, ragdoll.chest.x, ragdoll.chest.y, (LEN.neck + LEN.headR) * s);
+      springToward(ragdoll.kneeL, target.kneeL.x, target.kneeL.y, dt);
+      constrainTo(ragdoll.kneeL, target.hipL.x, target.hipL.y, LEN.thigh * s);
+      springToward(ragdoll.footL, target.footL.x, target.footL.y, dt);
+      constrainTo(ragdoll.footL, ragdoll.kneeL.x, ragdoll.kneeL.y, LEN.shin * s);
+      springToward(ragdoll.kneeR, target.kneeR.x, target.kneeR.y, dt);
+      constrainTo(ragdoll.kneeR, target.hipR.x, target.hipR.y, LEN.thigh * s);
+      springToward(ragdoll.footR, target.footR.x, target.footR.y, dt);
+      constrainTo(ragdoll.footR, ragdoll.kneeR.x, ragdoll.kneeR.y, LEN.shin * s);
+      springToward(ragdoll.elbowL, target.elbowL.x, target.elbowL.y, dt);
+      constrainTo(ragdoll.elbowL, shoulderL.x, shoulderL.y, LEN.upperArm * s);
+      springToward(ragdoll.handL, target.handL.x, target.handL.y, dt);
+      constrainTo(ragdoll.handL, ragdoll.elbowL.x, ragdoll.elbowL.y, LEN.forearm * s);
+      springToward(ragdoll.elbowR, target.elbowR.x, target.elbowR.y, dt);
+      constrainTo(ragdoll.elbowR, shoulderR.x, shoulderR.y, LEN.upperArm * s);
+      springToward(ragdoll.handR, target.handR.x, target.handR.y, dt);
+      constrainTo(ragdoll.handR, ragdoll.elbowR.x, ragdoll.elbowR.y, LEN.forearm * s);
+      return {
+        pelvis: target.pelvis, hipL: target.hipL, hipR: target.hipR,
+        chest: { x: ragdoll.chest.x, y: ragdoll.chest.y },
+        head: { x: ragdoll.head.x, y: ragdoll.head.y },
+        kneeL: { x: ragdoll.kneeL.x, y: ragdoll.kneeL.y }, footL: { x: ragdoll.footL.x, y: ragdoll.footL.y },
+        kneeR: { x: ragdoll.kneeR.x, y: ragdoll.kneeR.y }, footR: { x: ragdoll.footR.x, y: ragdoll.footR.y },
+        shoulderL, shoulderR,
+        elbowL: { x: ragdoll.elbowL.x, y: ragdoll.elbowL.y }, handL: { x: ragdoll.handL.x, y: ragdoll.handL.y },
+        elbowR: { x: ragdoll.elbowR.x, y: ragdoll.elbowR.y }, handR: { x: ragdoll.handR.x, y: ragdoll.handR.y }
+      };
+    }
 
     function teleportTo(x) { posX = x; velX = 0; } // test/round-reset convenience -- bypasses movement physics for deterministic positioning, the same convenience window.Rig._test.spawnEnemy() already gets for enemy placement
 
@@ -1807,12 +2036,13 @@
       hasHitThisSwing = false; knockbackTimer = 0; flinchStart = -Infinity;
       guardMeter = GUARD_METER_MAX; guardRaisedAt = -Infinity;
       walkPhase = 0;
+      ragdoll = null; // a round reset shouldn't carry stale spring momentum from the last exchange into a fresh spawn
     }
 
     return {
       triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
       setMoveIntent, updatePhysics, triggerFlinch, markHit, applyKnockback, teleportTo,
-      damageGuardMeter, isInParryWindow, cancelIntoBufferedAttack,
+      damageGuardMeter, isInParryWindow, cancelIntoBufferedAttack, stepRenderJoints,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -1903,8 +2133,8 @@
     // from the real hit-checked one -- the identical reasoning applies to
     // a draw-only mirror).
     const s = renderScale;
-    const groundY = canvas.height * 0.78;
-    const cx = canvas.width / 2 + (standOffset || 0) * s + pose.pelvisDX * s;
+    const groundY = H * 0.78;
+    const cx = W / 2 + (standOffset || 0) * s + pose.pelvisDX * s;
     const pelvis = { x: cx, y: groundY - (LEN.thigh + LEN.shin) * s + pose.pelvisDY * s };
 
     const hipL = { x: pelvis.x - LEN.hipW * 0.4 * s, y: pelvis.y };
@@ -1994,16 +2224,31 @@
     return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
   }
 
-  // Tapered, flat-color limb segment with a dark outline stroke -- the
-  // "Stick Fight"/mobile-stickman-brawler visual language (bold flat
-  // silhouette, high contrast, crisp edge), per the producer's own
-  // reference set for this rig, replacing the v0.1.12 gradient-shaded
-  // look that direct feedback found too subtle/generic. widthStart/
-  // widthEnd taper the segment (wider at the proximal joint, narrower
-  // distal). A single flat fill instead of a gradient is a deliberate
-  // style choice here, not a downgrade -- every reference image is flat
-  // color, not shaded volume; the read comes from bold proportions and a
-  // crisp silhouette edge, not from simulated lighting.
+  // v0.1.29 -- rim-lit volume shading. v0.1.12 tried a gradient pass and
+  // reverted it to flat color for a "Stick Fight" bold-silhouette identity;
+  // that flat read is a real, deliberate choice and this doesn't undo it --
+  // the outline is still a flat, dark, crisp edge, still what gives the
+  // "sticker popped off the background" pop. What changes is the FILL
+  // between that edge: a single flat tone reads as a sticker precisely
+  // because nothing about it says "this is a solid mass," which is the
+  // capability-auditor's own finding (limbs/torso/head measured as flat
+  // single-tone shapes with zero volume cue) and the producer's own "look
+  // and feel is poor" call. This is the same trick wardfall.html:468
+  // already ships for its orb -- a light source deliberately OFFSET from
+  // center/edge, not a centered highlight -- applied across a limb's
+  // cross-section instead of a circle's radius, so the tube itself reads
+  // as lit from one side rather than flat-painted.
+  function limbGradient(cx, cy, nx, ny, w, baseColor) {
+    const g = ctx.createLinearGradient(cx - nx * w / 2, cy - ny * w / 2, cx + nx * w / 2, cy + ny * w / 2);
+    g.addColorStop(0, shadeHex(baseColor, 4, 0));
+    g.addColorStop(0.3, shadeHex(baseColor, 26, 12)); // highlight band offset toward one edge, not centered -- the actual "offset light source" cue
+    g.addColorStop(1, shadeHex(baseColor, -32, -12)); // shadow side
+    return g;
+  }
+
+  // Tapered limb segment with a dark outline stroke and a rim-lit gradient
+  // fill (see limbGradient()'s own comment). widthStart/widthEnd taper the
+  // segment (wider at the proximal joint, narrower distal).
   function drawLimb(p1, p2, widthStart, widthEnd, baseColor, outlineColor) {
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
     const nx = Math.cos(angle + Math.PI / 2), ny = Math.sin(angle + Math.PI / 2);
@@ -2028,18 +2273,20 @@
     ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2 + o, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2 + o, 0, Math.PI * 2); ctx.fill();
 
+    const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+    const grad = limbGradient(midX, midY, nx, ny, Math.max(widthStart, widthEnd), baseColor);
     ctx.beginPath();
     ctx.moveTo(p1a.x, p1a.y);
     ctx.lineTo(p2a.x, p2a.y);
     ctx.lineTo(p2b.x, p2b.y);
     ctx.lineTo(p1b.x, p1b.y);
     ctx.closePath();
-    ctx.fillStyle = baseColor;
+    ctx.fillStyle = grad;
     ctx.fill();
     // Rounded end caps so adjacent segments blend at the joint instead of
     // a hard seam.
-    ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
-    ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
+    ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
+    ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
   }
 
   // A multi-point tapered limb rendered as ONE continuous silhouette,
@@ -2094,16 +2341,30 @@
       }
     }
     pass(2.4, outlineColor);
-    pass(0, baseColor);
+    // Gradient anchored at the proximal joint (hip/shoulder), using that
+    // joint's own normal as the light axis -- see limbGradient()'s comment.
+    // A single world-space gradient rather than one per segment: cheap, and
+    // extends its end-stop colors past the two defined points automatically
+    // (canvas gradients don't hard-stop), so the knee/foot segments still
+    // shade sensibly even as the chain bends mid-kick, just without
+    // re-deriving their own local lighting angle.
+    const maxW = Math.max(...widths);
+    pass(0, limbGradient(pts[0].x, pts[0].y, normal[0].x, normal[0].y, maxW, baseColor));
   }
 
   // A distinct rounded "fist"/"foot" mass at a limb's terminal joint --
   // several references make hands/feet read as a clearly rounded blob,
   // not just a line tapering to a point. Drawn after the limb it caps so
-  // it sits on top, same outline-behind-fill technique as drawLimb.
+  // it sits on top, same outline-behind-fill technique as drawLimb. Fill
+  // is an off-center radial gradient (v0.1.29, the exact wardfall.html:468
+  // trick -- light source offset up-left of center, not centered) instead
+  // of a flat disc, so it reads as a rounded mass instead of a sticker dot.
   function drawTerminal(p, radius, baseColor, outlineColor) {
     ctx.beginPath(); ctx.arc(p.x, p.y, radius + 2.4, 0, Math.PI * 2); ctx.fillStyle = outlineColor; ctx.fill();
-    ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
+    const grad = ctx.createRadialGradient(p.x - radius * 0.3, p.y - radius * 0.35, radius * 0.1, p.x, p.y, radius);
+    grad.addColorStop(0, shadeHex(baseColor, 24, 10));
+    grad.addColorStop(1, shadeHex(baseColor, -18, -6));
+    ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
   }
 
   // Rykndu's own signature accent, distinct from the generic-brawler
@@ -2181,13 +2442,29 @@
     // specific mark rather than a repeated joint detail (the studio's
     // "Grimoire vocabulary" already treats a core/rite/rune as the
     // recognizable emblem of a character or system elsewhere -- this is
-    // that idea applied to the rig itself)
+    // that idea applied to the rig itself). v0.1.29: a wider soft glow
+    // pass sits behind it first -- the auditor's own finding was that this
+    // signature mark is barely legible at actual gameplay size (a few px
+    // across in a full-frame screenshot); a bigger bloom radius behind the
+    // gem itself (not a bigger gem) makes the mark readable without
+    // changing its actual faceted geometry.
+    ctx.save();
+    ctx.shadowBlur = 22 * s;
+    ctx.shadowColor = c;
+    ctx.beginPath(); ctx.arc(j.chest.x, j.chest.y, 3 * s, 0, Math.PI * 2);
+    ctx.fillStyle = c; ctx.fill();
+    ctx.restore();
     drawJointGem(j.chest, 6.5 * s, c);
 
-    // head -- flat fill matching the flat-silhouette style, same outline
-    // treatment as the limbs so it reads as one consistent character
+    // head -- rim-lit radial fill (v0.1.29), same trick as drawTerminal's
+    // hands/feet, same flat dark outline as the limbs so it still reads as
+    // one consistent character rather than a mismatched shading style.
     ctx.beginPath(); ctx.arc(j.head.x, j.head.y, (LEN.headR + 2.4) * s, 0, Math.PI * 2); ctx.fillStyle = outline; ctx.fill();
-    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR * s, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+    const headR = LEN.headR * s;
+    const headGrad = ctx.createRadialGradient(j.head.x - headR * 0.3, j.head.y - headR * 0.35, headR * 0.1, j.head.x, j.head.y, headR);
+    headGrad.addColorStop(0, shadeHex(c, 22, 8));
+    headGrad.addColorStop(1, shadeHex(c, -20, -8));
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, headR, 0, Math.PI * 2); ctx.fillStyle = headGrad; ctx.fill();
   }
 
   // ---- Guard meter (v0.1.24) ----
@@ -2487,10 +2764,10 @@
   }
 
   function makeEnemy(spawnAt, side) {
-    const pelvisX = canvas.width / 2 + p1.posX * renderScale; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here. *renderScale matches solveRig()'s own cx formula exactly -- without it, this drifts from the player's actual rendered/hit-tested position the instant renderScale != 1 (any viewport narrower than RENDER_SCALE_REFERENCE_WIDTH), sending enemies toward a stale contact point
-    const spawnX = side === 'R' ? canvas.width + 50 : -50;
+    const pelvisX = W / 2 + p1.posX * renderScale; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here. *renderScale matches solveRig()'s own cx formula exactly -- without it, this drifts from the player's actual rendered/hit-tested position the instant renderScale != 1 (any viewport narrower than RENDER_SCALE_REFERENCE_WIDTH), sending enemies toward a stale contact point
+    const spawnX = side === 'R' ? W + 50 : -50;
     const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
-    return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true,
+    return { side, spawnAt, spawnX, contactX, x: spawnX, y: H * 0.78 - 30, alive: true,
       t: 0, dying: false, deathT: 0,
       pulsesFired: [false, false, false] }; // tracks which PULSE_THRESHOLDS stages this enemy has already fired
   }
@@ -2775,7 +3052,7 @@
   // the ground line rather than standing on it. Kept deliberately simple --
   // flat ellipses anchored to the ground line, not real projected geometry.
   function drawShadow(x, rx, ry) {
-    const groundY = canvas.height * 0.78;
+    const groundY = H * 0.78;
     ctx.beginPath();
     ctx.ellipse(x, groundY + 4, rx, ry, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -3247,13 +3524,13 @@
     }
 
     ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
 
     ctx.strokeStyle = '#2a2d3a';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, canvas.height * 0.78 + 2);
-    ctx.lineTo(canvas.width, canvas.height * 0.78 + 2);
+    ctx.moveTo(0, H * 0.78 + 2);
+    ctx.lineTo(W, H * 0.78 + 2);
     ctx.stroke();
 
     // resolveHits() runs BEFORE updateEnemies() -- a hit gets first claim on
@@ -3274,10 +3551,18 @@
     if (SHOW_P2) drawShadow(joints2.pelvis.x, 34 * renderScale, 8 * renderScale); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
     drawEnemies();
     drawParticles();
-    renderRig(joints, P1_COLOR);
-    if (SHOW_P2) renderRig(joints2, P2_COLOR);
-    drawGuardMeter(joints, p1.guardMeter, P1_COLOR);
-    if (SHOW_P2) drawGuardMeter(joints2, p2.guardMeter, P2_COLOR);
+    // Render-only ragdoll overlay (v0.1.29) -- takes the SAME joints hit
+    // detection/ring-outs/tests already used above this frame and, purely
+    // for what gets painted, springs the limbs/torso/head toward them
+    // instead of drawing them exactly. See stepRenderJoints()'s own comment
+    // for why this never touches the `joints`/`joints2` combat already
+    // resolved with.
+    const renderJoints1 = p1.stepRenderJoints(joints, dt);
+    const renderJoints2 = p2.stepRenderJoints(joints2, dt);
+    renderRig(renderJoints1, P1_COLOR);
+    if (SHOW_P2) renderRig(renderJoints2, P2_COLOR);
+    drawGuardMeter(renderJoints1, p1.guardMeter, P1_COLOR);
+    if (SHOW_P2) drawGuardMeter(renderJoints2, p2.guardMeter, P2_COLOR);
     ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
 
     if (missFlash > 0.01) {
@@ -3287,7 +3572,7 @@
       // most needed to still read clearly. Lower peak, faster decay: still a
       // clear hit-pulse, no longer a wash.
       ctx.fillStyle = 'rgba(255,77,112,' + (missFlash * (reducedMotion ? 0.12 : 0.22)).toFixed(3) + ')';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
     }
     shakeMag = Math.max(0, shakeMag - dt * 90);
     missFlash = Math.max(0, missFlash - dt * 7);
@@ -3295,14 +3580,14 @@
     if (sessionState === 'lose') {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
       // Backing card for the text block -- v0.1.8 fix: the retry hint used to
       // be a bare fillText directly over the frozen rig, and at this
       // viewport size it rendered right through the character's head. A card
       // guarantees legibility regardless of what's underneath it.
-      const cardW = Math.min(280, canvas.width - 40), cardH = 120;
-      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 70;
+      const cardW = Math.min(280, W - 40), cardH = 120;
+      const cardX = W / 2 - cardW / 2, cardY = H / 2 - 70;
       ctx.fillStyle = 'rgba(18,20,28,0.92)';
       ctx.strokeStyle = 'rgba(255,77,112,0.4)';
       ctx.lineWidth = 1;
@@ -3314,13 +3599,13 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ff4d70';
       ctx.font = 'bold 32px monospace';
-      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
       ctx.fillStyle = '#e8e8f0';
       ctx.font = '16px monospace';
-      ctx.fillText('Kills: ' + killCount, canvas.width / 2, canvas.height / 2 + 15);
+      ctx.fillText('Kills: ' + killCount, W / 2, H / 2 + 15);
       ctx.fillStyle = '#888';
       ctx.font = '13px monospace';
-      ctx.fillText('tap or press a key to try again', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.fillText('tap or press a key to try again', W / 2, H / 2 + 45);
       ctx.restore();
     }
 
@@ -3333,11 +3618,11 @@
     if (matchOver) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
       const winnerColor = matchWinner === 'P1' ? P1_COLOR : P2_COLOR;
-      const cardW = Math.min(300, canvas.width - 40), cardH = 130;
-      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 75;
+      const cardW = Math.min(300, W - 40), cardH = 130;
+      const cardX = W / 2 - cardW / 2, cardY = H / 2 - 75;
       ctx.fillStyle = 'rgba(18,20,28,0.92)';
       ctx.strokeStyle = winnerColor;
       ctx.lineWidth = 1;
@@ -3349,13 +3634,13 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = winnerColor;
       ctx.font = 'bold 30px monospace';
-      ctx.fillText(matchWinner + ' WINS THE MATCH', canvas.width / 2, canvas.height / 2 - 25);
+      ctx.fillText(matchWinner + ' WINS THE MATCH', W / 2, H / 2 - 25);
       ctx.fillStyle = '#e8e8f0';
       ctx.font = '16px monospace';
-      ctx.fillText(p1Score + ' — ' + p2Score, canvas.width / 2, canvas.height / 2 + 10);
+      ctx.fillText(p1Score + ' — ' + p2Score, W / 2, H / 2 + 10);
       ctx.fillStyle = '#888';
       ctx.font = '13px monospace';
-      ctx.fillText('either player: attack to start a rematch', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.fillText('either player: attack to start a rematch', W / 2, H / 2 + 45);
       ctx.restore();
     }
 

@@ -159,6 +159,36 @@ testing until caught live and fixed. Real enough a future ground-shadow or
 dust-FX attachment could reuse it too, not a hit-detection-only special
 case.
 
+## Render-only ragdoll layer (added v0.1.29 — does not change anything above)
+
+Every joint table, angle convention, and mirroring rule above still describes
+exactly what `solveRig()` computes and what hit detection/sockets/tests read —
+that function and its output are unchanged by this section. What's new is a
+second, later step that only rendering sees: `stepRenderJoints(target, dt)`
+(a method on each rig controller, alongside `currentPose`/`updatePhysics`)
+takes `solveRig()`'s own output as a moving *target* and, for `chest`, `head`,
+both knees/feet, and both elbows/hands, chases it with a damped spring
+(semi-implicit Euler, stiffness 260/damping 30) plus a bone-length distance
+constraint, instead of teleporting straight to it. `pelvis`/`hipL`/`hipR` are
+passed through untouched (pelvis already has its own real physics); shoulders
+are recomputed each step from the spring-settled chest position, not the
+target chest, so the arms never visually detach from a torso still catching
+up. `frame()` computes this once per rig per frame, immediately before
+`renderRig()`, from the exact same `joints`/`joints2` that combat resolution
+already used earlier that frame — never a second, independent computation of
+hit-relevant position, the same "one solve, everyone reads it" principle this
+doc's own Mirroring section already holds `solveRig()` to, just drawn one step
+later. `applyKnockback()` also injects a real velocity impulse into the
+struck rig's ragdoll chest/head, strictly after the hit itself was already
+decided against the unragdolled joints. See the file's own v0.1.29 changelog
+entry for why this is scoped as render-only: `kick_strike`'s hand-solved reach
+guarantees a hit connects for the entire 70ms strike window, and a spring-
+lagged foot feeding back into hit detection would risk quietly undermining
+that guarantee — exactly the failure mode this doc already warns a draw-only
+transform could cause, just approached from the other direction here (keeping
+hit detection pure and letting only the *cosmetic* copy lag, rather than
+letting anything lag that combat still reads).
+
 ## What this schema does not yet have (tracked separately, not gaps in this doc)
 
 This list is now stale in the way it originally described (an explicit
