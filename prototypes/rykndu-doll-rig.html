@@ -516,140 +516,205 @@
     ];
   }
 
-  // ---- Animation state ----
-  let seq = null;
-  let seqIdx = 0;
-  let seqStart = 0;
-  let fromPose = POSES.idle;
-  let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
-  let attackSide = null; // which side the currently-playing (or most recent) attack was on
+  // ---- Rig controller factory (Game 5 2-player extension) ----
+  // Extracted from what was a single set of module-level `seq`/`seqIdx`/...
+  // variables (through v0.1.10) into a factory so a second player's rig can
+  // exist as a genuinely separate state object -- not two references to
+  // one shared pose array, the exact "duplicated logic silently drifts
+  // apart" trap this file has already hit twice before (mockEnemy.hitAt's
+  // duplicated duration constant; mirror()'s existence at all). Writing a
+  // second, hand-copied version of this state machine for player 2 would
+  // just relocate that same trap one level up, so this is a pure refactor
+  // instead: verified against the full existing test suite (unchanged
+  // behavior for player 1) before player 2 is ever instantiated from it.
+  //
+  // `opts.idleOverlay(basePose)` lets a caller blend something on top of
+  // the idle-breathing pose (player 1 uses this for the miss-flinch
+  // reaction) without duplicating the state machine around it. `opts.onAttackStart(side)`
+  // lets a caller hook the windup SFX trigger. Both optional -- player 2
+  // passes neither, since it has no enemies/misses/audio of its own yet.
+  function createRigController(opts) {
+    opts = opts || {};
+    let seq = null;
+    let seqIdx = 0;
+    let seqStart = 0;
+    let fromPose = POSES.idle;
+    let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
+    let attackSide = null; // which side the currently-playing (or most recent) attack was on
+    let guarding = false;
+
+    // Convention: the LAST phase of any attackSequence is recovery —
+    // cosmetic follow-through with no remaining gameplay function (the hit
+    // has already resolved during strike). Every phase before that is
+    // committed: once it starts, it plays out in full. This distinction is
+    // load-bearing for the double-boss threat-reading design goal — a
+    // player must be able to answer a second threat without waiting out
+    // dead recovery time from the first.
+    function isCommittedPhase(idx) {
+      return idx < seq.length - 1;
+    }
+
+    // ---- Guard (Game 5 consolidation §5) ----
+    // A held state, not a timed sequence like attacks -- guarding is true
+    // for exactly as long as the guard input is held, no duration/timer of
+    // its own yet (that's real combat tuning, deferred). Can't be raised
+    // mid-committed-attack (the same rule attacks already use against each
+    // other) so a guard input can't cut a committed windup/strike short;
+    // it CAN cut off an interruptible recovery tail, the same way a fresh
+    // attack already does.
+    function setGuard(active) {
+      if (active) {
+        if (seq && isCommittedPhase(seqIdx)) return;
+        guarding = true;
+        seq = null;
+        queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
+      } else {
+        guarding = false;
+      }
+    }
+
+    function startAttack(side) {
+      // Capture the outgoing pose BEFORE seq/seqIdx/seqStart change —
+      // otherwise currentPose() below takes its mid-sequence branch against
+      // the new seq (t=0), returning fromPose unchanged instead of the
+      // actual current pose.
+      fromPose = currentPose();
+      seq = attackSequence(side);
+      seqIdx = 0;
+      seqStart = performance.now();
+      attackSide = side;
+      if (opts.onAttackStart) opts.onAttackStart(side);
+    }
+
+    function triggerAttack(side) {
+      if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
+      if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
+      // Either idle, or sitting in the (interruptible) recovery phase —
+      // start immediately. startAttack() captures currentPose() as
+      // fromPose, so an interrupted recovery blends smoothly into the new
+      // windup instead of snapping.
+      startAttack(side);
+    }
+
+    function currentPose() {
+      if (guarding) return POSES.guard; // takes priority over idle/overlay -- setGuard() already refuses to set this mid-committed-attack
+      if (!seq) {
+        // subtle idle breathing so the rig isn't static between attacks
+        // (amplitude scaled with the 0.8x rig resize, same as LEN)
+        const bob = Math.sin(performance.now() / 450) * 2.4;
+        const sway = Math.sin(performance.now() / 900) * 0.04;
+        const base = Object.assign({}, POSES.idle, {
+          pelvisDY: POSES.idle.pelvisDY + bob,
+          shoulderL: POSES.idle.shoulderL + sway,
+          shoulderR: POSES.idle.shoulderR - sway
+        });
+        return opts.idleOverlay ? opts.idleOverlay(base) : base;
+      }
+      const step = seq[seqIdx];
+      const t = Math.min(1, (performance.now() - seqStart) / step.dur);
+      const eased = step.ease(t);
+      const target = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+      return lerpPose(fromPose, target, eased);
+    }
+
+    function updateSeq(now) {
+      if (!seq) return;
+      const step = seq[seqIdx];
+      if (now - seqStart >= step.dur) {
+        // Capture the pose this phase was heading toward BEFORE advancing,
+        // so the next phase blends from the correct starting point.
+        const completed = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+        seqIdx++;
+        seqStart = now;
+        if (seqIdx >= seq.length) {
+          // Sequence is over — bail out before touching seq[seqIdx], which
+          // is now out of bounds. This check has to come before any read of
+          // the next step, not after.
+          seq = null;
+          if (queuedSide) {
+            const s = queuedSide;
+            queuedSide = null;
+            startAttack(s);
+          }
+          return;
+        }
+        fromPose = completed;
+        // The committed phases (windup+strike) just finished, so we're
+        // about to enter recovery — which has no gameplay function left. If
+        // an input was already buffered during windup/strike, don't make
+        // the player wait out the full recovery: fire it now instead.
+        if (!isCommittedPhase(seqIdx) && queuedSide) {
+          const s = queuedSide;
+          queuedSide = null;
+          startAttack(s);
+        }
+      }
+    }
+
+    function reset() {
+      seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
+      queuedSide = null; attackSide = null; guarding = false;
+    }
+
+    return {
+      triggerAttack, setGuard, currentPose, updateSeq, reset,
+      get guarding() { return guarding; },
+      get seqIdx() { return seqIdx; },
+      get seqLen() { return seq ? seq.length : 0; },
+      get committed() { return seq ? isCommittedPhase(seqIdx) : false; },
+      get queuedSide() { return queuedSide; },
+      get attackSide() { return attackSide; },
+      get idle() { return !seq; }
+    };
+  }
+
+  // Player 1: the original single-rig prototype's controller, now built
+  // from the shared factory. flinchStart/triggerFlinch/FLINCH_DUR stay
+  // outside the factory since they're specific to player 1's miss-reaction
+  // (rig 2 has no enemies/misses yet) -- wired in via idleOverlay so the
+  // state machine itself doesn't need to know flinch exists, same
+  // separation the original comment described.
   let flinchStart = -Infinity; // performance.now() of the last miss -- drives the idle-branch recoil overlay below
   const FLINCH_DUR = 180;
   function triggerFlinch() { flinchStart = performance.now(); }
-
-  // ---- Guard (Game 5 consolidation §5) ----
-  // A held state, not a timed sequence like attacks -- guarding is true
-  // for exactly as long as the guard input is held, no duration/timer of
-  // its own yet (that's real combat tuning, deferred). Can't be raised
-  // mid-committed-attack (the same rule attacks already use against each
-  // other) so a guard input can't cut a committed windup/strike short;
-  // it CAN cut off an interruptible recovery tail, the same way a fresh
-  // attack already does.
-  let guarding = false;
-  function setGuard(active) {
-    if (active) {
-      if (seq && isCommittedPhase(seqIdx)) return;
-      guarding = true;
-      seq = null;
-      queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
-    } else {
-      guarding = false;
-    }
-  }
-
-  // Convention: the LAST phase of any attackSequence is recovery — cosmetic
-  // follow-through with no remaining gameplay function (the hit has already
-  // resolved during strike). Every phase before that is committed: once it
-  // starts, it plays out in full. This distinction is load-bearing for the
-  // double-boss threat-reading design goal — a player must be able to answer
-  // a second threat without waiting out dead recovery time from the first.
-  function isCommittedPhase(idx) {
-    return idx < seq.length - 1;
-  }
-
-  function triggerAttack(side) {
-    SFX.ensureCtx(); // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
-    if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
-    if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
-    // Either idle, or sitting in the (interruptible) recovery phase — start
-    // immediately. startAttack() captures currentPose() as fromPose, so an
-    // interrupted recovery blends smoothly into the new windup instead of
-    // snapping.
-    startAttack(side);
-  }
-
-  function startAttack(side) {
-    // Capture the outgoing pose BEFORE seq/seqIdx/seqStart change — otherwise
-    // currentPose() below takes its mid-sequence branch against the new seq
-    // (t=0), returning fromPose unchanged instead of the actual current pose.
-    fromPose = currentPose();
-    seq = attackSequence(side);
-    seqIdx = 0;
-    seqStart = performance.now();
-    attackSide = side;
-    SFX.windupWhoosh(); // every attack starts at the windup phase, so this is exactly the windup trigger point
-  }
-
-  function currentPose() {
-    if (guarding) return POSES.guard; // takes priority over idle/flinch -- setGuard() already refuses to set this mid-committed-attack
-    if (!seq) {
-      // subtle idle breathing so the rig isn't static between attacks
-      // (amplitude scaled with the 0.8x rig resize, same as LEN)
-      const bob = Math.sin(performance.now() / 450) * 2.4;
-      const sway = Math.sin(performance.now() / 900) * 0.04;
-      const base = Object.assign({}, POSES.idle, {
-        pelvisDY: POSES.idle.pelvisDY + bob,
-        shoulderL: POSES.idle.shoulderL + sway,
-        shoulderR: POSES.idle.shoulderR - sway
-      });
-      // Player hit-reaction (v0.1.8): a plain additive blend toward
-      // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
-      // a real attack uses -- reusing that machinery here would risk
-      // resolveHits() misreading a stale attackSide during the flinch's own
-      // transition-back-to-idle (its seqIdx would pass through 1, the exact
-      // index resolveHits() checks for a live strike). A miss is independent
-      // of the player's own attack state, and this is only ever read here in
-      // the idle branch, so if the player is still mid-attack when a miss
-      // lands, the 180ms flinch window can fully elapse before they return
-      // to idle and it simply won't show for that miss -- an accepted
-      // tradeoff against touching the attack state machine's committed-phase
-      // guarantee.
+  const p1 = createRigController({
+    onAttackStart: () => SFX.windupWhoosh(), // every attack starts at the windup phase, so this is exactly the windup trigger point
+    // Player hit-reaction (v0.1.8): a plain additive blend toward
+    // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
+    // a real attack uses -- reusing that machinery here would risk
+    // resolveHits() misreading a stale attackSide during the flinch's own
+    // transition-back-to-idle (its seqIdx would pass through 1, the exact
+    // index resolveHits() checks for a live strike). A miss is independent
+    // of the player's own attack state, and this is only ever read here in
+    // the idle branch, so if the player is still mid-attack when a miss
+    // lands, the 180ms flinch window can fully elapse before they return to
+    // idle and it simply won't show for that miss -- an accepted tradeoff
+    // against touching the attack state machine's committed-phase guarantee.
+    idleOverlay: (base) => {
       const flinchElapsed = performance.now() - flinchStart;
       if (flinchElapsed < FLINCH_DUR) {
         return lerpPose(base, POSES.flinch, 1 - easeOutQuad(flinchElapsed / FLINCH_DUR));
       }
       return base;
     }
-    const step = seq[seqIdx];
-    const t = Math.min(1, (performance.now() - seqStart) / step.dur);
-    const eased = step.ease(t);
-    const target = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
-    return lerpPose(fromPose, target, eased);
-  }
+  });
 
-  function updateSeq(now) {
-    if (!seq) return;
-    const step = seq[seqIdx];
-    if (now - seqStart >= step.dur) {
-      // Capture the pose this phase was heading toward BEFORE advancing,
-      // so the next phase blends from the correct starting point.
-      const completed = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
-      seqIdx++;
-      seqStart = now;
-      if (seqIdx >= seq.length) {
-        // Sequence is over — bail out before touching seq[seqIdx], which
-        // is now out of bounds. This check has to come before any read of
-        // the next step, not after.
-        seq = null;
-        if (queuedSide) {
-          const s = queuedSide;
-          queuedSide = null;
-          startAttack(s);
-        }
-        return;
-      }
-      fromPose = completed;
-      // The committed phases (windup+strike) just finished, so we're about
-      // to enter recovery — which has no gameplay function left. If an
-      // input was already buffered during windup/strike, don't make the
-      // player wait out the full recovery: fire it now instead.
-      if (!isCommittedPhase(seqIdx) && queuedSide) {
-        const s = queuedSide;
-        queuedSide = null;
-        startAttack(s);
-      }
-    }
-  }
+  // Player 2 (Game 5 2-player extension): a second, independent instance
+  // from the SAME factory -- genuinely separate closure variables, not a
+  // reference to player 1's. Deliberately NOT wired into the
+  // enemy/session/hit-detection system below (that stays player-1-only) --
+  // rig-vs-rig combat resolution (a hurtbox, a guard timer, parry) is real
+  // combat design deferred past this consolidation pass. This only proves
+  // two independently-driven, independently-animated rigs run at once.
+  const P2_STAND_OFFSET = 130;
+  const P1_COLOR = '#3fd0ff'; // cyan -- verified-safe vs. this studio's reserved gold/red/green bands (STUDIO_BIBLE.md §11)
+  const P2_COLOR = '#6b4dff'; // indigo-violet -- same verification
+  const p2 = createRigController();
+
+  function triggerAttack(side) { SFX.ensureCtx(); p1.triggerAttack(side); } // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
+  function setGuard(active) { p1.setGuard(active); }
+  function currentPose() { return p1.currentPose(); }
+  function updateSeq(now) { p1.updateSeq(now); }
 
   // ---- Rig solving (pure math — no canvas calls) ----
   // Returns every joint's world-space position for a given pose. This is the
@@ -662,9 +727,16 @@
     return { x: x1 + Math.cos(angle) * len, y: y1 + Math.sin(angle) * len };
   }
 
-  function solveRig(pose) {
+  function solveRig(pose, standOffset) {
+    // standOffset (px from canvas center, default 0) is where this rig
+    // STANDS on screen -- distinct from pose.pelvisDX, which is the
+    // transient per-attack lean. Added for the Game 5 2-player extension
+    // (consolidation, not part of the original single-rig schema): default
+    // 0 reproduces the original single-rig behavior exactly, so every
+    // existing caller/test that never passes a second argument is
+    // unaffected.
     const groundY = canvas.height * 0.78;
-    const cx = canvas.width / 2 + pose.pelvisDX;
+    const cx = canvas.width / 2 + (standOffset || 0) + pose.pelvisDX;
     const pelvis = { x: cx, y: groundY - LEN.thigh - LEN.shin + pose.pelvisDY };
 
     const hipL = { x: pelvis.x - LEN.hipW * 0.4, y: pelvis.y };
@@ -712,36 +784,42 @@
   }
 
   // ---- Drawing (pure rendering — no math, reads joints from solveRig) ----
-  function drawLine(p1, p2, width) {
+  // color defaults to the original single-rig white so every existing
+  // caller that never passes one renders exactly as before. The 2-player
+  // extension passes distinct per-player colors (see RIG_COLORS) --
+  // verified-safe hues against this studio's reserved gold/red/green bands
+  // (STUDIO_BIBLE.md §11), per the visual-art-director draft this session.
+  function drawLine(p1, p2, width, color) {
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
     ctx.lineWidth = width;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = '#e8e8f0';
+    ctx.strokeStyle = color || '#e8e8f0';
     ctx.stroke();
   }
 
-  function renderRig(j) {
+  function renderRig(j, color) {
+    const c = color || '#e8e8f0';
     // legs first (drawn behind torso)
-    drawLine(j.hipL, j.kneeL, 7);
-    drawLine(j.kneeL, j.footL, 6);
-    drawLine(j.hipR, j.kneeR, 7);
-    drawLine(j.kneeR, j.footR, 6);
+    drawLine(j.hipL, j.kneeL, 7, c);
+    drawLine(j.kneeL, j.footL, 6, c);
+    drawLine(j.hipR, j.kneeR, 7, c);
+    drawLine(j.kneeR, j.footR, 6, c);
 
     // spine
-    drawLine(j.pelvis, j.chest, 9);
+    drawLine(j.pelvis, j.chest, 9, c);
 
     // arms
-    drawLine(j.shoulderL, j.elbowL, 6);
-    drawLine(j.elbowL, j.handL, 5);
-    drawLine(j.shoulderR, j.elbowR, 6);
-    drawLine(j.elbowR, j.handR, 5);
+    drawLine(j.shoulderL, j.elbowL, 6, c);
+    drawLine(j.elbowL, j.handL, 5, c);
+    drawLine(j.shoulderR, j.elbowR, 6, c);
+    drawLine(j.elbowR, j.handR, 5, c);
 
     // head
     ctx.beginPath();
     ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2);
-    ctx.fillStyle = '#e8e8f0';
+    ctx.fillStyle = c;
     ctx.fill();
   }
 
@@ -992,7 +1070,7 @@
   let sessionState = 'playing'; // 'playing' | 'lose'
 
   function resetSession() {
-    seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle; queuedSide = null; attackSide = null;
+    p1.reset();
     enemies = []; nextSpawnAt = performance.now() + 1000;
     killCount = 0; missedCount = 0;
     particles = []; shakeMag = 0; missFlash = 0;
@@ -1050,12 +1128,12 @@
   // reads the kicking foot's real world position from solveRig(), which is
   // exactly what the v0.1.4 refactor exists to make possible.
   function resolveHits(now, joints) {
-    if (!seq || seqIdx !== 1 || !attackSide) return;
+    if (p1.idle || p1.seqIdx !== 1 || !p1.attackSide) return;
     const sockets = getSockets(joints);
-    const foot = attackSide === 'R' ? sockets.foot_r : sockets.foot_l;
+    const foot = p1.attackSide === 'R' ? sockets.foot_r : sockets.foot_l;
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
-      if (e.dying || e.side !== attackSide) continue;
+      if (e.dying || e.side !== p1.attackSide) continue;
       const dx = foot.x - e.x, dy = foot.y - e.y;
       if (Math.sqrt(dx * dx + dy * dy) <= ENEMY_HIT_RADIUS) {
         // Not an instant splice -- linger briefly as a fading flash (see
@@ -1196,16 +1274,16 @@
   window.Rig = {
     _test: {
       state: () => {
-        const joints = solveRig(currentPose());
+        const joints = solveRig(p1.currentPose());
         return {
-          idle: !seq,
-          seqIdx,
-          seqLen: seq ? seq.length : 0,
-          committed: seq ? isCommittedPhase(seqIdx) : false,
-          guarding,
-          queuedSide,
-          attackSide,
-          pose: currentPose(),
+          idle: p1.idle,
+          seqIdx: p1.seqIdx,
+          seqLen: p1.seqLen,
+          committed: p1.committed,
+          guarding: p1.guarding,
+          queuedSide: p1.queuedSide,
+          attackSide: p1.attackSide,
+          pose: p1.currentPose(),
           joints,
           sockets: getSockets(joints),
           enemies: enemies.map(e => ({ side: e.side, x: e.x, alive: e.alive, t: e.t, dying: e.dying, pulsesFired: e.pulsesFired.slice() })),
@@ -1345,8 +1423,8 @@
       '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
       '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>';
 
-    debugEl.textContent = 'state: ' + (seq ? ('attacking [' + seqIdx + '/' + seq.length + ']') : 'idle') +
-      (queuedSide ? '\nbuffered: ' + queuedSide : '') +
+    debugEl.textContent = 'state: ' + (!p1.idle ? ('attacking [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
+      (p1.queuedSide ? '\nbuffered: ' + p1.queuedSide : '') +
       '\nsession: ' + sessionState +
       '\nkills: ' + killCount + '  missed: ' + missedCount +
       (enemies.length ? '\nenemy: ' + enemies[0].side + ' @ ' + enemies[0].x.toFixed(0) : '');
