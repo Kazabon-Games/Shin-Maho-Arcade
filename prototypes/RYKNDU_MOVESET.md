@@ -184,11 +184,41 @@ gives ring-outs an actual endpoint:
   both clear, not just positions) and consumes that input — it does not
   also throw the kick that triggered it.
 
+## Guard meter (v0.1.24 — guard has a real resource cost)
+
+Guard was previously free for as long as the input was held — no
+duration limit, no cost. `GUARD_METER_MAX`/`GUARD_DRAIN_PER_SEC`/
+`GUARD_REGEN_PER_SEC` are real elapsed-time constants (not per-frame
+magic numbers), integrated in `updateGuardMeter(dt)` and called from
+`updatePhysics(dt)` alongside movement/jump/recovery — the same standard
+every other timed system in this rig already holds itself to:
+
+- **Drain/regen**: continuous blocking drains the meter (`40`/sec — a
+  full meter lasts 2.5s of continuous guard); releasing regenerates it
+  slower (`25`/sec — full regen takes 4s), the same "stopping costs more
+  than starting" shape `MOVE_FRICTION > MOVE_ACCEL` already uses for
+  movement, so turtling has a real cost.
+- **Forced drop**: the meter hitting zero drops guard immediately
+  (`guarding = false` inside `updateGuardMeter()` itself), not just a
+  refusal on the next raise attempt.
+- **Re-raise gate**: `setGuard(true)` also refuses below
+  `GUARD_MIN_TO_RAISE` (15) — guard can't be re-raised the instant it
+  empties; a little recovery is required first.
+- **Block-hit cost**: a landed, BLOCKED hit costs a flat
+  `GUARD_BLOCK_HIT_DRAIN` (20, a fifth of the whole meter) via
+  `damageGuardMeter()`, called from `resolveDuelHit()` — on top of the
+  continuous drain from just holding guard. Guard mitigates knockback
+  (see Combat resolution above) but isn't free either way.
+- **Visible**: a small world-space bar above each rig's own head
+  (`drawGuardMeter()`, scaled by the same `renderScale` everything else
+  uses) shows the meter, reading amber under 25% as a real warning rather
+  than just a smaller bar in the rig's own color.
+
 ## What's still deferred (not designed in this pass)
 
 This table is still the seam combo-cancel points and parry windows get
-named against later — combat resolution above is the game's core loop,
-not the full combat depth:
+named against later — combat resolution and guard stamina above are the
+game's core loop and its first real resource, not the full combat depth:
 
 - **Combo-cancel candidate points:** the existing "buffered input fires
   immediately at recovery start" behavior is already a cancel window in
@@ -201,11 +231,6 @@ not the full combat depth:
   precise enough for this (v0.1.6 fixed the strike-phase hit-window down
   to the frame), and an opponent to read now exists (this section), so
   the missing piece is purely the timing-window design, not architecture.
-- **Guard timer/meter:** `guard` currently has no duration limit or
-  resource cost — it's free for as long as the input is held. A meter
-  would gate `setGuard(true)`'s success (already a single choke point) or
-  force an exit from within the main loop's per-frame tick, not require
-  restructuring the state machine itself.
 
 ## Verification
 
@@ -224,4 +249,8 @@ scoring/reset cycle. The match structure itself is covered by
 `tests/rig-match.js` — score accumulation short of the target, the
 freeze on reaching it, a decided match blocking further combat
 resolution, a rematch from either player's input, and a clean second
-match afterward.
+match afterward. The guard meter itself is covered by
+`tests/rig-guard-meter.js` — real elapsed-time drain/regen rates, the
+forced drop at zero, the re-raise refusal below the minimum threshold,
+the flat cost from a blocked hit, `reset()` restoring a full meter, and
+player 2 sharing the exact same behavior through the same factory.

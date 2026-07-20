@@ -11,6 +11,41 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.24 — 2026-07-20 — Guard stamina meter: guard was previously free
+                          for as long as the input was held, named
+                          directly as a gap in this project's own design
+                          docs. GUARD_METER_MAX/DRAIN/REGEN are real
+                          elapsed-time constants (updateGuardMeter(dt),
+                          called from updatePhysics(dt) alongside
+                          movement/jump/recovery -- not a per-frame magic
+                          number): continuous blocking drains the meter
+                          (40/sec), releasing regenerates it slower
+                          (25/sec, so turtling has a real cost -- the same
+                          "stopping costs more than starting" shape
+                          MOVE_FRICTION > MOVE_ACCEL already uses), and
+                          hitting zero force-drops guard immediately
+                          rather than just refusing the next raise.
+                          setGuard(true) also refuses below
+                          GUARD_MIN_TO_RAISE, so guard can't be re-raised
+                          the instant it empties. A landed, BLOCKED hit
+                          also costs a flat chunk (damageGuardMeter(),
+                          called from resolveDuelHit()) on top of the
+                          continuous drain -- guard mitigates knockback
+                          but isn't free either way. A small world-space
+                          bar above each rig's own head (drawGuardMeter(),
+                          scaled by the same renderScale everything else
+                          uses) shows the meter -- reads amber under 25%
+                          as a real warning, not just a smaller bar in the
+                          same color. New tests/rig-guard-meter.js (16
+                          assertions) drives the drain/regen/forced-drop/
+                          block-cost cycle through real elapsed time via
+                          stepPhysics(), for both players independently.
+                          Also clarified an old (already-resolved, v0.1.6)
+                          comment about the rig's screen-size-vs-enemy-dot
+                          ratio that kept getting misread as a live,
+                          unaddressed complaint -- it documents a fix that
+                          shipped 18 versions ago, not an open issue.
+
   v0.1.23 — 2026-07-20 — Match structure: a running ring-out score with
                           no endpoint was never a finished match. Added
                           MATCH_TARGET_SCORE (first to 3 ring-outs wins),
@@ -911,7 +946,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.23</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.24</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -968,16 +1003,22 @@
   resize();
 
   // ---- Segment lengths (px) ----
-  // Scaled to 0.8x of the original v0.1.0-0.1.5 values. Quality-pass finding
-  // (visual-art-director): the rig at full size was 262px tall against a
-  // 28px-diameter enemy dot -- a 9.4:1 ratio the producer's own playtest
-  // flagged directly ("the model is so big and the dot is so small"). This
-  // shrinks the rig's screen dominance and also reads as tighter/faster for
-  // a fast-reflex genre (same travel distance in the same ms duration
-  // occupies a smaller fraction of the rig's own silhouette). Scaling the
-  // data here, not a render-time canvas transform, is required -- solveRig()
-  // feeds both rendering and hit detection, so a draw-only scale would
-  // desync the visible foot from the real hit-checked foot.
+  // RESOLVED, v0.1.6 -- historical record of a fixed complaint, not an
+  // open issue: scaled to 0.8x of the original v0.1.0-0.1.5 values after
+  // a quality-pass finding (visual-art-director) that the rig at full
+  // size was 262px tall against a 28px-diameter enemy dot -- a 9.4:1
+  // ratio the producer's own playtest flagged directly ("the model is so
+  // big and the dot is so small"). The 0.8x values immediately below ARE
+  // the fix, shipped and unchanged since; this comment documents why they
+  // exist, the same way every other historical comment in this file
+  // explains a past decision rather than describing something still
+  // broken. This shrinks the rig's screen dominance and also reads as
+  // tighter/faster for a fast-reflex genre (same travel distance in the
+  // same ms duration occupies a smaller fraction of the rig's own
+  // silhouette). Scaling the data here, not a render-time canvas
+  // transform, is required -- solveRig() feeds both rendering and hit
+  // detection, so a draw-only scale would desync the visible foot from
+  // the real hit-checked foot.
   const LEN = {
     thigh: 50, shin: 48, upperArm: 37, forearm: 37,
     spine: 62, neck: 2, headR: 19,
@@ -1126,6 +1167,25 @@
   // which is exactly what makes "cross this line" a meaningful ring-out
   // condition rather than something walking there directly could trigger.
   const ARENA_BOUND = 170;
+
+  // Guard stamina meter constants (v0.1.24), module-level for the same
+  // reason ARENA_BOUND is -- one shared budget both rigs are held to
+  // identically, not per-instance tuning. Numbers picked to make
+  // continuous blocking a real, felt cost without being punishing for a
+  // single well-timed block: full meter (100) drains in 2.5s of
+  // continuous guard (GUARD_DRAIN_PER_SEC=40) but takes 4s to fully
+  // regenerate (GUARD_REGEN_PER_SEC=25) -- regen slower than drain is
+  // deliberate, the same "stopping should cost more than starting" shape
+  // MOVE_FRICTION > MOVE_ACCEL already uses for movement. A single
+  // blocked hit also costs a real flat chunk (GUARD_BLOCK_HIT_DRAIN=20 --
+  // a fifth of the whole meter) on top of the continuous drain, so
+  // repeated blocking against a real attacker burns down faster than
+  // just standing in guard alone.
+  const GUARD_METER_MAX = 100;
+  const GUARD_DRAIN_PER_SEC = 40;
+  const GUARD_REGEN_PER_SEC = 25;
+  const GUARD_MIN_TO_RAISE = 15; // can't re-raise guard the instant it hits empty -- needs to recover a little first
+  const GUARD_BLOCK_HIT_DRAIN = 20;
 
   // ---- Rig controller factory (Game 5 2-player extension) ----
   // Extracted from what was a single set of module-level `seq`/`seqIdx`/...
@@ -1278,7 +1338,7 @@
       jumpHeight += velY * dt;
       if (jumpHeight <= 0) { jumpHeight = 0; velY = 0; jumping = false; }
     }
-    function updatePhysics(dt) { updateMovement(dt); updateJump(dt); }
+    function updatePhysics(dt) { updateMovement(dt); updateJump(dt); updateGuardMeter(dt); }
 
     // Convention: the LAST phase of any attackSequence is recovery —
     // cosmetic follow-through with no remaining gameplay function (the hit
@@ -1291,18 +1351,44 @@
       return idx < seq.length - 1;
     }
 
-    // ---- Guard (Game 5 consolidation §5) ----
+    // ---- Guard (Game 5 consolidation §5, meter added v0.1.24) ----
     // A held state, not a timed sequence like attacks -- guarding is true
-    // for exactly as long as the guard input is held, no duration/timer of
-    // its own yet (that's real combat tuning, deferred). Can't be raised
-    // mid-committed-attack (the same rule attacks already use against each
-    // other) so a guard input can't cut a committed windup/strike short;
-    // it CAN cut off an interruptible recovery tail, the same way a fresh
-    // attack already does.
+    // for exactly as long as the guard input is held AND the guard meter
+    // hasn't run out. Can't be raised mid-committed-attack (the same rule
+    // attacks already use against each other) so a guard input can't cut a
+    // committed windup/strike short; it CAN cut off an interruptible
+    // recovery tail, the same way a fresh attack already does.
+    //
+    // guardMeter (v0.1.24) is real elapsed-time stamina, not a per-frame
+    // magic number -- integrated in updateGuardMeter(dt), called from
+    // updatePhysics(dt) alongside movement/jump, the same "real time, not
+    // a canned curve" standard this rig's whole physics pass already
+    // holds itself to. Continuous blocking drains it; releasing guard
+    // regenerates it (slower than it drains, so turtling has a real
+    // cost); hitting zero forces guard to drop immediately, not just
+    // refuses the next raise. A landed, BLOCKED hit also costs a real
+    // chunk of meter directly (damageGuardMeter(), called from
+    // resolveDuelHit()) -- guard mitigates knockback but isn't free, the
+    // exact gap the design docs named ("no guard timer/meter... free for
+    // as long as the input is held").
+    let guardMeter = GUARD_METER_MAX;
+    function updateGuardMeter(dt) {
+      if (guarding) {
+        guardMeter = Math.max(0, guardMeter - GUARD_DRAIN_PER_SEC * dt);
+        if (guardMeter <= 0) guarding = false; // exhausted -- forced out, not just refused on the next raise
+      } else {
+        guardMeter = Math.min(GUARD_METER_MAX, guardMeter + GUARD_REGEN_PER_SEC * dt);
+      }
+    }
+    function damageGuardMeter(amount) {
+      guardMeter = Math.max(0, guardMeter - amount);
+      if (guardMeter <= 0) guarding = false;
+    }
     function setGuard(active) {
       if (active) {
         if (jumping) return; // can't block mid-air -- land first
         if (seq && isCommittedPhase(seqIdx)) return;
+        if (guardMeter < GUARD_MIN_TO_RAISE) return; // too exhausted to raise guard again yet -- must recover a little first
         guarding = true;
         seq = null;
         queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
@@ -1459,11 +1545,13 @@
       posX = START_X; velX = 0; moveIntent = 0; facing = opts.startFacing || 'R';
       jumping = false; velY = 0; jumpHeight = 0;
       hasHitThisSwing = false; knockbackTimer = 0; flinchStart = -Infinity;
+      guardMeter = GUARD_METER_MAX;
     }
 
     return {
       triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
       setMoveIntent, updatePhysics, triggerFlinch, markHit, applyKnockback, teleportTo,
+      damageGuardMeter,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -1479,7 +1567,8 @@
       get recoverExitVel() { return recoverExitVel; },
       get recoverEnterPose() { return recoverEnterPose; },
       get hasHitThisSwing() { return hasHitThisSwing; },
-      get knockbackTimer() { return knockbackTimer; }
+      get knockbackTimer() { return knockbackTimer; },
+      get guardMeter() { return guardMeter; }
     };
   }
 
@@ -1820,6 +1909,29 @@
     // treatment as the limbs so it reads as one consistent character
     ctx.beginPath(); ctx.arc(j.head.x, j.head.y, (LEN.headR + 2.4) * s, 0, Math.PI * 2); ctx.fillStyle = outline; ctx.fill();
     ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR * s, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+  }
+
+  // ---- Guard meter (v0.1.24) ----
+  // A stamina cost with nothing visible to show it would just read as
+  // "guard randomly stopped working" -- the whole point of a real
+  // resource is that the player can see it spend down. Drawn as a small
+  // world-space bar above the rig's own head (follows the character,
+  // scales with renderScale the same as everything else about it) rather
+  // than a fixed HUD element, since "the player is looking at the rig
+  // most of the time" is this project's own stated design priority --
+  // the meter belongs on the character, not off in a corner.
+  function drawGuardMeter(j, meter, color) {
+    const s = renderScale;
+    const w = 34 * s, h = 4 * s;
+    const x = j.head.x - w / 2, y = j.head.y - (LEN.headR + 12) * s;
+    const pct = Math.max(0, Math.min(1, meter / GUARD_METER_MAX));
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(x, y, w, h);
+    // Low meter reads as a warning (amber) rather than the rig's own
+    // color once it's under a quarter full -- the moment guard is at
+    // real risk of being forced out, not just a smaller bar in the same hue.
+    ctx.fillStyle = pct < 0.25 ? '#ffb84d' : color;
+    ctx.fillRect(x, y, w * pct, h);
   }
 
   // ---- Audio (SFX only — no music yet, nothing to score). One sfxGain ->
@@ -2199,6 +2311,7 @@
     const dir = defender.posX >= attacker.posX ? 1 : -1;
     const blocked = defender.guarding;
     defender.applyKnockback(dir * KNOCKBACK_SPEED * (blocked ? GUARD_CHIP_SCALE : 1), blocked);
+    if (blocked) defender.damageGuardMeter(GUARD_BLOCK_HIT_DRAIN); // guard mitigates knockback but isn't free -- a real stamina cost per blocked hit, on top of the continuous drain from just holding guard (see updateGuardMeter())
     SFX.strikeImpact();
     spawnBurst(hurtbox.x, hurtbox.y);
     shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6) * (blocked ? 0.4 : 1));
@@ -2613,6 +2726,7 @@
           velY: p1.velY,
           recoverExitVel: p1.recoverExitVel,
           recoverEnterPose: p1.recoverEnterPose,
+          guardMeter: p1.guardMeter,
           hasHitThisSwing: p1.hasHitThisSwing,
           knockbackTimer: p1.knockbackTimer,
           pose: p1.currentPose(),
@@ -2707,6 +2821,7 @@
           velY: p2.velY,
           recoverExitVel: p2.recoverExitVel,
           recoverEnterPose: p2.recoverEnterPose,
+          guardMeter: p2.guardMeter,
           hasHitThisSwing: p2.hasHitThisSwing,
           knockbackTimer: p2.knockbackTimer,
           pose: p2.currentPose(),
@@ -2834,6 +2949,8 @@
     drawParticles();
     renderRig(joints, P1_COLOR);
     if (SHOW_P2) renderRig(joints2, P2_COLOR);
+    drawGuardMeter(joints, p1.guardMeter, P1_COLOR);
+    if (SHOW_P2) drawGuardMeter(joints2, p2.guardMeter, P2_COLOR);
     ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
 
     if (missFlash > 0.01) {
