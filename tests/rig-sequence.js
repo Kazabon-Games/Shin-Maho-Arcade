@@ -475,12 +475,19 @@ function ok(cond, label) {
   ok(justEntered.committed === false && justEntered.idle === false, 'recovery phase has begun (interruptible, not idle yet)');
   ok(justEntered.recoverExitVel !== null && Math.abs(justEntered.recoverExitVel.kneeR) > 1,
     'a real, substantial exit velocity was captured from the strike\'s own pose delta -- not zero, not invented');
-  // Right at the start of recovery, decay ~= 1 and t ~= 0, so the spring's
-  // closed-form position should still read very close to the pose
-  // recovery entered with -- continuity across the strike/recovery
-  // boundary, the opposite of the old fixed-curve blend's zero-velocity
-  // restart at this exact instant.
-  ok(Math.abs(justEntered.pose.kneeR - justEntered.recoverEnterPose.kneeR) < 0.15,
+  // This sample lands ~100ms into the 220ms recovery window (280ms wait
+  // minus the 180ms committed-phase boundary), not exactly at recovery's
+  // own start -- some real spring decay has already happened by then, so
+  // the threshold has to allow for that, not assume decay~=1. It also
+  // scales with how far idle's own kneeR sits from the strike pose's
+  // kneeR (recoverEnterPose) -- v0.1.28's profile-stance redesign moved
+  // idle's resting leg angle further from the strike's, which grows the
+  // spring's total travel distance and therefore how much of it has
+  // decayed by this same sample time. 0.3 comfortably covers the current
+  // real value (measured ~0.19) while still catching an actual "snapped
+  // back to idle immediately" regression (which would show a much larger
+  // delta, not a small overshoot past the old threshold).
+  ok(Math.abs(justEntered.pose.kneeR - justEntered.recoverEnterPose.kneeR) < 0.3,
     'recovery pose starts continuous with the strike\'s own end pose, not snapped back toward idle immediately');
 
   await page.waitForTimeout(260); // ~540ms since trigger, comfortably past the full ~400ms sequence duration

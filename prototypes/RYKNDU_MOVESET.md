@@ -131,15 +131,17 @@ Added directly on top of the physics above, once both rigs had real,
 independent movement to close distance with. `checkPvpHit()` and
 `resolveDuelHit()` are ONE shared pairwise function, called twice per
 frame with attacker/defender swapped (`resolveCombatHits()`) — not two
-hand-copied blocks, the same principle behind `mirror()` and
-`createRigController()` itself. Verified by actually driving both
-directions in `tests/rig-combat.js`, not assumed symmetric from reading
-the code.
+hand-copied blocks, the same principle behind `createRigController()`
+itself (and, since v0.1.28, `solveRig()`'s own facing-based mirror,
+which replaced the old per-pose `mirror()` function this comment used to
+point to — see `RYKNDU_RIG_SCHEMA.md`'s Mirroring section). Verified by
+actually driving both directions in `tests/rig-combat.js`, not assumed
+symmetric from reading the code.
 
 - **Hit detection**: only checked during the attacker's `strike` phase
   (`seqIdx === 1`), against the defender's `stance` socket (feet
   midpoint, ankle height) — not `hip`/pelvis, since a kick's strike pose
-  is solved to land at the old enemy-dot's height (`kickR_strike`'s own
+  is solved to land at the old enemy-dot's height (`kick_strike`'s own
   comment), roughly 80px below the pelvis. Using `hip` initially missed
   every hit in testing by that same ~80px until caught live and fixed;
   see `RYKNDU_RIG_SCHEMA.md`'s note on the new `stance` socket. Also
