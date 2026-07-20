@@ -339,54 +339,100 @@ function ok(cond, label) {
     'setGuard(true) during the interruptible recovery phase succeeds and clears the sequence');
   await page.evaluate(() => window.Rig._test.setGuard(false));
 
-  console.log('13. Movement, facing, and jump (v0.1.16)');
+  console.log('13. Movement physics: real acceleration/deceleration, not an instant delta (v0.1.17)');
+  // Driven through real keyboard events, not a direct state-setting hook --
+  // moveIntent is reset to 0 every real frame by the live per-frame loop
+  // (applyMoveInput() reads actual held-key state), so a test hook that
+  // set intent directly would just get overwritten by the next real
+  // animation frame. Real key events are the only path that doesn't fight
+  // the live loop, and they're also the more faithful test -- this
+  // exercises the actual keydown/keyup wiring, not just the physics
+  // function in isolation.
   await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
   let beforeMove = await page.evaluate(() => window.Rig._test.state());
-  ok(beforeMove.posX === 0 && beforeMove.facing === 'R', 'posX starts at 0, facing defaults to R after reset');
+  ok(beforeMove.posX === 0 && beforeMove.velX === 0 && beforeMove.facing === 'R', 'posX/velX start at 0, facing defaults to R after reset');
 
-  await page.evaluate(() => window.Rig._test.move(40));
-  let afterRight = await page.evaluate(() => window.Rig._test.state());
-  ok(afterRight.posX === 40 && afterRight.facing === 'R', 'move(+40) advances posX and keeps facing R');
-  ok(Math.abs(afterRight.joints.pelvis.x - beforeMove.joints.pelvis.x - 40) < 0.01,
-    'the position change is reflected in solveRig()\'s actual output, not just the internal posX value');
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(80); // well under the ~157ms MOVE_ACCEL needs to reach MOVE_MAX_SPEED (220/1400)
+  let midAccel = await page.evaluate(() => window.Rig._test.state());
+  ok(midAccel.velX > 0 && midAccel.velX < 220,
+    'velocity is still ramping up toward top speed at 80ms, not already there -- real acceleration, not a teleport');
+  ok(midAccel.posX > 0, 'position has advanced while accelerating');
 
-  await page.evaluate(() => window.Rig._test.move(-100));
+  await page.waitForTimeout(300); // comfortably past the ~157ms ramp time
+  let atSpeed = await page.evaluate(() => window.Rig._test.state());
+  ok(Math.abs(atSpeed.velX - 220) < 1, 'velocity reaches MOVE_MAX_SPEED (220) once fully accelerated');
+  ok(atSpeed.facing === 'R', 'facing tracks the actual direction of real motion');
+
+  await page.keyboard.up('ArrowRight');
+  await page.waitForTimeout(50); // well under the ~122ms MOVE_FRICTION needs to decelerate fully (220/1800)
+  let midDecel = await page.evaluate(() => window.Rig._test.state());
+  ok(midDecel.velX > 0 && midDecel.velX < atSpeed.velX,
+    'releasing input decelerates via friction over real time, not an instant stop');
+
+  await page.waitForTimeout(200);
+  let stopped = await page.evaluate(() => window.Rig._test.state());
+  ok(stopped.velX === 0, 'velocity settles to exactly 0 once friction has fully decelerated it, no residual drift');
+  const posAtStop = stopped.posX;
+
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('ArrowLeft');
+  await page.waitForTimeout(300);
   let afterLeft = await page.evaluate(() => window.Rig._test.state());
-  ok(afterLeft.posX === -60 && afterLeft.facing === 'L', 'move(-100) updates posX and flips facing to L');
+  ok(afterLeft.posX < posAtStop, 'holding left moves the rig left of where it stopped');
+  ok(afterLeft.facing === 'L', 'facing flips to L once actually moving left');
 
-  // Bounds clamp -- MOVE_MIN/MOVE_MAX are -170/170.
-  await page.evaluate(() => window.Rig._test.move(-1000));
-  let clamped = await page.evaluate(() => window.Rig._test.state());
-  ok(clamped.posX === -170, 'move() clamps posX at the arena bound instead of running off unbounded');
+  console.log('14. Movement clamps at the arena bounds without residual velocity');
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForTimeout(2000); // long enough to cross the full arena regardless of accel ramp-up
+  await page.keyboard.up('ArrowLeft');
+  await page.waitForTimeout(50);
+  let atWall = await page.evaluate(() => window.Rig._test.state());
+  ok(atWall.posX === -170, 'sustained movement clamps at MOVE_MIN instead of running off unbounded');
+  ok(atWall.velX === 0, 'hitting the arena wall zeroes velocity rather than pinning it against the clamp with residual speed every frame');
+  ok(Math.abs(atWall.joints.pelvis.x - (beforeMove.joints.pelvis.x - 170)) < 0.01,
+    'the clamped position is reflected in solveRig()\'s actual output, not just the internal posX value');
 
-  console.log('14. Attack throws the kick matching current facing, not an explicit side');
-  await page.evaluate(() => { window.Rig._test.move(1000); }); // pin facing R (clamped to +170)
+  console.log('15. Attack throws the kick matching current facing, not an explicit side');
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('ArrowRight');
+  await page.waitForTimeout(150);
   await page.evaluate(() => window.Rig._test.attack());
   await page.waitForTimeout(30);
   let facingRAttack = await page.evaluate(() => window.Rig._test.state());
   ok(facingRAttack.attackSide === 'R', 'attack() while facing R throws the R-side kick');
   await page.waitForTimeout(500);
-  await page.evaluate(() => window.Rig._test.move(-1000)); // pin facing L
+
+  await page.keyboard.down('ArrowLeft');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('ArrowLeft');
+  await page.waitForTimeout(150);
   await page.evaluate(() => window.Rig._test.attack());
   await page.waitForTimeout(30);
   let facingLAttack = await page.evaluate(() => window.Rig._test.state());
   ok(facingLAttack.attackSide === 'L', 'attack() while facing L throws the L-side kick');
   await page.waitForTimeout(500);
 
-  console.log('15. Jump: gating rules and the arc itself');
+  console.log('16. Jump physics: real projectile motion, not a canned curve');
   let idleForJump = await page.evaluate(() => window.Rig._test.state());
   ok(idleForJump.jumping === false, 'jumping starts false');
   await page.evaluate(() => window.Rig._test.jump());
+  await page.waitForTimeout(20); // at least one real animation frame has to tick before jumpHeight integrates off its 0 start
   let justJumped = await page.evaluate(() => window.Rig._test.state());
   ok(justJumped.jumping === true, 'jump() sets jumping true');
-  ok(justJumped.pose.pelvisDY < 0, 'jump pose immediately lifts pelvisDY upward (negative), not still grounded');
-  await page.waitForTimeout(210); // near the peak of the 420ms arc
+  ok(justJumped.velY > 0 && justJumped.velY < 420, 'velY starts at JUMP_SPEED and is already decaying under gravity, not fixed');
+  ok(justJumped.pose.pelvisDY < 0, 'jump pose lifts pelvisDY upward (negative) once airborne');
+  await page.waitForTimeout(190); // ~210ms since jump(), near the apex (JUMP_SPEED/GRAVITY = 420/2000 = 0.21s)
   let midJump = await page.evaluate(() => window.Rig._test.state());
+  ok(Math.abs(midJump.velY) < 60, 'velY crosses through ~0 at the apex, same as real gravity would produce, not a hand-authored midpoint');
   ok(midJump.pose.pelvisDY < justJumped.pose.pelvisDY - 10,
     'pelvisDY continues rising through the arc rather than snapping to one offset');
-  await page.waitForTimeout(230); // past the 420ms total duration
+  await page.waitForTimeout(230); // past the ~420ms total flight time
   let landed = await page.evaluate(() => window.Rig._test.state());
-  ok(landed.jumping === false, 'jumping clears itself once the arc completes, no explicit "land" call needed');
+  ok(landed.jumping === false, 'jumping clears itself once the integrated arc returns to ground, no explicit "land" call needed');
+  ok(landed.velY === 0, 'velY resets to 0 on landing rather than carrying negative velocity into the next jump');
 
   // Mutual exclusivity: can't jump mid-committed-attack, can't jump while
   // guarding, can't attack or guard while airborne.

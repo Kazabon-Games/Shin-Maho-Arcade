@@ -11,6 +11,59 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.17 — 2026-07-20 — Real physics, replacing v0.1.16's instant-delta
+                          movement and canned sine-arc jump -- producer
+                          feedback that tapping just produced a "knee jerk"
+                          traced back to the actual cause: nothing in this
+                          rig had velocity, mass, or momentum, everything
+                          was pose-A-to-pose-B interpolation on a clock.
+
+                          Movement: moveIntent (-1..1, a direction, not a
+                          position delta) plus a real velX that
+                          accelerates toward the intended speed at
+                          MOVE_ACCEL and decays via MOVE_FRICTION on
+                          release -- higher friction than accel so
+                          stopping reads snappier than starting, not
+                          floaty. Position integrates from velocity every
+                          frame. Hitting an arena wall zeroes velocity
+                          outright rather than pinning it against the
+                          clamp with residual speed. facing now tracks
+                          actual velocity direction (with a small-speed
+                          threshold so friction noise near 0 can't flip
+                          it), not raw input.
+
+                          Jump: replaced the fixed sin(t*pi)/420ms curve
+                          with real integrated projectile motion --
+                          takeoff velocity (JUMP_SPEED), constant
+                          downward GRAVITY applied every frame, height
+                          integrated from velocity. Falls back through the
+                          same speed profile it rose with; cutting the
+                          jump would (if ever built) naturally arc
+                          differently, which a canned curve can't do.
+                          GRAVITY/JUMP_SPEED were tuned to reproduce the
+                          old ~44px apex / ~420ms flight as a continuity
+                          check, not picked blind.
+
+                          Test rework required, not just extension: the
+                          old move(dx) test hook set state directly, but
+                          moveIntent is overwritten every real frame by
+                          the live loop reading actual held-key state --
+                          a direct-call test would just get fought by the
+                          next animation frame. Rewrote the movement tests
+                          to drive real page.keyboard.down/up() events
+                          instead, which is also the more faithful test
+                          (exercises the real keydown/keyup wiring, not
+                          just the physics function in isolation).
+
+                          20 new/reworked assertions (tests/rig-sequence.js
+                          §§13-16: acceleration is gradual not instant,
+                          friction decays velocity over real time, wall
+                          clamp zeroes velocity, velY crosses zero at the
+                          jump apex, lands with velY reset to 0). Full
+                          suite stable across repeated runs: 68/68
+                          rig-sequence + 20/20 rig-2player + 14/14
+                          rig-audio.
+
   v0.1.16 — 2026-07-20 — Movement, facing, and jump added to
                           createRigController(): posX (a persistent world
                           position distinct from pose.pelvisDX's transient
@@ -599,7 +652,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.16</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.17</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -809,39 +862,76 @@
     let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
     let attackSide = null; // which side the currently-playing (or most recent) attack was on
     let guarding = false;
-    // ---- Movement (producer request: "add the game joystick... movement
-    // logic to the rig itself") ----
-    // posX is a persistent world position, distinct from pose.pelvisDX
-    // (the transient per-attack lean) -- fed into solveRig() as the stand
-    // offset instead of a fixed per-player constant. facing tracks which
-    // way an attack should throw its kick now that direction comes from
-    // movement input, not from a dedicated left/right attack button.
-    let posX = 0;
+    // ---- Movement physics (producer request: "detail the physics of the
+    // rig" -- replacing the v0.1.16 instant-delta move() with a real
+    // velocity/acceleration model). posX is a persistent world position,
+    // distinct from pose.pelvisDX (the transient per-attack lean) -- fed
+    // into solveRig() as the stand offset instead of a fixed per-player
+    // constant. velX is real velocity (px/sec), integrated every frame in
+    // updatePhysics(dt) -- moveIntent (-1..1, set once per frame by the
+    // input layer via setMoveIntent) is a target *direction*, not a
+    // position delta, so starting and stopping both take real time
+    // (MOVE_ACCEL/MOVE_FRICTION) instead of snapping to a speed. facing
+    // tracks actual velocity direction, not raw input, so it lags very
+    // slightly behind an instant reversal the same way a real body would.
+    let posX = 0, velX = 0, moveIntent = 0;
     let facing = 'R';
     const MOVE_MIN = -170, MOVE_MAX = 170; // arena bounds, arbitrary first guess -- same "expect to hand-tune once you see it" status every pose constant in this file already carries
-    function move(dx) {
-      if (dx === 0) return;
-      if (seq && isCommittedPhase(seqIdx)) return; // no sliding the whole body mid-kick
-      posX = clamp(posX + dx, MOVE_MIN, MOVE_MAX);
-      facing = dx > 0 ? 'R' : 'L';
+    const MOVE_MAX_SPEED = 220; // px/sec top speed
+    const MOVE_ACCEL = 1400; // px/sec^2 -- how fast velocity ramps toward the intended speed while input is held
+    const MOVE_FRICTION = 1800; // px/sec^2 -- how fast velocity decays to 0 with no input (or while a committed attack overrides intent to 0); higher than MOVE_ACCEL so stopping reads snappier than starting, not floaty
+    function setMoveIntent(v) { moveIntent = clamp(v, -1, 1); }
+    function updateMovement(dt) {
+      // No sliding the whole body mid-kick -- overriding intent to 0 (not
+      // freezing velX outright) means a kick thrown mid-stride decelerates
+      // into the committed phase via real friction instead of snapping
+      // dead, which would itself look like the exact "knee jerk" weightless
+      // motion this physics pass exists to fix.
+      const intent = (seq && isCommittedPhase(seqIdx)) ? 0 : moveIntent;
+      const targetSpeed = intent * MOVE_MAX_SPEED;
+      const rate = intent !== 0 ? MOVE_ACCEL : MOVE_FRICTION;
+      if (velX < targetSpeed) velX = Math.min(targetSpeed, velX + rate * dt);
+      else if (velX > targetSpeed) velX = Math.max(targetSpeed, velX - rate * dt);
+      const next = posX + velX * dt;
+      if (next < MOVE_MIN || next > MOVE_MAX) velX = 0; // hit the arena wall -- stop dead rather than pinning against the clamp with residual velocity every frame
+      posX = clamp(next, MOVE_MIN, MOVE_MAX);
+      if (Math.abs(velX) > 8) facing = velX > 0 ? 'R' : 'L'; // only reface on real speed, not residual friction noise near 0
     }
-    // ---- Jump ----
+
+    // ---- Jump physics ----
+    // Replacing the v0.1.16 canned sin(t*pi) arc with real projectile
+    // motion: a takeoff velocity, a constant downward acceleration
+    // integrated every frame, same shape gravity actually has (falls back
+    // through the same speed profile it rose with, not a fixed-duration
+    // curve). GRAVITY/JUMP_SPEED are tuned to reproduce the old ~44px
+    // apex / ~420ms flight time as a sanity check that this reads the same
+    // or better, not picked blind: apex = JUMP_SPEED^2/(2*GRAVITY) =
+    // 420^2/4000 = 44.1px; time-to-apex = JUMP_SPEED/GRAVITY = 0.21s, so a
+    // symmetric up+down flight is ~420ms, matching the old JUMP_DUR.
     // Exclusive with attack/guard for this pass (can't jump mid-committed-
     // attack or while guarding, can't attack/guard while airborne) -- the
     // same "don't add complexity ahead of a working baseline" reasoning
     // this file's own history already names for why the consolidation
     // pass deferred combo/parry. Aerial attacks are a real, natural
     // extension later, not designed here.
-    let jumping = false, jumpStart = 0;
-    const JUMP_DUR = 420, JUMP_HEIGHT = 46;
+    let jumping = false, velY = 0, jumpHeight = 0;
+    const GRAVITY = 2000, JUMP_SPEED = 420;
     function tryJump() {
       if (jumping || guarding) return;
       if (seq && isCommittedPhase(seqIdx)) return;
       jumping = true;
-      jumpStart = performance.now();
+      velY = JUMP_SPEED;
+      jumpHeight = 0;
       seq = null;
       queuedSide = null;
     }
+    function updateJump(dt) {
+      if (!jumping) return;
+      velY -= GRAVITY * dt;
+      jumpHeight += velY * dt;
+      if (jumpHeight <= 0) { jumpHeight = 0; velY = 0; jumping = false; }
+    }
+    function updatePhysics(dt) { updateMovement(dt); updateJump(dt); }
 
     // Convention: the LAST phase of any attackSequence is recovery —
     // cosmetic follow-through with no remaining gameplay function (the hit
@@ -900,16 +990,13 @@
 
     function currentPose() {
       if (jumping) {
-        const t = (performance.now() - jumpStart) / JUMP_DUR;
-        if (t < 1) {
-          // A simple sine arc (0->1->0 over the jump's duration), applied
-          // as a pelvisDY offset on top of idle -- not a distinct pose set,
-          // since exclusivity with attack/guard means idle is the only
-          // base this ever needs to lift off of.
-          const hop = Math.sin(t * Math.PI) * JUMP_HEIGHT;
-          return Object.assign({}, POSES.idle, { pelvisDY: POSES.idle.pelvisDY - hop });
-        }
-        jumping = false; // landed -- fall through to normal idle/guard/attack logic below
+        // jumpHeight is real integrated projectile motion (see
+        // updateJump()), not a canned curve -- read directly as a
+        // pelvisDY offset on top of idle. updateJump() (called once per
+        // frame from updatePhysics(), same as updateSeq()) is what clears
+        // `jumping` on landing; currentPose() only ever reads the current
+        // height, it doesn't own the physics step.
+        return Object.assign({}, POSES.idle, { pelvisDY: POSES.idle.pelvisDY - jumpHeight });
       }
       if (guarding) return POSES.guard; // takes priority over idle/overlay -- setGuard() already refuses to set this mid-committed-attack
       if (!seq) {
@@ -974,11 +1061,13 @@
     function reset() {
       seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
       queuedSide = null; attackSide = null; guarding = false;
-      posX = 0; facing = 'R'; jumping = false;
+      posX = 0; velX = 0; moveIntent = 0; facing = 'R';
+      jumping = false; velY = 0; jumpHeight = 0;
     }
 
     return {
-      triggerAttack, setGuard, currentPose, updateSeq, reset, move, tryJump,
+      triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
+      setMoveIntent, updatePhysics,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -987,8 +1076,10 @@
       get attackSide() { return attackSide; },
       get idle() { return !seq; },
       get posX() { return posX; },
+      get velX() { return velX; },
       get facing() { return facing; },
-      get jumping() { return jumping; }
+      get jumping() { return jumping; },
+      get velY() { return velY; }
     };
   }
 
@@ -1767,28 +1858,31 @@
   }
 
   // Player 1 movement (producer request: "add the game joystick... and
-  // may add the movement logic to the rig itself"). Replaces the old
-  // scheme where ArrowLeft/ArrowRight directly threw a left/right kick --
-  // now they move the rig, and attack throws whichever kick matches
-  // p1.facing (the direction last moved). Held-key state is tracked here
-  // and applied once per frame in applyMoveInput(), the same "poll inside
-  // the game loop" shape the gamepad axis below already needs, so both
-  // input sources go through one path instead of two different timing
-  // models.
+  // may add the movement logic to the rig itself", later "detail the
+  // physics of the rig"). Replaces the old scheme where ArrowLeft/
+  // ArrowRight directly threw a left/right kick -- now they move the
+  // rig, and attack throws whichever kick matches p1.facing (the
+  // direction last moved). Held-key state is tracked here and turned into
+  // an *intent* (-1..1, a direction, not a position delta) applied once
+  // per frame -- p1.updatePhysics(dt) is what actually integrates
+  // velocity/position from that intent, giving movement real acceleration
+  // instead of an instant per-frame teleport.
   let moveLeftHeld = false, moveRightHeld = false;
-  const MOVE_SPEED = 220; // px/sec, a first guess like every other tuning constant in this file -- expect to hand-adjust once it's actually being played
   function applyMoveInput(dt) {
-    let dx = 0;
-    if (moveLeftHeld) dx -= MOVE_SPEED * dt;
-    if (moveRightHeld) dx += MOVE_SPEED * dt;
+    let intent = 0;
+    if (moveLeftHeld) intent -= 1;
+    if (moveRightHeld) intent += 1;
     if (p1PadIndex !== null) {
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = pads[p1PadIndex];
       // Deadzone of 0.15 -- standard-mapping analog sticks rarely rest at
-      // exactly 0, and without this the rig drifts on its own.
-      if (gp && gp.axes && Math.abs(gp.axes[0]) > 0.15) dx += gp.axes[0] * MOVE_SPEED * dt;
+      // exactly 0, and without this the rig drifts on its own. An analog
+      // stick past the deadzone overrides digital keyboard intent (an
+      // actual push value, not just -1/0/1), rather than adding to it.
+      if (gp && gp.axes && Math.abs(gp.axes[0]) > 0.15) intent = gp.axes[0];
     }
-    p1.move(dx);
+    p1.setMoveIntent(intent);
+    p1.updatePhysics(dt);
   }
 
   window.addEventListener('keydown', (e) => {
@@ -1931,8 +2025,10 @@
           queuedSide: p1.queuedSide,
           attackSide: p1.attackSide,
           posX: p1.posX,
+          velX: p1.velX,
           facing: p1.facing,
           jumping: p1.jumping,
+          velY: p1.velY,
           pose: p1.currentPose(),
           joints,
           sockets: getSockets(joints),
@@ -1954,7 +2050,21 @@
       trigger: (side) => handleInput(side),
       attack: () => handleInput(p1.facing), // the real attack button's actual call path -- facing-based, not an explicit side
       setGuard: (active) => setGuard(active),
-      move: (dx) => p1.move(dx),
+      // setMoveIntent/updatePhysics/stepPhysics expose the real physics
+      // integrator directly -- a test drives it the same way the real
+      // per-frame loop does (set an intent, then step time forward),
+      // never a shortcut that bypasses velocity/acceleration.
+      setMoveIntent: (v) => p1.setMoveIntent(v),
+      updatePhysics: (dt) => p1.updatePhysics(dt),
+      stepPhysics: (totalMs, stepMs) => {
+        stepMs = stepMs || 16;
+        let remaining = totalMs;
+        while (remaining > 0) {
+          const step = Math.min(stepMs, remaining);
+          p1.updatePhysics(step / 1000);
+          remaining -= step;
+        }
+      },
       jump: () => p1.tryJump(),
       resetSession: () => resetSession(),
       // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
