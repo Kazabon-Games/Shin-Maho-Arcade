@@ -450,11 +450,11 @@
   // them once you see the rig move.
   const POSES = {
     idle: {
-      pelvisDX: 0, pelvisDY: 0, spineA: -DOWN + 0.03,
-      hipL: DOWN + 0.18, kneeL: DOWN + 0.05,
-      hipR: DOWN - 0.18, kneeR: DOWN - 0.05,
-      shoulderL: DOWN + 1.9, elbowL: DOWN + 1.6,
-      shoulderR: DOWN - 1.9, elbowR: DOWN - 1.6
+      pelvisDX: 0, pelvisDY: 0, spineA: -DOWN + 0.05,
+      hipL: DOWN + 0.22, kneeL: DOWN + 0.30,
+      hipR: DOWN - 0.22, kneeR: DOWN - 0.30,
+      shoulderL: DOWN + 0.30, elbowL: DOWN + 1.35,
+      shoulderR: DOWN - 0.30, elbowR: DOWN - 1.35
     },
     kickR_windup: {
       pelvisDX: -8, pelvisDY: 3, spineA: -DOWN - 0.12,
@@ -659,10 +659,16 @@
     function currentPose() {
       if (guarding) return POSES.guard; // takes priority over idle/overlay -- setGuard() already refuses to set this mid-committed-attack
       if (!seq) {
-        // subtle idle breathing so the rig isn't static between attacks
-        // (amplitude scaled with the 0.8x rig resize, same as LEN)
-        const bob = Math.sin(performance.now() / 450) * 2.4;
-        const sway = Math.sin(performance.now() / 900) * 0.04;
+        // Idle breathing so the rig isn't static between attacks. v0.1.11
+        // values (450ms/2.4px, 900ms/0.04rad) were real but nearly
+        // imperceptible at actual render size -- measured live via
+        // window.Rig._test.state().pose deltas: ~1.85px pelvis bob and
+        // ~1.1deg shoulder sway over half a cycle, plus a 450ms period read
+        // as a nervous twitch, not a breath. Slowed and amplified here to
+        // an actually-visible calm-breathing read; still scaled with the
+        // 0.8x rig resize, same as LEN.
+        const bob = Math.sin(performance.now() / 1400) * 4.5;
+        const sway = Math.sin(performance.now() / 1800) * 0.07;
         const base = Object.assign({}, POSES.idle, {
           pelvisDY: POSES.idle.pelvisDY + bob,
           shoulderL: POSES.idle.shoulderL + sway,
