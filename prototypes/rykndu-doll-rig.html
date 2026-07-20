@@ -11,6 +11,49 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.27 — 2026-07-20 — Walk cycle: a real "feel" gap, not a systems
+                          gap, after several passes that were all combat/
+                          state-machine work. This rig had real velocity/
+                          acceleration movement physics since v0.1.17, but
+                          every non-attacking pose rendered IDENTICALLY
+                          whether the rig was standing still or sliding
+                          across the ground at full speed -- a duel-
+                          brawler's single most-performed action (moving
+                          around) had zero animation of its own, verified
+                          by screenshot comparison, not just noticed in
+                          code. walkPhase (a new per-rig phase
+                          accumulator) advances by real ground DISTANCE
+                          covered in updateMovement(dt), not raw elapsed
+                          time (WALK_STRIDE_LENGTH px per full cycle) --
+                          so stride cadence naturally matches actual
+                          speed instead of a fixed-tempo animation that
+                          would skate the feet at any speed other than
+                          the one it was tuned for, the same "real
+                          physics, not a canned curve" standard every
+                          other timed system in this rig already holds
+                          itself to. currentPose()'s idle branch blends
+                          in leg swing, per-leg knee lift (each leg lifts
+                          only during its own forward-swing half), a
+                          contralateral opposite-arm counter-swing, and a
+                          stride bounce, scaled by walkBlend (0 at rest,
+                          1 at WALK_BLEND_FULL_SPEED) so a standing rig
+                          still just breathes and a moving one gains the
+                          cycle smoothly rather than popping to full
+                          amplitude. Guard/jump/attack poses are
+                          unaffected (they already returned before the
+                          idle branch). New tests/rig-walk-cycle.js (14
+                          assertions) verifies the swing, the cycle's
+                          real oscillation (not a one-way drift), that
+                          cadence tracks distance not time, that guard
+                          fully suppresses it, and that both players share
+                          the same behavior through the same factory --
+                          written around a real test-writing gotcha found
+                          along the way: splitting setMoveIntent() and a
+                          physics-step call across two separate
+                          page.evaluate() calls lets a real animation
+                          frame's own applyMoveInput(dt) silently reset
+                          moveIntent back to 0 in between.
+
   v0.1.26 — 2026-07-20 — Combo-cancel: the last item on this project's own
                           "still deferred" list. The existing "buffered
                           input fires immediately at recovery start"
@@ -1003,7 +1046,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.26</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.27</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1225,6 +1268,29 @@
   // condition rather than something walking there directly could trigger.
   const ARENA_BOUND = 170;
 
+  // Walk cycle (v0.1.27) -- the rig had real velocity/acceleration physics
+  // since v0.1.17, but every foot-planted, non-attacking pose (the "idle"
+  // branch of currentPose()) rendered identically whether the rig was
+  // standing still or sliding across the ground at full speed: legs never
+  // swung, arms never countered, no bounce -- a duel-brawler's single
+  // most-performed action had zero animation of its own. WALK_STRIDE_LENGTH
+  // is in px of actual ground covered per full stride cycle (not a fixed
+  // duration), so walkPhase (advanced in updateMovement() by real distance
+  // traveled, not raw elapsed time) naturally cycles faster at higher
+  // speed and slower at low speed instead of a fixed-tempo animation that
+  // would skate the feet at any speed other than the one it was tuned
+  // for -- the same "real physics, not a canned curve" standard every
+  // other timed system in this rig already holds itself to.
+  // WALK_BLEND_FULL_SPEED is well under MOVE_MAX_SPEED (220) so the walk
+  // cycle reaches full amplitude before top speed, not right at the edge
+  // of it.
+  const WALK_STRIDE_LENGTH = 70;
+  const WALK_BLEND_FULL_SPEED = 120;
+  const WALK_HIP_AMP = 0.5;
+  const WALK_KNEE_AMP = 0.6;
+  const WALK_ARM_AMP = 0.4;
+  const WALK_BOB_AMP = 3.5;
+
   // Guard stamina meter constants (v0.1.24), module-level for the same
   // reason ARENA_BOUND is -- one shared budget both rigs are held to
   // identically, not per-instance tuning. Numbers picked to make
@@ -1315,6 +1381,7 @@
     const START_X = opts.startX || 0; // spawn point -- 0 for player 1, an offset for player 2 so a real duel doesn't start with both rigs on top of each other
     let posX = START_X, velX = 0, moveIntent = 0;
     let facing = opts.startFacing || 'R';
+    let walkPhase = 0; // radians -- advanced by real distance traveled in updateMovement(), not raw time; see WALK_STRIDE_LENGTH's own comment
     const MOVE_MIN = -ARENA_BOUND, MOVE_MAX = ARENA_BOUND; // walking wall -- see ARENA_BOUND's own comment for why this is also the ring-out threshold
     const MOVE_MAX_SPEED = 220; // px/sec top speed
     const MOVE_ACCEL = 1400; // px/sec^2 -- how fast velocity ramps toward the intended speed while input is held
@@ -1373,6 +1440,7 @@
       if (next < MOVE_MIN || next > MOVE_MAX) velX = 0; // hit the arena wall -- stop dead rather than pinning against the clamp with residual velocity every frame
       posX = clamp(next, MOVE_MIN, MOVE_MAX);
       if (Math.abs(velX) > 8) facing = velX > 0 ? 'R' : 'L'; // only reface on real speed, not residual friction noise near 0
+      walkPhase += velX * dt * (2 * Math.PI / WALK_STRIDE_LENGTH); // ground DISTANCE covered this frame, not dt alone -- see WALK_STRIDE_LENGTH's own comment for why
     }
 
     // ---- Jump physics ----
@@ -1558,12 +1626,32 @@
         // as a nervous twitch, not a breath. Slowed and amplified here to
         // an actually-visible calm-breathing read; still scaled with the
         // 0.8x rig resize, same as LEN.
-        const bob = Math.sin(performance.now() / 1400) * 4.5;
-        const sway = Math.sin(performance.now() / 1800) * 0.07;
+        //
+        // Walk cycle (v0.1.27): blended in by walkBlend (0 at rest, 1 at
+        // WALK_BLEND_FULL_SPEED) so a standing rig still just breathes,
+        // and a moving one smoothly gains leg swing/knee lift/opposite-
+        // arm counter-swing/stride bounce as it speeds up, rather than
+        // popping straight to full amplitude at the first hint of
+        // velocity or continuing to just breathe-wobble while sliding
+        // across the ground. The breathing bob/sway itself fades OUT as
+        // the walk cycle's own (faster, distance-driven) bounce takes
+        // over, so the two never visibly fight each other.
+        const walkBlend = Math.min(1, Math.abs(velX) / WALK_BLEND_FULL_SPEED);
+        const bob = Math.sin(performance.now() / 1400) * 4.5 * (1 - walkBlend);
+        const sway = Math.sin(performance.now() / 1800) * 0.07 * (1 - walkBlend);
+        const legSwing = Math.sin(walkPhase) * WALK_HIP_AMP * walkBlend;
+        const kneeLiftL = Math.max(0, Math.sin(walkPhase)) * WALK_KNEE_AMP * walkBlend; // each leg lifts only during its own forward-swing half of the cycle
+        const kneeLiftR = Math.max(0, Math.sin(walkPhase + Math.PI)) * WALK_KNEE_AMP * walkBlend;
+        const armSwing = Math.sin(walkPhase) * WALK_ARM_AMP * walkBlend; // contralateral gait -- opposite arm counters the same-side leg
+        const strideBob = Math.abs(Math.sin(walkPhase)) * WALK_BOB_AMP * walkBlend; // bounces twice per full stride, like a real gait
         const base = Object.assign({}, POSES.idle, {
-          pelvisDY: POSES.idle.pelvisDY + bob,
-          shoulderL: POSES.idle.shoulderL + sway,
-          shoulderR: POSES.idle.shoulderR - sway
+          pelvisDY: POSES.idle.pelvisDY + bob - strideBob,
+          shoulderL: POSES.idle.shoulderL + sway - armSwing,
+          shoulderR: POSES.idle.shoulderR - sway + armSwing,
+          hipL: POSES.idle.hipL + legSwing,
+          kneeL: POSES.idle.kneeL + kneeLiftL,
+          hipR: POSES.idle.hipR - legSwing,
+          kneeR: POSES.idle.kneeR + kneeLiftR
         });
         const flinchElapsed = performance.now() - flinchStart;
         if (flinchElapsed < FLINCH_DUR) {
@@ -1658,6 +1746,7 @@
       jumping = false; velY = 0; jumpHeight = 0;
       hasHitThisSwing = false; knockbackTimer = 0; flinchStart = -Infinity;
       guardMeter = GUARD_METER_MAX; guardRaisedAt = -Infinity;
+      walkPhase = 0;
     }
 
     return {
@@ -1680,7 +1769,8 @@
       get recoverEnterPose() { return recoverEnterPose; },
       get hasHitThisSwing() { return hasHitThisSwing; },
       get knockbackTimer() { return knockbackTimer; },
-      get guardMeter() { return guardMeter; }
+      get guardMeter() { return guardMeter; },
+      get walkPhase() { return walkPhase; }
     };
   }
 
@@ -2883,6 +2973,7 @@
           recoverExitVel: p1.recoverExitVel,
           recoverEnterPose: p1.recoverEnterPose,
           guardMeter: p1.guardMeter,
+          walkPhase: p1.walkPhase,
           isInParryWindow: p1.isInParryWindow(),
           hasHitThisSwing: p1.hasHitThisSwing,
           knockbackTimer: p1.knockbackTimer,
@@ -2979,6 +3070,7 @@
           recoverExitVel: p2.recoverExitVel,
           recoverEnterPose: p2.recoverEnterPose,
           guardMeter: p2.guardMeter,
+          walkPhase: p2.walkPhase,
           isInParryWindow: p2.isInParryWindow(),
           hasHitThisSwing: p2.hasHitThisSwing,
           knockbackTimer: p2.knockbackTimer,

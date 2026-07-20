@@ -91,6 +91,32 @@ shipped this pass for player 1 only:
   buffered-input contract above didn't need to change — only the pose
   formula inside that unchanged window did.
 
+## Walk cycle (v0.1.27 — a feel gap, not a physics gap)
+
+Movement physics existed since v0.1.17, but `currentPose()`'s idle
+branch rendered identically whether the rig was standing still or
+sliding across the ground at full speed — no leg swing, no knee lift, no
+arm counter-swing, no stride bounce. Real movement without any
+animation to show it read as a statue on rails, a real gap this section
+names honestly (found by comparing an idle screenshot to a mid-movement
+one directly, not assumed from the code).
+
+`walkPhase` (per rig, alongside `posX`/`velX`) advances in
+`updateMovement(dt)` by real ground DISTANCE covered that frame
+(`velX * dt`, converted to radians via `WALK_STRIDE_LENGTH` px per full
+cycle) — not raw elapsed time. This is deliberate: a fixed-tempo walk
+animation would visibly skate the feet at any speed other than the one
+it was tuned for, the same "real physics, not a canned curve" standard
+`recover`'s damped-spring pose above already holds itself to. `walkBlend`
+(0 at rest, 1 at `WALK_BLEND_FULL_SPEED`) fades the cycle in smoothly
+with speed — a standing rig still just breathes, a moving one gains leg
+swing, per-leg knee lift (each leg lifts only during its own
+forward-swing half of the cycle), a contralateral opposite-arm
+counter-swing, and a stride bounce, without popping straight to full
+amplitude the instant velocity leaves zero. `guard`/`jump`/attack poses
+are unaffected — they already return before `currentPose()` reaches the
+idle branch this lives in.
+
 These three physics systems weren't combat-facing when this section was
 first written (no rig-vs-rig hit detection existed yet), and they still
 don't change anything in the state table above — they're additive physics
@@ -303,4 +329,9 @@ directions. Combo-cancel is covered by `tests/rig-combo-cancel.js` — a
 confirmed hit with a buffer firing the follow-up immediately, one with no
 buffer behaving exactly as before, a blocked hit NOT canceling, a parried
 hit fully interrupting the attacker (buffer cleared, not preserved), and
-both attack directions.
+both attack directions. The walk cycle is covered by
+`tests/rig-walk-cycle.js` — real leg swing/knee lift away from the static
+resting pose, a genuine oscillation (not a one-way drift) as the phase
+advances, cadence tracking distance rather than raw time, guard fully
+suppressing the cycle even while still moving underneath, `reset()`
+zeroing the phase, and both players sharing the same behavior.
