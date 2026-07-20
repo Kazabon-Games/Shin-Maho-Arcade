@@ -11,6 +11,38 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.14 — 2026-07-20 — Signature-identity pass: v0.1.13 matched the
+                          supplied stickman-brawler references well, but
+                          was a generic match, not a Rykndu-specific one --
+                          producer feedback asked for the rig's own unique
+                          rendering, not a reskin of someone else's mobile-
+                          game asset. Added drawJointGem(): a small
+                          faceted-gem accent at each major joint (shoulder/
+                          elbow/hip/knee, plus a slightly larger one at the
+                          chest as a signature core mark), reusing this
+                          studio's actual established rendering technique
+                          verbatim (alternating lit/dark facet wedges fanned
+                          from a center point, a soft shadowBlur glow, a
+                          translucent outer ring stroke -- see the
+                          faceted-gem-rendering skill) rather than
+                          inventing a new one. This is the same technique
+                          Sigil Chain's runes and Iridescent Cosmology's enemies/Rites
+                          already use, just never applied to a rig before
+                          -- it's what actually ties this character back to
+                          the rest of Shin Mahou Arcade's visual identity
+                          instead of reading as an unbranded stickman
+                          asset. Verified at actual render size via a
+                          cropped close-up screenshot (the facet wedges
+                          and glow are genuinely visible, not just a blur),
+                          per the skill's own verification rule.
+
+                          Pure rendering addition, verified against the
+                          full existing suite with zero test changes
+                          needed: 42/42 rig-sequence + 20/20 rig-2player +
+                          14/14 rig-audio. Checked idle, mid-strike, and
+                          guard poses for clipping/overlap at the new
+                          joint accents -- none found.
+
   v0.1.13 — 2026-07-20 — Second rendering pass, this time against seven
                           reference images the producer supplied directly
                           (the "Stick Fight"/mobile-stickman-brawler visual
@@ -457,7 +489,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.13</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.14</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -1001,6 +1033,42 @@
     ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
   }
 
+  // Rykndu's own signature accent, distinct from the generic-brawler
+  // reference set: a small faceted-gem node at each major joint, reusing
+  // this studio's actual signature rendering technique (see the
+  // faceted-gem-rendering skill -- alternating lit/dark facets fanned from
+  // a center point, a soft glow behind it, a translucent outer ring) at a
+  // scale that reads as a socketed crystal joint rather than a full gem
+  // shape. This is what makes the rig read as *this* studio's character
+  // rather than a reskin of any other stickman-brawler asset -- same
+  // "arcane" visual identity Shin Mahou Arcade's other games already
+  // carry (Sigil Chain's runes, Iridescent Cosmology's Rites), just never
+  // applied to a rig before.
+  function drawJointGem(p, radius, baseColor) {
+    const sides = 7; // odd count, same reasoning the skill gives for hand-authored asymmetry over a uniform even fan: avoids a perfectly mirrored look even at this small a scale
+    ctx.save();
+    ctx.shadowBlur = radius * 2.2;
+    ctx.shadowColor = baseColor;
+    for (let i = 0; i < sides; i++) {
+      const a0 = (i / sides) * Math.PI * 2, a1 = ((i + 1) / sides) * Math.PI * 2;
+      const lit = i % 2 === 0;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + Math.cos(a0) * radius, p.y + Math.sin(a0) * radius);
+      ctx.lineTo(p.x + Math.cos(a1) * radius, p.y + Math.sin(a1) * radius);
+      ctx.closePath();
+      ctx.fillStyle = shadeHex(baseColor, lit ? 20 : -18, lit ? 10 : -8);
+      ctx.fill();
+      ctx.shadowBlur = 0; // only the first facet needs to cast the glow -- repeating it per-facet would blur every internal edge, not just the silhouette
+    }
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   function renderRig(j, color) {
     const c = color || '#e8e8f0';
     const outline = shadeHex(c, -38, -10); // a darker shade of the same hue, not a universal black -- keeps P1/P2 distinguishable by outline too, not just fill
@@ -1013,6 +1081,8 @@
     drawLimb(j.kneeR, j.footR, 11, 8, c, outline);
     drawTerminal(j.footL, 7, c, outline);
     drawTerminal(j.footR, 7, c, outline);
+    drawJointGem(j.hipL, 4.5, c); drawJointGem(j.kneeL, 4, c);
+    drawJointGem(j.hipR, 4.5, c); drawJointGem(j.kneeR, 4, c);
 
     // spine -- solid wedge widening toward the chest/shoulders
     drawLimb(j.pelvis, j.chest, 13, 17, c, outline);
@@ -1024,6 +1094,15 @@
     drawLimb(j.elbowR, j.handR, 8, 7, c, outline);
     drawTerminal(j.handL, 6.5, c, outline);
     drawTerminal(j.handR, 6.5, c, outline);
+    drawJointGem(j.shoulderL, 4.5, c); drawJointGem(j.elbowL, 4, c);
+    drawJointGem(j.shoulderR, 4.5, c); drawJointGem(j.elbowR, 4, c);
+
+    // chest core -- a slightly larger signature gem, the one Rykndu-
+    // specific mark rather than a repeated joint detail (the studio's
+    // "Grimoire vocabulary" already treats a core/rite/rune as the
+    // recognizable emblem of a character or system elsewhere -- this is
+    // that idea applied to the rig itself)
+    drawJointGem(j.chest, 6.5, c);
 
     // head -- flat fill matching the flat-silhouette style, same outline
     // treatment as the limbs so it reads as one consistent character
