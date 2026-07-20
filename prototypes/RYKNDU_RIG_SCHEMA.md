@@ -95,18 +95,28 @@ version of that pose will silently reuse the un-mirrored value.
 
 ## Attachment sockets (consolidation §3 — added v0.1.9)
 
-`getSockets(joints)` resolves 7 named world-space points from `solveRig()`'s
-output: `hand_r`, `hand_l`, `foot_r`, `foot_l`, `hip`, `back`, `head`. Names
-are deliberately distinct from `solveRig()`'s own joint keys (`hand_r` vs.
-`handR`) so a stray direct joint read doesn't silently pass as "using the
-socket system." `resolveHits()` was migrated to read `foot_r`/`foot_l`
-through this layer instead of `joints.footR`/`footL` directly — the first
-real caller, so the convention is enforced starting now, not just
-documented. Every socket is currently a 1:1 alias of an existing joint
+`getSockets(joints)` resolves 8 named world-space points from `solveRig()`'s
+output: `hand_r`, `hand_l`, `foot_r`, `foot_l`, `hip`, `back`, `head`,
+`stance`. Names are deliberately distinct from `solveRig()`'s own joint keys
+(`hand_r` vs. `handR`) so a stray direct joint read doesn't silently pass as
+"using the socket system." `resolveHits()` was migrated to read
+`foot_r`/`foot_l` through this layer instead of `joints.footR`/`footL`
+directly — the first real caller, so the convention is enforced starting
+now, not just documented. Most sockets are a 1:1 alias of an existing joint
 (verified via `tests/rig-sequence.js` §11) — no independent
 orientation/rotation component yet, since no weapon/skin exists to need
 one. Future weapon/skin/attack-reach code should query sockets by name,
 never reach into `solveRig()`'s raw output.
+
+`stance` (added v0.1.21) is the one socket that ISN'T a 1:1 joint alias —
+it's the midpoint between `foot_l`/`foot_r`, i.e. ground-level, centered
+regardless of which leg happens to be forward. Added for rig-vs-rig combat
+resolution: a kick's strike pose is solved to land at ankle/enemy-dot
+height (`kickR_strike`'s own comment), roughly 80px below `hip`, so using
+`hip` as a defender's hurtbox reference missed every hit in initial
+testing until caught live and fixed. Real enough a future ground-shadow or
+dust-FX attachment could reuse it too, not a hit-detection-only special
+case.
 
 ## What this schema does not yet have (tracked separately, not gaps in this doc)
 

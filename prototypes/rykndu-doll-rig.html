@@ -11,6 +11,40 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.21 — 2026-07-20 — Rig-vs-rig combat resolution: the game's actual
+                          core mechanic, previously entirely absent (both
+                          rigs could attack, guard, and now move/jump, but
+                          neither could ever actually hit the other one).
+                          checkPvpHit()/resolveDuelHit() are one shared
+                          pairwise function called twice per frame (once
+                          per attack direction), not two hand-copied
+                          blocks -- verified by driving both directions in
+                          tests/rig-combat.js, not just asserted. A landed
+                          strike-phase hit applies a real knockback
+                          velocity impulse (480px/sec, well above the
+                          220px/sec top walking speed) that decays through
+                          the exact same friction real movement already
+                          uses; guarding chips the impulse down to 20% and
+                          doesn't break guard, instead of fully no-selling
+                          it. Added a `stance` socket (feet midpoint) to
+                          getSockets() -- the defender's hurtbox needed
+                          ankle-height, not hip/pelvis height, since a kick
+                          strike pose is solved to land at the old enemy-
+                          dot's height (see kickR_strike's own comment),
+                          not torso height; using hip here initially missed
+                          every hit by ~80px until caught live and fixed.
+                          Knockback carrying a rig's posX past
+                          ARENA_BOUND (170, the same wall voluntary
+                          movement already clamps against) is a ring-out:
+                          scores the attacker a point and resets both rigs
+                          to their duel spawn. The old player-1-only
+                          miss-flinch reaction (triggerFlinch(), wired in
+                          via a since-removed opts.idleOverlay hook) moved
+                          into createRigController() itself so a landed
+                          PVP hit can flinch either rig through the same
+                          mechanism, not a second copy. New window.Duel
+                          test hook exposes p1Score/p2Score.
+
   v0.1.20 — 2026-07-20 — Player 2 gets the same physics pass player 1
                           already had: real movement (velX/friction),
                           gravity-driven jump, and recovery momentum, all
@@ -771,6 +805,11 @@
   }
   #hud .lives-full { color: #ff4d70; }
   #hud .lives-spent { color: #4a3038; }
+  /* Duel score (Game 5 combat resolution): plain text, no per-player split
+     coloring -- P1_COLOR/P2_COLOR are already carried by the two rigs
+     themselves on screen, so repeating them here would just be visual
+     noise on a HUD line that already reads fine as one color. */
+  #hud .duel-score { color: #9aa0b4; }
   /* Touch controls (v0.1.19): replaces the old zoneL/zoneR full-screen-
      half tap zones, which threw an explicit left/right kick directly --
      a scheme the v0.1.16 movement/facing rework left completely
@@ -812,7 +851,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.20</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.21</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1000,6 +1039,15 @@
     ];
   }
 
+  // Arena walking bound, module-level (not per-instance) since both rigs
+  // share the same stage -- also the ring-out threshold (Game 5 combat
+  // resolution): voluntary movement can never cross it (see
+  // updateMovement()'s clamp below), so the ONLY way either rig's posX
+  // ever ends up beyond it is a knockback impulse from a landed hit,
+  // which is exactly what makes "cross this line" a meaningful ring-out
+  // condition rather than something walking there directly could trigger.
+  const ARENA_BOUND = 170;
+
   // ---- Rig controller factory (Game 5 2-player extension) ----
   // Extracted from what was a single set of module-level `seq`/`seqIdx`/...
   // variables (through v0.1.10) into a factory so a second player's rig can
@@ -1012,11 +1060,15 @@
   // instead: verified against the full existing test suite (unchanged
   // behavior for player 1) before player 2 is ever instantiated from it.
   //
-  // `opts.idleOverlay(basePose)` lets a caller blend something on top of
-  // the idle-breathing pose (player 1 uses this for the miss-flinch
-  // reaction) without duplicating the state machine around it. `opts.onAttackStart(side)`
-  // lets a caller hook the windup SFX trigger. Both optional -- player 2
-  // passes neither, since it has no enemies/misses/audio of its own yet.
+  // `opts.onAttackStart(side)` lets a caller hook the windup SFX trigger --
+  // optional, since player 2 has no audio of its own yet. The miss-flinch
+  // reaction used to be wired in externally via an `opts.idleOverlay` hook
+  // (player 1 only, since player 2 had no source of flinches); now that a
+  // landed rig-vs-rig hit (see applyKnockback() below) ALSO needs to flinch
+  // the defender -- and the defender can be either player -- flinch moved
+  // into the factory itself so both rigs get it for free, the same reason
+  // movement/jump/guard already live in here rather than being bolted on
+  // per-instance.
   function createRigController(opts) {
     opts = opts || {};
     let seq = null;
@@ -1026,6 +1078,14 @@
     let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
     let attackSide = null; // which side the currently-playing (or most recent) attack was on
     let guarding = false;
+    let hasHitThisSwing = false; // one landed rig-vs-rig hit per strike phase -- same "can't double-count" guarantee resolveHits() gets for free by deleting the enemy on contact, needed here since a defender can stay in PVP_HIT_RADIUS for several frames of one strike
+    // Hit-reaction pose overlay -- was player-1-only (triggered on a missed
+    // enemy), now shared: a landed PVP hit (applyKnockback(), unless
+    // blocked) triggers the exact same flinch. Symmetric like POSES.flinch
+    // itself, so there's nothing side-specific to get wrong.
+    let flinchStart = -Infinity;
+    const FLINCH_DUR = 180;
+    function triggerFlinch() { flinchStart = performance.now(); }
     // Recovery follow-through state (real damped-spring momentum -- see
     // currentPose()'s recovery branch and updateSeq()'s exit-velocity
     // capture). null until the first attack ever enters recovery.
@@ -1046,12 +1106,50 @@
     const START_X = opts.startX || 0; // spawn point -- 0 for player 1, an offset for player 2 so a real duel doesn't start with both rigs on top of each other
     let posX = START_X, velX = 0, moveIntent = 0;
     let facing = opts.startFacing || 'R';
-    const MOVE_MIN = -170, MOVE_MAX = 170; // arena bounds, arbitrary first guess -- same "expect to hand-tune once you see it" status every pose constant in this file already carries
+    const MOVE_MIN = -ARENA_BOUND, MOVE_MAX = ARENA_BOUND; // walking wall -- see ARENA_BOUND's own comment for why this is also the ring-out threshold
     const MOVE_MAX_SPEED = 220; // px/sec top speed
     const MOVE_ACCEL = 1400; // px/sec^2 -- how fast velocity ramps toward the intended speed while input is held
     const MOVE_FRICTION = 1800; // px/sec^2 -- how fast velocity decays to 0 with no input (or while a committed attack overrides intent to 0); higher than MOVE_ACCEL so stopping reads snappier than starting, not floaty
     function setMoveIntent(v) { moveIntent = clamp(v, -1, 1); }
+
+    // ---- Knockback (Game 5 combat resolution) ----
+    // A landed hit overrides velX directly (not another force added on top
+    // of whatever velocity already existed) and locks out normal
+    // movement/wall-clamp for KNOCKBACK_LOCK_MS -- during that window the
+    // rig decelerates via the exact same MOVE_FRICTION real movement
+    // already uses, just without the arena-wall clamp, since being
+    // carried past that wall is what makes a ring-out possible at all
+    // (see resolveDuelCombat()/checkRingOuts()). Tuned so the lock
+    // window (260ms) comfortably outlasts the time a full-speed knockback
+    // takes to decay to 0 under this same friction (480/1800 =~ 267ms) --
+    // by the time normal movement resumes, velX has already settled, so
+    // there's no jarring clamp-snap back onto the stage after knockback
+    // stops just short of a ring-out.
+    let knockbackTimer = 0;
+    const KNOCKBACK_LOCK_MS = 260;
+    function applyKnockback(vx, blocked) {
+      velX = vx;
+      knockbackTimer = KNOCKBACK_LOCK_MS;
+      if (!blocked) {
+        // A clean hit overrides whatever the defender was doing, the same
+        // way a fresh attack already interrupts a recovery tail -- guard
+        // survives a BLOCKED hit (handled by the caller never passing
+        // blocked=true into this branch), but a landed hit cancels an
+        // attack/guard/jump in progress.
+        seq = null; queuedSide = null; guarding = false;
+        jumping = false; jumpHeight = 0; velY = 0;
+        triggerFlinch();
+      }
+    }
+
     function updateMovement(dt) {
+      if (knockbackTimer > 0) {
+        knockbackTimer -= dt * 1000;
+        if (velX > 0) velX = Math.max(0, velX - MOVE_FRICTION * dt);
+        else velX = Math.min(0, velX + MOVE_FRICTION * dt);
+        posX += velX * dt; // deliberately unclamped -- see the comment above applyKnockback()
+        return;
+      }
       // No sliding the whole body mid-kick -- overriding intent to 0 (not
       // freezing velX outright) means a kick thrown mid-stride decelerates
       // into the committed phase via real friction instead of snapping
@@ -1144,8 +1242,13 @@
       seqIdx = 0;
       seqStart = performance.now();
       attackSide = side;
+      hasHitThisSwing = false; // a fresh attack gets a fresh chance to land -- see resolveDuelHit()
       if (opts.onAttackStart) opts.onAttackStart(side);
     }
+
+    function markHit() { hasHitThisSwing = true; } // called by resolveDuelHit() once this swing has landed, so the same strike can't score twice while the defender lingers in range
+
+    function teleportTo(x) { posX = x; velX = 0; } // test/round-reset convenience -- bypasses movement physics for deterministic positioning, the same convenience window.Rig._test.spawnEnemy() already gets for enemy placement
 
     function triggerAttack(side) {
       if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
@@ -1185,7 +1288,11 @@
           shoulderL: POSES.idle.shoulderL + sway,
           shoulderR: POSES.idle.shoulderR - sway
         });
-        return opts.idleOverlay ? opts.idleOverlay(base) : base;
+        const flinchElapsed = performance.now() - flinchStart;
+        if (flinchElapsed < FLINCH_DUR) {
+          return lerpPose(base, POSES.flinch, 1 - easeOutQuad(flinchElapsed / FLINCH_DUR));
+        }
+        return base;
       }
       // Recovery: a real damped-spring follow-through instead of another
       // canned easing curve, seeded with the strike's actual exit velocity
@@ -1272,11 +1379,12 @@
       recoverEnterPose = null; recoverExitVel = null;
       posX = START_X; velX = 0; moveIntent = 0; facing = opts.startFacing || 'R';
       jumping = false; velY = 0; jumpHeight = 0;
+      hasHitThisSwing = false; knockbackTimer = 0; flinchStart = -Infinity;
     }
 
     return {
       triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
-      setMoveIntent, updatePhysics,
+      setMoveIntent, updatePhysics, triggerFlinch, markHit, applyKnockback, teleportTo,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -1290,40 +1398,20 @@
       get jumping() { return jumping; },
       get velY() { return velY; },
       get recoverExitVel() { return recoverExitVel; },
-      get recoverEnterPose() { return recoverEnterPose; }
+      get recoverEnterPose() { return recoverEnterPose; },
+      get hasHitThisSwing() { return hasHitThisSwing; },
+      get knockbackTimer() { return knockbackTimer; }
     };
   }
 
   // Player 1: the original single-rig prototype's controller, now built
-  // from the shared factory. flinchStart/triggerFlinch/FLINCH_DUR stay
-  // outside the factory since they're specific to player 1's miss-reaction
-  // (rig 2 has no enemies/misses yet) -- wired in via idleOverlay so the
-  // state machine itself doesn't need to know flinch exists, same
-  // separation the original comment described.
-  let flinchStart = -Infinity; // performance.now() of the last miss -- drives the idle-branch recoil overlay below
-  const FLINCH_DUR = 180;
-  function triggerFlinch() { flinchStart = performance.now(); }
+  // from the shared factory. triggerFlinch() now lives inside the factory
+  // itself (both rigs get it -- see the comment above hasHitThisSwing),
+  // called here on a missed enemy the same way it's called on a landed
+  // PVP hit against either rig.
   const p1 = createRigController({
     startX: -80, startFacing: 'R', // duel spawn: left side, facing right toward player 2
-    onAttackStart: () => SFX.windupWhoosh(), // every attack starts at the windup phase, so this is exactly the windup trigger point
-    // Player hit-reaction (v0.1.8): a plain additive blend toward
-    // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
-    // a real attack uses -- reusing that machinery here would risk
-    // resolveHits() misreading a stale attackSide during the flinch's own
-    // transition-back-to-idle (its seqIdx would pass through 1, the exact
-    // index resolveHits() checks for a live strike). A miss is independent
-    // of the player's own attack state, and this is only ever read here in
-    // the idle branch, so if the player is still mid-attack when a miss
-    // lands, the 180ms flinch window can fully elapse before they return to
-    // idle and it simply won't show for that miss -- an accepted tradeoff
-    // against touching the attack state machine's committed-phase guarantee.
-    idleOverlay: (base) => {
-      const flinchElapsed = performance.now() - flinchStart;
-      if (flinchElapsed < FLINCH_DUR) {
-        return lerpPose(base, POSES.flinch, 1 - easeOutQuad(flinchElapsed / FLINCH_DUR));
-      }
-      return base;
-    }
+    onAttackStart: () => SFX.windupWhoosh() // every attack starts at the windup phase, so this is exactly the windup trigger point
   });
 
   // Player 2 (2-player extension): a second, independent instance from the
@@ -1407,7 +1495,16 @@
     return {
       hand_r: joints.handR, hand_l: joints.handL,
       foot_r: joints.footR, foot_l: joints.footL,
-      hip: joints.pelvis, back: joints.chest, head: joints.head
+      hip: joints.pelvis, back: joints.chest, head: joints.head,
+      // Added for rig-vs-rig combat resolution (Game 5): a kick's strike
+      // pose is solved to land at ankle/enemy-dot height (see
+      // kickR_strike's own comment -- ~80px below the pelvis), so hip
+      // alone is the wrong reference point for a defender's hurtbox. This
+      // is the midpoint between both feet -- ground-level, not tied to
+      // whichever leg happens to be forward -- and real enough a future
+      // ground-shadow or dust-FX attachment could reuse it too, not a
+      // hit-detection-only special case.
+      stance: { x: (joints.footL.x + joints.footR.x) / 2, y: (joints.footL.y + joints.footR.y) / 2 }
     };
   }
 
@@ -1923,7 +2020,7 @@
         SFX.missBuzz();
         missFlash = reducedMotion ? 0.4 : 1;
         shakeMag = Math.min(20, shakeMag + (reducedMotion ? 1 : 3)); // weaker tier than a kill's +6 -- distinct weight, not just a color
-        triggerFlinch();
+        p1.triggerFlinch();
         enemies.splice(i, 1);
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
         if (missedCount >= MAX_MISSES) sessionState = 'lose';
@@ -1955,6 +2052,78 @@
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
       }
     }
+  }
+
+  // ---- Rig-vs-rig combat resolution (Game 5's actual core mechanic) ----
+  // checkPvpHit()/resolveDuelHit() are called from BOTH directions --
+  // (p1 attacking p2) and (p2 attacking p1) -- through the same two
+  // functions with the attacker/defender arguments swapped, never two
+  // hand-copied blocks. That's the identical reasoning behind mirror()
+  // and createRigController() itself: two copies of the same math are
+  // exactly the kind of thing that silently drifts apart later.
+  //
+  // Guard doesn't fully no-sell a hit (GUARD_CHIP_SCALE) -- a block still
+  // costs the defender a little ground, so guard is a real mitigation, not
+  // a free wall. KNOCKBACK_SPEED is well above MOVE_MAX_SPEED (220px/sec,
+  // the fastest voluntary walking ever gets) specifically so a landed hit
+  // is unmistakably more forceful than movement itself, not just a faster
+  // walk in one direction.
+  const PVP_HIT_RADIUS = 50; // generous, matching ENEMY_HIT_RADIUS's own generosity for a kicking foot vs. a whole-body hurtbox
+  const KNOCKBACK_SPEED = 480; // px/sec
+  const GUARD_CHIP_SCALE = 0.2; // a blocked hit still pushes the defender back a little
+
+  // Returns the defender's hurtbox point on a landed hit, or null -- never
+  // a bare boolean, so the caller (which needs the exact contact point for
+  // spawnBurst()'s impact particles) doesn't have to re-solve either rig's
+  // pose a second time to get it.
+  function checkPvpHit(attacker, defender, attackerJoints, defenderJoints) {
+    if (attacker.idle || attacker.seqIdx !== 1 || !attacker.attackSide) return null; // only the strike phase counts -- same convention resolveHits() uses against the enemy dots
+    if (attacker.hasHitThisSwing) return null; // one landed hit per strike, not once per frame the strike phase happens to overlap the defender
+    const towardDefender = defender.posX >= attacker.posX ? 'R' : 'L';
+    if (attacker.attackSide !== towardDefender) return null; // kicking away from the opponent can't land on them
+    const foot = attacker.attackSide === 'R' ? getSockets(attackerJoints).foot_r : getSockets(attackerJoints).foot_l;
+    const hurtbox = getSockets(defenderJoints).stance; // ankle height, matching where a strike pose actually solves to -- see getSockets()'s own comment
+    const dx = foot.x - hurtbox.x, dy = foot.y - hurtbox.y;
+    if (Math.sqrt(dx * dx + dy * dy) > PVP_HIT_RADIUS) return null;
+    return hurtbox;
+  }
+
+  function resolveDuelHit(attacker, defender, attackerJoints, defenderJoints) {
+    const hurtbox = checkPvpHit(attacker, defender, attackerJoints, defenderJoints);
+    if (!hurtbox) return;
+    attacker.markHit();
+    const dir = defender.posX >= attacker.posX ? 1 : -1;
+    const blocked = defender.guarding;
+    defender.applyKnockback(dir * KNOCKBACK_SPEED * (blocked ? GUARD_CHIP_SCALE : 1), blocked);
+    SFX.strikeImpact();
+    spawnBurst(hurtbox.x, hurtbox.y);
+    shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6) * (blocked ? 0.4 : 1));
+  }
+
+  function resolveCombatHits(joints1, joints2) {
+    resolveDuelHit(p1, p2, joints1, joints2);
+    resolveDuelHit(p2, p1, joints2, joints1);
+  }
+
+  // ---- Ring-out (the duel's actual win condition) ----
+  // ARENA_BOUND is the same wall voluntary movement already clamps
+  // against (see updateMovement()) -- walking can never cross it, so the
+  // only way either rig's posX ends up beyond it is a knockback impulse
+  // from resolveDuelHit() above, which is exactly what makes "crossed the
+  // line" a meaningful ring-out rather than something either player could
+  // trigger just by walking there.
+  let p1Score = 0, p2Score = 0;
+  function checkRingOuts() {
+    if (Math.abs(p1.posX) > ARENA_BOUND) { p2Score++; resetDuelPositions(); }
+    else if (Math.abs(p2.posX) > ARENA_BOUND) { p1Score++; resetDuelPositions(); }
+  }
+  function resetDuelPositions() {
+    // A full reset (not just posX) -- a ring-out ends the exchange
+    // entirely, the same way a real round reset would; whichever attack/
+    // guard/knockback state either rig was mid-way through no longer
+    // means anything once the round position resets under it.
+    p1.reset();
+    p2.reset();
   }
 
   // v0.1.8 feel-pass finding: growth + color-lerp made the enemy telegraph
@@ -2296,6 +2465,8 @@
           velY: p1.velY,
           recoverExitVel: p1.recoverExitVel,
           recoverEnterPose: p1.recoverEnterPose,
+          hasHitThisSwing: p1.hasHitThisSwing,
+          knockbackTimer: p1.knockbackTimer,
           pose: p1.currentPose(),
           joints,
           sockets: getSockets(joints),
@@ -2333,6 +2504,10 @@
         }
       },
       jump: () => p1.tryJump(),
+      // Test/round-reset-only positioning -- bypasses movement physics so a
+      // combat test can put both rigs at an exact, deterministic distance
+      // instead of waiting out real acceleration to close the gap.
+      teleportTo: (x) => p1.teleportTo(x),
       resetSession: () => resetSession(),
       // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
       // path production spawning does, just backdating spawnAt so the enemy
@@ -2378,6 +2553,8 @@
           velY: p2.velY,
           recoverExitVel: p2.recoverExitVel,
           recoverEnterPose: p2.recoverEnterPose,
+          hasHitThisSwing: p2.hasHitThisSwing,
+          knockbackTimer: p2.knockbackTimer,
           pose: p2.currentPose(),
           joints,
           sockets: getSockets(joints)
@@ -2386,6 +2563,7 @@
       trigger: (side) => p2.triggerAttack(side),
       setGuard: (active) => p2.setGuard(active),
       reset: () => p2.reset(),
+      teleportTo: (x) => p2.teleportTo(x),
       setMoveIntent: (v) => p2.setMoveIntent(v),
       updatePhysics: (dt) => p2.updatePhysics(dt),
       stepPhysics: (totalMs, stepMs) => {
@@ -2410,6 +2588,17 @@
         delete padPrevPressed[index];
       },
       padAssignment: () => ({ p1PadIndex, p2PadIndex })
+    }
+  };
+
+  // Combat/ring-out test hook (Game 5 rig-vs-rig combat resolution) --
+  // its own top-level object for the same reason window.Rig2 is: state
+  // that belongs to neither rig individually (the match score) shouldn't
+  // get bolted onto one player's own hook.
+  window.Duel = {
+    _test: {
+      state: () => ({ p1Score, p2Score }),
+      resetPositions: () => resetDuelPositions()
     }
   };
 
@@ -2439,7 +2628,12 @@
     pollGamepads(); // fixed-index-per-player polling; see the Input section below -- still runs unconditionally since it also drives player 1's pad
     applyP2MoveInput(dt);
     p2.updateSeq(now);
-    const joints2 = SHOW_P2 ? solveRig(p2.currentPose(), p2.posX) : null;
+    // Solved unconditionally now (not gated behind SHOW_P2) -- combat
+    // resolution below needs player 2's actual joints to check hits every
+    // frame regardless of whether player 2 happens to be rendered.
+    const joints2 = solveRig(p2.currentPose(), p2.posX);
+    resolveCombatHits(joints, joints2);
+    checkRingOuts();
 
     // Screen shake is pure presentation -- a render-time offset only, never
     // touching the coordinates solveRig()/resolveHits() actually use for hit
@@ -2527,7 +2721,8 @@
 
     hudEl.innerHTML = 'KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
       '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
-      '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>';
+      '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>' +
+      '&nbsp;&nbsp;&nbsp;<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2</span>';
 
     debugEl.textContent = 'state: ' + (!p1.idle ? ('attacking [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
       (p1.queuedSide ? '\nbuffered: ' + p1.queuedSide : '') +

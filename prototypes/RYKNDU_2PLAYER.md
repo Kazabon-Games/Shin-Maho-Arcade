@@ -1,12 +1,13 @@
-# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity added v0.1.20)
+# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21)
 
-**Status: substrate landed, combat not designed.** This covers what the
-2-player extension actually built — two independent, simultaneously
-rendered/animated rigs, each with its own input — and draws a hard line
-around what it deliberately does not cover, per this consolidation pass's
-own scope (see `RYKNDU_RIG_CONSOLIDATION.md` and the Game 5 rig
-consolidation plan): combo/parry/guard-timer numeric design, and any real
-rig-vs-rig combat resolution, are separate future work.
+**Status: substrate, physics, AND core combat resolution all landed.**
+This covers what the 2-player extension actually built — two independent,
+simultaneously rendered/animated rigs, each with its own input, real
+shared physics, and now real rig-vs-rig hit detection/knockback/ring-out
+(see `RYKNDU_MOVESET.md`'s Combat resolution section for the mechanics) —
+and draws a hard line around what still deliberately isn't covered:
+combo/parry/guard-timer numeric design remain separate future work, but
+"rig-vs-rig combat resolution" itself is no longer on that list.
 
 ## What exists now
 
@@ -71,29 +72,26 @@ rig-vs-rig combat resolution, are separate future work.
 
 ## What this deliberately does not cover yet
 
-- **No rig-vs-rig hit detection.** Player 1's `resolveHits()` only ever
-  checks against the enemy-dot array; player 2 isn't in it, and nothing
-  checks player 2's kicks against player 1 (or vice versa). There is no
-  hurtbox on either rig yet. Both rigs now have real, symmetric physics
-  (movement/jump/momentum) and real, distinct duel spawn positions, so
-  the substrate a knockback impulse would apply against now exists on
-  both sides — this is the next piece of work, not a design gap in the
-  physics itself.
 - **No guard timer/meter, no parry.** `setGuard()` is free for as long as
   the input is held, on both rigs, with no resource cost and no
   precision-timing reward. Confirmed feasible (see the Game 5 rig
   consolidation plan's feasibility notes on the existing phase model
   already being cancel-window-shaped), not designed here.
 - **No combo system.** Each rig's attack sequence is still exactly the
-  single kick from v0.1.0 (windup → strike → recover); nothing chains.
+  single kick from v0.1.0 (windup → strike → recover); nothing chains,
+  and a landed hit can't cancel `strike` itself into a follow-up.
 - **No join screen.** Pad assignment is silent and automatic (connection
   order), not a "press any button to join" ceremony with on-screen
   confirmation. The underlying assignment rule is real and tested; the UI
   around it is not built.
-- **No win/loss condition for a match.** There's no round structure, no
-  stock count, no ring-out — that's the actual "Overreach" game design,
-  which starts once rig-vs-rig combat resolution is designed, not part of
-  this consolidation pass.
+- **No round/match structure beyond a running score.** Rig-vs-rig hit
+  detection, knockback, and ring-out ARE built (v0.1.21 — see
+  `RYKNDU_MOVESET.md`'s Combat resolution section), and a ring-out
+  increments a running `p1Score`/`p2Score` and resets positions. What's
+  still missing is anything ABOVE that single running tally — a
+  best-of-N stock/round structure, a match-over screen, a rematch/reset
+  flow. The core loop this game needed is real; the meta-structure around
+  a full match is not.
 
 ## Verification
 
@@ -110,3 +108,9 @@ hardware can't be driven from Playwright, so this calls the exact same
 separate test-only copy of the rule. Plus a screenshot showing both rigs
 rendered simultaneously in independent poses (idle vs. mid-kick), at
 distinguishable colors.
+
+`tests/rig-combat.js` covers rig-vs-rig combat resolution specifically —
+hit detection in both attack directions, knockback magnitude, guard's
+chip-mitigation scale and guard-doesn't-break behavior, one-hit-per-swing,
+and a full ring-out scoring/reset cycle. See `RYKNDU_MOVESET.md`'s Combat
+resolution section for the mechanics themselves.

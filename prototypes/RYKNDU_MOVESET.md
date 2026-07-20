@@ -15,11 +15,11 @@ restructure).
 |---|---|---|---|
 | `idle` | `recover` phase ends with no buffered input; `guard` released | any attack trigger → `windup`; guard input → `guard` | attack triggers windup; guard input raises guard |
 | `windup` | attack trigger from `idle` or `recover` | automatic → `strike` after 110ms | **committed** — a same/other attack input buffers (`queuedSide`), does not interrupt; guard input is refused |
-| `strike` | automatic from `windup` after 110ms | automatic → `recover` after 70ms | **committed**, same as `windup`. Hit resolution (`resolveHits()`) runs only here, checked every frame this phase is active, reading the attack-side foot socket |
+| `strike` | automatic from `windup` after 110ms | automatic → `recover` after 70ms | **committed**, same as `windup`. Hit resolution runs only here, checked every frame this phase is active, reading the attack-side foot socket — against the enemy-dot array (`resolveHits()`, single-player) and, as of v0.1.21, against the other player's rig too (`resolveDuelHit()`/`resolveCombatHits()`, see the Combat section below) |
 | `recover` | automatic from `strike` after 70ms | automatic → `idle` after 220ms, **or** immediately → `windup` if an input was buffered during the committed phases, **or** immediately → `idle`+`guard` if a guard input arrives here | **interruptible** — a new attack trigger cancels recovery and starts immediately (not buffered); a guard input cancels recovery into `guard` |
 | `guard` | guard input from `idle` or from the interruptible `recover` phase | guard-release input → `idle` | attack triggers are refused outright — must release guard first. Cannot be entered from `windup`/`strike` (refused, no state change). Cannot be entered while `jumping` |
 | `jumping` | jump input from `idle` or `recover` (not `windup`/`strike`, not while `guard`ing) | automatic once integrated height returns to 0 (real gravity, not a timer — see Physics below) | attack and guard inputs are both refused while airborne — no aerial actions in this pass |
-| `flinch` | a miss event (enemy reaches melee range unanswered), but **only visually applied while the idle branch is being evaluated** | 180ms timer, or superseded the instant the idle branch isn't reached (mid-attack) | not a real state in the transition sense — see caveat below |
+| `flinch` | a miss event (enemy reaches melee range unanswered) **or**, as of v0.1.21, a landed rig-vs-rig hit that wasn't blocked — either way **only visually applied while the idle branch is being evaluated** | 180ms timer, or superseded the instant the idle branch isn't reached (mid-attack) | not a real state in the transition sense — see caveat below |
 
 ## The `flinch` caveat — named honestly, not smoothed over
 
@@ -91,18 +91,74 @@ shipped this pass for player 1 only:
   buffered-input contract above didn't need to change — only the pose
   formula inside that unchanged window did.
 
-None of these three are combat-facing yet (no rig-vs-rig hit detection
-exists), and none change anything in the state table above — they're
-additive physics layered under the existing state machine, verified in
+These three physics systems weren't combat-facing when this section was
+first written (no rig-vs-rig hit detection existed yet), and they still
+don't change anything in the state table above — they're additive physics
+layered under the existing state machine, verified in
 `tests/rig-sequence.js` §§13–17, `tests/rig-touch-controls.js`, and (for
-player 2's parity) `tests/rig-2player.js`.
+player 2's parity) `tests/rig-2player.js`. Combat resolution (below) is
+what actually made them combat-facing.
 
-## What each phase means for future combat design (deferred, not designed here)
+## Combat resolution (v0.1.21 — the actual "Overreach" core mechanic)
 
-This table is the seam combo-cancel points and parry windows get named
-against later — it's written now so that conversation has something
-concrete to point at, not because those systems are designed in this
-pass:
+Added directly on top of the physics above, once both rigs had real,
+independent movement to close distance with. `checkPvpHit()` and
+`resolveDuelHit()` are ONE shared pairwise function, called twice per
+frame with attacker/defender swapped (`resolveCombatHits()`) — not two
+hand-copied blocks, the same principle behind `mirror()` and
+`createRigController()` itself. Verified by actually driving both
+directions in `tests/rig-combat.js`, not assumed symmetric from reading
+the code.
+
+- **Hit detection**: only checked during the attacker's `strike` phase
+  (`seqIdx === 1`), against the defender's `stance` socket (feet
+  midpoint, ankle height) — not `hip`/pelvis, since a kick's strike pose
+  is solved to land at the old enemy-dot's height (`kickR_strike`'s own
+  comment), roughly 80px below the pelvis. Using `hip` initially missed
+  every hit in testing by that same ~80px until caught live and fixed;
+  see `RYKNDU_RIG_SCHEMA.md`'s note on the new `stance` socket. Also
+  requires the attacker's `attackSide` to actually face the defender
+  (kicking away from your opponent can't land), and one hit per swing
+  (`hasHitThisSwing`, reset at the start of every attack) so lingering in
+  range for the rest of a multi-frame strike phase can't double-count.
+- **Knockback**: a landed, unblocked hit sets the defender's `velX`
+  directly to a real impulse (`KNOCKBACK_SPEED = 480`px/sec — well above
+  the 220px/sec top *walking* speed, so a hit is unmistakably more
+  forceful than movement itself) and interrupts whatever the defender was
+  doing (attack/guard/jump), the same way a fresh attack already
+  interrupts a recovery tail. The impulse decays via the exact same
+  `MOVE_FRICTION` real movement uses, during a short lock window
+  (`KNOCKBACK_LOCK_MS = 260`, tuned to just outlast the time a full-speed
+  impulse takes to decay under that friction) where the normal
+  arena-wall clamp is suspended — see the ring-out note below for why
+  that suspension matters.
+- **Guard mitigation**: a hit landing on a guarding defender still applies
+  knockback, just scaled down to `GUARD_CHIP_SCALE = 0.2` (20%), and does
+  NOT interrupt guard or trigger the flinch reaction — guard is a real
+  mitigation tool, not a free no-sell wall.
+- **Hit reaction**: a landed, unblocked hit triggers the same flinch
+  overlay the single-player mode's miss reaction already used
+  (`POSES.flinch`, blended in `currentPose()`'s idle branch) — this moved
+  from a player-1-only external hook (`opts.idleOverlay`) into
+  `createRigController()` itself so either rig can flinch from either
+  cause through one mechanism, not two.
+
+## Ring-out (v0.1.21 — the duel's win condition)
+
+`ARENA_BOUND` (170) is the same wall voluntary movement already clamps
+against in `updateMovement()` — walking can never cross it. Knockback is
+the only thing that ignores that clamp (see above), so crossing
+`ARENA_BOUND` can only ever happen from a landed hit, never from a player
+just walking there. `checkRingOuts()` checks both rigs' `posX` against it
+every frame; whichever rig is over the line concedes a point to the other
+player, and both rigs fully reset (`reset()`, not just position) back to
+their duel spawn points.
+
+## What's still deferred (not designed in this pass)
+
+This table is still the seam combo-cancel points and parry windows get
+named against later — combat resolution above is the game's core loop,
+not the full combat depth:
 
 - **Combo-cancel candidate points:** the existing "buffered input fires
   immediately at recovery start" behavior is already a cancel window in
@@ -111,11 +167,10 @@ pass:
   `windup` on a landed hit. Not built; the seam is `isCommittedPhase()`
   and the `queuedSide` buffer, both already isolated enough to extend.
 - **Parry candidate point:** would need a new narrow-timing check against
-  an *opponent's* `strike` phase (this rig has no opponent yet — see the
-  2-player extension). The rig's own phase timing is already precise
-  enough for this (v0.1.6 fixed the strike-phase hit-window down to the
-  frame), so the missing piece is an incoming-attack read, not rig timing
-  precision.
+  an *opponent's* `strike` phase — the rig's own phase timing is already
+  precise enough for this (v0.1.6 fixed the strike-phase hit-window down
+  to the frame), and an opponent to read now exists (this section), so
+  the missing piece is purely the timing-window design, not architecture.
 - **Guard timer/meter:** `guard` currently has no duration limit or
   resource cost — it's free for as long as the input is held. A meter
   would gate `setGuard(true)`'s success (already a single choke point) or
@@ -132,3 +187,7 @@ plus `tests/rig-touch-controls.js` (the same physics driven through the
 real virtual joystick and action buttons, not a shortcut) — this table
 was written by reading the code these tests already exercise, then
 confirmed against the tests' own pass/fail output, not the reverse.
+Combat resolution and ring-out are covered by `tests/rig-combat.js` —
+including driving BOTH attack directions (not just p1-attacks-p2), the
+guard-mitigation scale, the one-hit-per-swing guard, and a full ring-out
+scoring/reset cycle.
