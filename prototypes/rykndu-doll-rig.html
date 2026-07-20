@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rykndu Doll Rig — Prototype</title>
+
+<!--
+  RYKNDU DOLL RIG — CHANGE LOG
+  (one line per change, most recent on top — treat git commit messages as
+  the authoritative record of what actually changed; this comment is
+  useful context, not ground truth)
+
+  v0.1.8 — 2026-07-09 — Feel pass: visual/art polish, prompted by a live
+                          playtest re-raising the pre-v0.1.6 complaint ("the
+                          dot is so small") and a follow-up visual-art-
+                          director audit. Fixed a real bug (the #debug,
+                          #hud, and .version-marker overlays all shared the
+                          same top strip with no reserved lanes and rendered
+                          garbled overlapping text -- #debug is now gated
+                          behind ?debug=1, .version-marker moved to the
+                          bottom). Enemies are now a hand-authored, oriented
+                          arrowhead shape with a distinct pulsing "about to
+                          strike" telegraph state, not a plain ctx.arc()
+                          circle. missFlash's peak alpha and decay were both
+                          reduced -- it used to wash out the player's own
+                          rig at the worst possible moment (a potential game
+                          over). The kill death-flash now uses easeOutBack
+                          for a snap instead of a linear fade. A miss now
+                          triggers a brief player recoil pose (previously
+                          only screen-level shake/flash reacted, never the
+                          rig itself). Added ground-contact shadows and a
+                          subtle background gradient to reduce the large
+                          dead space above/below the rig. Added
+                          prefers-reduced-motion gating for screen shake and
+                          missFlash (OS-level signal only -- no settings
+                          menu exists yet to layer a manual override on).
+                          The GAME OVER retry text is now backed by a card
+                          instead of bare fillText, which used to render
+                          straight through the frozen character's head.
+
+  v0.1.7 — 2026-07-08 — Phase 3 of the plan of action: real stakes. Up to
+                          this point every build had verified-solid combat
+                          but no actual way to lose -- an unanswered enemy
+                          just incremented a counter forever. Added a
+                          gauntlet session: MAX_MISSES=5 lives (the plan's
+                          suggested 3-5-miss "winnable but threatening"
+                          pool), a real GAME OVER state once they're spent,
+                          and a restart on the next input -- not a
+                          health-bar boss fight, which the studio never
+                          built toward. A player-facing #hud (kill count +
+                          heart pips) replaces reading kills/missed off the
+                          dev-only #debug overlay. Session freeze on loss:
+                          updateSeq()/resolveHits()/updateEnemies() stop
+                          running, but particles/shake/currentPose()'s own
+                          eased-to-1 settle still finish naturally, so the
+                          rig holds its last pose under the overlay instead
+                          of snapping or continuing to animate.
+
+  v0.1.6 — 2026-07-08 — First quality pass against five named pillars
+                          (Threat Readability, Rig Animation Quality, Combat
+                          Feedback/Juice, Input Fairness & Responsiveness,
+                          Audio), run the same way Wonderland/Sigil Chain's
+                          own pre-game-3 quality pass worked: role-grounded
+                          audits judged against a genuine bar, not a vibe
+                          check, prompted directly by a producer playtest
+                          ("couldn't tell when to hit, the model is so big
+                          and the dot is so small").
+
+                          The real bug underneath that complaint (found
+                          independently by visual-art-director simulating
+                          the pose and game-designer hand-solving the leg
+                          IK — same answer, two methods): the strike pose's
+                          foot target was 131px ABOVE the enemy's fixed
+                          screen height at full extension, so the real hit
+                          window was ~43ms concentrated at the START of the
+                          strike (before the kick even looks like it's
+                          landing), not at the visual "impact" moment.
+                          Retargeted kickR_strike's hipR/kneeR via 2-bone IK
+                          to reach the enemy's height; verified via
+                          simulation that the ENTIRE 70ms strike phase is
+                          now within hit radius (was ~43/70ms), and live
+                          via a rAF-precision in-page timeline showing
+                          distance closing smoothly through windup and the
+                          kill landing on strike's first frame.
+
+                          A second, independent engineer audit found a real
+                          mechanical fairness bug: updateEnemies() ran
+                          before resolveHits() in frame(), so a
+                          geometrically clean, in-radius hit could get
+                          stolen as a miss whenever an enemy's melee-range
+                          timeout and the strike-phase start coincided in
+                          the same frame — one-directional (only ever cost
+                          the player), worse on lower frame rates. Fixed by
+                          swapping the call order; reproduced and verified
+                          fixed via a targeted timing test (12/12 clean).
+
+                          Also landed: rig scaled 0.8x (was 262px tall vs a
+                          28px enemy dot, a 9.4:1 ratio the producer
+                          directly flagged) — LEN data itself is scaled,
+                          not a render-time transform, since solveRig()
+                          feeds both rendering and hit detection. Enemy
+                          redesigned: 22px base radius growing to 34px as a
+                          telegraph (reusing the travel-fraction already
+                          computed, not a new timer), recolored from an
+                          untokenized #c0392b to this studio's actual
+                          --danger token (#ff4d70/#ff8da0, both already
+                          established in wonderland.html/sigilchain.html).
+                          Recovery-phase easing swapped to this studio's
+                          proven easeOutBack "give it weight" idiom
+                          (identical formula in both shipped games), never
+                          reused here before. A kill now lingers ~220ms as
+                          a fading white flash with a 10-particle
+                          radiating burst (ported from wonderland's
+                          hit-punch/particle patterns) instead of an
+                          instant silent vanish; a miss gets its own
+                          distinct danger-tinted full-screen flash, both
+                          with their own screen-shake tier (kill +6, miss
+                          +3) so kill and miss read as different weights,
+                          not just different colors. Shake/flash are pure
+                          presentation, applied as a render-time offset
+                          only — never touching the coordinates hit
+                          detection actually uses. True hitstop (freezing
+                          the timing clock on impact) was considered and
+                          explicitly left out of this pass: it would need
+                          a paused "virtual now" threaded through
+                          updateSeq/currentPose/startAttack, real invasive
+                          risk to the just-stabilized timing system for a
+                          nice-to-have when flash+punch+particles+shake
+                          already deliver most of the impact.
+
+                          Enemy spawn gap reduced 900ms->550ms (per
+                          game-designer's math: the old cadence was 60%
+                          dead time between encounters) — applied only
+                          after the geometry fix landed, per that same
+                          audit's explicit sequencing note, so this isn't
+                          just letting players fail faster at a still-unfair
+                          window.
+
+                          Audio pillar landed in the same pass (separate
+                          audio-designer audit): four one-shot SFX voices
+                          (windup whoosh, strike impact, miss buzzer, and a
+                          new proximity-pulse "closing in" cue timed to the
+                          actual hit window) on a deliberately dry, reverb-
+                          free graph — a reverb tail would blur the exact
+                          transient onset this whole pass exists to
+                          sharpen. No music system; nothing to score yet.
+
+                          tests/rig-sequence.js extended to 22 assertions
+                          (the dying-enemy lingering state, the ordering-bug
+                          regression); new tests/rig-audio.js (14
+                          assertions) verifies each SFX voice fires from
+                          the correct call site with the right sound shape.
+                          Both stable across repeated runs.
+
+  v0.1.5 — 2026-07-08 — Real hit detection and an autonomous enemy,
+                          replacing the mock marker. Two independent team
+                          reviews (game-designer and engineer) had found the
+                          same root cause behind this rig "feeling thin":
+                          the old mockEnemy only ever existed as a side
+                          effect of the player's own startAttack() call, so
+                          it could never actually threaten anything.
+                          Enemies now spawn and approach on their own timer
+                          (one at a time for now — the array/side-based
+                          shape is ready for a second concurrent enemy
+                          later, but actually spawning two at once is still
+                          deferred, per the studio's own gate on the
+                          double-boss goal). A hit is checked only during
+                          the strike phase specifically, against the real
+                          kicking foot's world position from solveRig() —
+                          the exact thing the v0.1.4 refactor was for. An
+                          enemy that reaches melee range unanswered is
+                          counted as missed rather than killed; neither
+                          count is wired to a health bar or win/lose yet —
+                          that's the next phase, gated on this one existing
+                          first. window.Rig._test now exposes the enemy
+                          list, kill/miss counts, and a spawnEnemy(side,
+                          elapsedMs) hook for deterministic testing.
+
+  v0.1.4 — 2026-07-08 — Split drawRig() into solveRig(pose), pure math that
+                          returns every joint's world-space position, and
+                          renderRig(joints), which only draws from that
+                          output. Previously a joint's position (e.g. a
+                          foot) was computed and discarded in the same
+                          statement it was drawn in, so no hit-detection
+                          system had anything to read. No intended visual
+                          change — verified by before/after screenshot
+                          comparison at idle, mid-windup, and mid-strike.
+                          window.Rig._test.state() now also exposes the
+                          solved joints. This was flagged as the one real
+                          architectural blocker for adding enemies/hit
+                          detection next (an independent engineer review
+                          confirmed the rest of the rig's foundation is
+                          sound and didn't need restructuring).
+
+  v0.1.3 — 2026-07-08 — Studio audit (game-designer subagent) found the
+                          attack model was structurally unable to support
+                          the decided double-boss/single-input-stream design
+                          goal: windup+strike+recover (400ms) was one
+                          indivisible lock, even though the hit resolves
+                          during strike (152ms) and the remaining 220ms of
+                          recovery has no gameplay function. Split the lock
+                          into committed phases (windup+strike, 180ms,
+                          uninterruptible) and a final recovery phase that a
+                          new input can now cancel immediately instead of
+                          waiting out — a buffered input fires the instant
+                          the committed phase ends, and a fresh input during
+                          recovery starts right away. Also added a window.Rig
+                          _test hook and a committed Playwright regression
+                          test (tests/rig-sequence.js) driving this state
+                          machine through the real page, since two real bugs
+                          upstream were already found by simulating it, not
+                          by reading it.
+                          Correction (independent engineer audit, same day):
+                          this comment previously misnamed the test file and
+                          called it "non-DOM" — it's DOM/Playwright-driven.
+                          Treat git commit messages as the authoritative
+                          record for this file's history; this comment is
+                          useful context but not ground truth.
+
+  v0.1.2 — 2026-07-08 — v0.1.1's pose-blend fix only covered the transition
+                          inside the sequence loop; startAttack() had the
+                          same circular-self-read bug (fromPose was captured
+                          AFTER seq was reassigned, so it read as a no-op),
+                          causing a visible snap on every attack after the
+                          first. Reordered so fromPose is captured first.
+                          Also fixed a left-kick-only bug where the mirrored
+                          spine angle landed ~2pi away from its visual
+                          equivalent, making lerpPose sweep almost a full
+                          rotation instead of a small lean — mirror() now
+                          wraps spineA into (-pi, pi]. And mockEnemy.hitAt
+                          no longer re-hardcodes the windup/strike durations
+                          (it now reads them from the sequence itself), so a
+                          future timing-tuning pass can't silently desync it.
+
+  v0.1.1 — 2026-07-08 — Fixed a crash on the last phase of any attack
+                          sequence: seqIdx could go out of bounds and get
+                          read before the end-of-sequence check ran. Reordered
+                          so the bounds check happens first, and fixed the
+                          pose-blend handoff to use the just-completed phase's
+                          actual target instead of a circular self-read.
+
+  v0.1.0 — 2026-07-08 — Phase 0 + first rig prototype: joint hierarchy
+                          (pelvis/spine/head, hip-knee legs, shoulder-elbow
+                          arms), idle breathing pose, left/right kick attack
+                          with windup/strike/recover phases and input
+                          buffering, keyboard + tap-zone input, mock
+                          incoming-enemy marker for connect-timing
+                          feel-testing only (not real hit detection).
+-->
+
+<style>
+  html, body { margin: 0; padding: 0; background: #12141c; overflow: hidden; height: 100%; }
+  #stage { display: block; touch-action: none; }
+  /* v0.1.8 feel pass: #debug, #hud, and .version-marker used to all sit in
+     the same top ~8px strip with no reserved lanes, so their text visibly
+     overlapped ("Do♥♥♥♥Prototype — v0.1.7") -- the audit's top-severity
+     finding, since it corrupted the player-facing HUD's own legibility.
+     .version-marker moves to its own row above #hint at the bottom (it's a
+     dev/internal marker, not something a player needs top-of-screen); #debug
+     is hidden by default and only shown via ?debug=1 (see the JS init below)
+     since it was never meant to compete with the HUD for the same pixels. */
+  .version-marker {
+    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed; bottom: 10px; left: 0; right: 0; text-align: center;
+    color: #666; font-family: monospace; font-size: 12px; pointer-events: none;
+  }
+  #debug {
+    display: none;
+    position: fixed; top: 30px; left: 10px; font-size: 11px; color: #5c6;
+    font-family: monospace; opacity: 0.7; pointer-events: none; white-space: pre;
+  }
+  #hud {
+    position: fixed; top: 8px; left: 0; right: 0; text-align: center;
+    color: #e8e8f0; font-family: monospace; font-size: 14px; letter-spacing: 0.04em;
+    pointer-events: none; z-index: 40;
+  }
+  #hud .lives-full { color: #ff4d70; }
+  #hud .lives-spent { color: #4a3038; }
+  .tapzone { position: fixed; top: 0; bottom: 0; width: 50%; }
+  #zoneL { left: 0; }
+  #zoneR { right: 0; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="version-marker">Doll Rig Prototype — v0.1.8</div>
+<div id="debug"></div>
+<div id="hud"></div>
+<div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
+<div class="tapzone" id="zoneL"></div>
+<div class="tapzone" id="zoneR"></div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const debugEl = document.getElementById('debug');
+  const hudEl = document.getElementById('hud');
+  if (new URLSearchParams(location.search).has('debug')) debugEl.style.display = 'block';
+
+  let bgGradient = null;
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    // Subtle vertical gradient instead of a flat fill (v0.1.8): the large
+    // empty canvas above/below the rig (roughly half the viewport at a
+    // typical phone aspect ratio) read as literally nothing against a flat
+    // single color, compounding the "generic prototype" feel. Cached here
+    // rather than rebuilt every frame -- a gradient only needs to change
+    // when the canvas itself resizes.
+    bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGradient.addColorStop(0, '#0d0e15');
+    bgGradient.addColorStop(0.78, '#12141c');
+    bgGradient.addColorStop(1, '#181a24');
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---- Segment lengths (px) ----
+  // Scaled to 0.8x of the original v0.1.0-0.1.5 values. Quality-pass finding
+  // (visual-art-director): the rig at full size was 262px tall against a
+  // 28px-diameter enemy dot -- a 9.4:1 ratio the producer's own playtest
+  // flagged directly ("the model is so big and the dot is so small"). This
+  // shrinks the rig's screen dominance and also reads as tighter/faster for
+  // a fast-reflex genre (same travel distance in the same ms duration
+  // occupies a smaller fraction of the rig's own silhouette). Scaling the
+  // data here, not a render-time canvas transform, is required -- solveRig()
+  // feeds both rendering and hit detection, so a draw-only scale would
+  // desync the visible foot from the real hit-checked foot.
+  const LEN = {
+    thigh: 50, shin: 48, upperArm: 37, forearm: 37,
+    spine: 62, neck: 11, headR: 19,
+    hipW: 13, shoulderW: 24
+  };
+
+  // Angle convention: 0 = pointing right (+x), PI/2 = pointing down (canvas is y-down).
+  const DOWN = Math.PI / 2;
+
+  // ---- Poses: absolute angle per segment + pelvis offset ----
+  // These numbers are a first guess, not a tuned result — expect to hand-adjust
+  // them once you see the rig move.
+  const POSES = {
+    idle: {
+      pelvisDX: 0, pelvisDY: 0, spineA: -DOWN + 0.03,
+      hipL: DOWN + 0.18, kneeL: DOWN + 0.05,
+      hipR: DOWN - 0.18, kneeR: DOWN - 0.05,
+      shoulderL: DOWN + 1.9, elbowL: DOWN + 1.6,
+      shoulderR: DOWN - 1.9, elbowR: DOWN - 1.6
+    },
+    kickR_windup: {
+      pelvisDX: -8, pelvisDY: 3, spineA: -DOWN - 0.12,
+      hipL: DOWN + 0.35, kneeL: DOWN + 0.55,
+      hipR: DOWN - 0.55, kneeR: DOWN - 0.75,
+      shoulderL: DOWN + 2.0, elbowL: DOWN + 1.7,
+      shoulderR: DOWN - 1.6, elbowR: DOWN - 1.2
+    },
+    // hipR/kneeR were retargeted by a quality-pass finding (visual-art-director
+    // AND game-designer, independently, via different methods -- pose
+    // simulation vs. hand-solved 2-bone IK -- landed on the same answer):
+    // the old strike pose (hipR:-0.35, kneeR:-0.30) put the foot 131px ABOVE
+    // the enemy's fixed screen height at full extension, so the real hit
+    // window was ~43ms concentrated at the START of the strike (before the
+    // kick even looks like it's landing), not at the visual "impact" moment.
+    // These angles were solved via 2-bone IK to put the foot at (dx=62,
+    // dy=68) from the hip -- i.e. exactly level with the enemy's y-anchor
+    // (groundY-30) given the new 0.8x-scaled thigh/shin -- and verified via
+    // simulation to keep the ENTIRE 70ms strike phase within hit radius of
+    // the enemy (was ~43/70ms before the fix). Still first-guess in the
+    // sense that the exact silhouette wasn't eyes-on tuned, but the target
+    // constraint (foot reaches enemy height) is a fairness-math requirement,
+    // not a style call.
+    kickR_strike: {
+      pelvisDX: -11, pelvisDY: 0, spineA: -DOWN - 0.22,
+      hipL: DOWN + 0.25, kneeL: DOWN + 0.35,
+      hipR: 0.488, kneeR: 1.19,
+      shoulderL: DOWN + 2.1, elbowL: DOWN + 1.8,
+      shoulderR: DOWN - 1.3, elbowR: DOWN - 0.9
+    }
+  };
+
+  // Keep a mirrored spine angle within (-pi, pi] of the un-mirrored range —
+  // spineA's resting orientation is near -pi/2, so a raw "pi - angle"
+  // reflection lands near +3pi/2 instead: numerically ~2pi away from its
+  // own visual equivalent, which made lerpPose sweep almost a full
+  // rotation on every left-side kick instead of a small lean.
+  function wrapAngle(a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a <= -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
+  // Build the mirrored left-side kick from the right-side kick definitions,
+  // so the two sides can never silently drift out of sync with each other.
+  function mirror(pose) {
+    return {
+      pelvisDX: -pose.pelvisDX, pelvisDY: pose.pelvisDY, spineA: wrapAngle(Math.PI - pose.spineA),
+      hipL: Math.PI - pose.hipR, kneeL: Math.PI - pose.kneeR,
+      hipR: Math.PI - pose.hipL, kneeR: Math.PI - pose.kneeL,
+      shoulderL: Math.PI - pose.shoulderR, elbowL: Math.PI - pose.elbowR,
+      shoulderR: Math.PI - pose.shoulderL, elbowR: Math.PI - pose.elbowL
+    };
+  }
+  POSES.kickL_windup = mirror(POSES.kickR_windup);
+  POSES.kickL_strike = mirror(POSES.kickR_strike);
+
+  // v0.1.8 feel-pass finding: a miss produced screen-level feedback (shake,
+  // flash, buzz) but the player's own body never reacted -- the rig just
+  // kept idling under the flash. Symmetric (a hit's direction/side isn't
+  // meaningful here, unlike the kick poses), a slight crouch-back recoil:
+  // pelvis dips and drops back, spine leans back further, arms pull in
+  // tighter to the body instead of staying out at idle's wide T-pose.
+  POSES.flinch = {
+    pelvisDX: 0, pelvisDY: 6, spineA: -DOWN + 0.18,
+    hipL: DOWN + 0.30, kneeL: DOWN + 0.22,
+    hipR: DOWN - 0.30, kneeR: DOWN - 0.22,
+    shoulderL: DOWN + 1.55, elbowL: DOWN + 1.9,
+    shoulderR: DOWN - 1.55, elbowR: DOWN - 1.9
+  };
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function lerpPose(a, b, t) {
+    const out = {};
+    for (const k in a) out[k] = lerp(a[k], b[k], t);
+    return out;
+  }
+  function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+  function easeInQuad(t) { return t * t; }
+  function easeInOutQuad(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  // This studio's proven "give it weight" idiom (identical formula in both
+  // wonderland.html and sigilchain.html) -- overshoots past 1 before settling.
+  // Quality-pass finding: this file never reused it even though the recovery
+  // phase (cosmetic follow-through, no gameplay function) is exactly the kind
+  // of moment the shipped games reserve it for.
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  // Windup -> strike -> recover. Durations are a first guess for tempo —
+  // this is the single most important thing to tune once you're watching it.
+  function attackSequence(side) {
+    const w = side === 'R' ? 'kickR_windup' : 'kickL_windup';
+    const s = side === 'R' ? 'kickR_strike' : 'kickL_strike';
+    return [
+      { pose: w, dur: 110, ease: easeOutQuad },
+      { pose: s, dur: 70, ease: easeInQuad },
+      { pose: 'idle', dur: 220, ease: easeOutBack }
+    ];
+  }
+
+  // ---- Animation state ----
+  let seq = null;
+  let seqIdx = 0;
+  let seqStart = 0;
+  let fromPose = POSES.idle;
+  let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
+  let attackSide = null; // which side the currently-playing (or most recent) attack was on
+  let flinchStart = -Infinity; // performance.now() of the last miss -- drives the idle-branch recoil overlay below
+  const FLINCH_DUR = 180;
+  function triggerFlinch() { flinchStart = performance.now(); }
+
+  // Convention: the LAST phase of any attackSequence is recovery — cosmetic
+  // follow-through with no remaining gameplay function (the hit has already
+  // resolved during strike). Every phase before that is committed: once it
+  // starts, it plays out in full. This distinction is load-bearing for the
+  // double-boss threat-reading design goal — a player must be able to answer
+  // a second threat without waiting out dead recovery time from the first.
+  function isCommittedPhase(idx) {
+    return idx < seq.length - 1;
+  }
+
+  function triggerAttack(side) {
+    SFX.ensureCtx(); // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
+    if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
+    // Either idle, or sitting in the (interruptible) recovery phase — start
+    // immediately. startAttack() captures currentPose() as fromPose, so an
+    // interrupted recovery blends smoothly into the new windup instead of
+    // snapping.
+    startAttack(side);
+  }
+
+  function startAttack(side) {
+    // Capture the outgoing pose BEFORE seq/seqIdx/seqStart change — otherwise
+    // currentPose() below takes its mid-sequence branch against the new seq
+    // (t=0), returning fromPose unchanged instead of the actual current pose.
+    fromPose = currentPose();
+    seq = attackSequence(side);
+    seqIdx = 0;
+    seqStart = performance.now();
+    attackSide = side;
+    SFX.windupWhoosh(); // every attack starts at the windup phase, so this is exactly the windup trigger point
+  }
+
+  function currentPose() {
+    if (!seq) {
+      // subtle idle breathing so the rig isn't static between attacks
+      // (amplitude scaled with the 0.8x rig resize, same as LEN)
+      const bob = Math.sin(performance.now() / 450) * 2.4;
+      const sway = Math.sin(performance.now() / 900) * 0.04;
+      const base = Object.assign({}, POSES.idle, {
+        pelvisDY: POSES.idle.pelvisDY + bob,
+        shoulderL: POSES.idle.shoulderL + sway,
+        shoulderR: POSES.idle.shoulderR - sway
+      });
+      // Player hit-reaction (v0.1.8): a plain additive blend toward
+      // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
+      // a real attack uses -- reusing that machinery here would risk
+      // resolveHits() misreading a stale attackSide during the flinch's own
+      // transition-back-to-idle (its seqIdx would pass through 1, the exact
+      // index resolveHits() checks for a live strike). A miss is independent
+      // of the player's own attack state, and this is only ever read here in
+      // the idle branch, so if the player is still mid-attack when a miss
+      // lands, the 180ms flinch window can fully elapse before they return
+      // to idle and it simply won't show for that miss -- an accepted
+      // tradeoff against touching the attack state machine's committed-phase
+      // guarantee.
+      const flinchElapsed = performance.now() - flinchStart;
+      if (flinchElapsed < FLINCH_DUR) {
+        return lerpPose(base, POSES.flinch, 1 - easeOutQuad(flinchElapsed / FLINCH_DUR));
+      }
+      return base;
+    }
+    const step = seq[seqIdx];
+    const t = Math.min(1, (performance.now() - seqStart) / step.dur);
+    const eased = step.ease(t);
+    const target = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+    return lerpPose(fromPose, target, eased);
+  }
+
+  function updateSeq(now) {
+    if (!seq) return;
+    const step = seq[seqIdx];
+    if (now - seqStart >= step.dur) {
+      // Capture the pose this phase was heading toward BEFORE advancing,
+      // so the next phase blends from the correct starting point.
+      const completed = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+      seqIdx++;
+      seqStart = now;
+      if (seqIdx >= seq.length) {
+        // Sequence is over — bail out before touching seq[seqIdx], which
+        // is now out of bounds. This check has to come before any read of
+        // the next step, not after.
+        seq = null;
+        if (queuedSide) {
+          const s = queuedSide;
+          queuedSide = null;
+          startAttack(s);
+        }
+        return;
+      }
+      fromPose = completed;
+      // The committed phases (windup+strike) just finished, so we're about
+      // to enter recovery — which has no gameplay function left. If an
+      // input was already buffered during windup/strike, don't make the
+      // player wait out the full recovery: fire it now instead.
+      if (!isCommittedPhase(seqIdx) && queuedSide) {
+        const s = queuedSide;
+        queuedSide = null;
+        startAttack(s);
+      }
+    }
+  }
+
+  // ---- Rig solving (pure math — no canvas calls) ----
+  // Returns every joint's world-space position for a given pose. This is the
+  // one place segment-endpoint math happens; rendering and (later) hit
+  // detection both read from this same output instead of each computing
+  // positions their own way, which is exactly how mockEnemy.hitAt's
+  // duplicated-duration bug happened before — two copies of the same math
+  // silently drifting apart.
+  function segEnd(x1, y1, angle, len) {
+    return { x: x1 + Math.cos(angle) * len, y: y1 + Math.sin(angle) * len };
+  }
+
+  function solveRig(pose) {
+    const groundY = canvas.height * 0.78;
+    const cx = canvas.width / 2 + pose.pelvisDX;
+    const pelvis = { x: cx, y: groundY - LEN.thigh - LEN.shin + pose.pelvisDY };
+
+    const hipL = { x: pelvis.x - LEN.hipW * 0.4, y: pelvis.y };
+    const kneeL = segEnd(hipL.x, hipL.y, pose.hipL, LEN.thigh);
+    const footL = segEnd(kneeL.x, kneeL.y, pose.kneeL, LEN.shin);
+
+    const hipR = { x: pelvis.x + LEN.hipW * 0.4, y: pelvis.y };
+    const kneeR = segEnd(hipR.x, hipR.y, pose.hipR, LEN.thigh);
+    const footR = segEnd(kneeR.x, kneeR.y, pose.kneeR, LEN.shin);
+
+    const chest = segEnd(pelvis.x, pelvis.y, pose.spineA, LEN.spine);
+
+    const shoulderL = { x: chest.x - LEN.shoulderW * 0.5, y: chest.y + 6 };
+    const elbowL = segEnd(shoulderL.x, shoulderL.y, pose.shoulderL, LEN.upperArm);
+    const handL = segEnd(elbowL.x, elbowL.y, pose.elbowL, LEN.forearm);
+
+    const shoulderR = { x: chest.x + LEN.shoulderW * 0.5, y: chest.y + 6 };
+    const elbowR = segEnd(shoulderR.x, shoulderR.y, pose.shoulderR, LEN.upperArm);
+    const handR = segEnd(elbowR.x, elbowR.y, pose.elbowR, LEN.forearm);
+
+    const head = { x: chest.x, y: chest.y - LEN.neck - LEN.headR };
+
+    return {
+      pelvis, hipL, kneeL, footL, hipR, kneeR, footR,
+      chest, shoulderL, elbowL, handL, shoulderR, elbowR, handR, head
+    };
+  }
+
+  // ---- Drawing (pure rendering — no math, reads joints from solveRig) ----
+  function drawLine(p1, p2, width) {
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#e8e8f0';
+    ctx.stroke();
+  }
+
+  function renderRig(j) {
+    // legs first (drawn behind torso)
+    drawLine(j.hipL, j.kneeL, 7);
+    drawLine(j.kneeL, j.footL, 6);
+    drawLine(j.hipR, j.kneeR, 7);
+    drawLine(j.kneeR, j.footR, 6);
+
+    // spine
+    drawLine(j.pelvis, j.chest, 9);
+
+    // arms
+    drawLine(j.shoulderL, j.elbowL, 6);
+    drawLine(j.elbowL, j.handL, 5);
+    drawLine(j.shoulderR, j.elbowR, 6);
+    drawLine(j.elbowR, j.handR, 5);
+
+    // head
+    ctx.beginPath();
+    ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8e8f0';
+    ctx.fill();
+  }
+
+  // ---- Audio (SFX only — no music yet, nothing to score). One sfxGain ->
+  // one DynamicsCompressor -> destination, per the adaptive-game-audio
+  // skill's "how much do you actually need" guidance (Sigil Chain's scoped-
+  // down shape, not Wonderland's full graph): a reflex-timing game's first
+  // audio need is a set of distinct, instantly-legible one-shot stingers,
+  // not a produced mix. Deliberately NO reverb send here even though both
+  // reference Music modules have one — a reverb tail would blur the exact
+  // transient onset this pass exists to sharpen (the producer's "couldn't
+  // tell when to hit" problem is a clarity problem, not an atmosphere gap).
+  // Every voice below is a fully-scheduled one-shot burst fired at a single
+  // event instant (startAttack(), a kill, a miss, a proximity threshold
+  // crossing) — none of them are continuously-updated per-frame automation,
+  // so none of them need the cancel-then-ramp idiom the skill polices for
+  // ongoing values; they just fire and finish.
+  const SFX = (function () {
+    let ctx, sfx, compressor, started = false;
+
+    function ensureCtx() {
+      if (ctx) return;
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      sfx = ctx.createGain(); sfx.gain.value = 0.6;
+      compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -18; compressor.knee.value = 12;
+      compressor.ratio.value = 4; compressor.attack.value = 0.003; compressor.release.value = 0.22;
+      sfx.connect(compressor); compressor.connect(ctx.destination);
+      started = true;
+    }
+
+    // Windup whoosh — startAttack(): a rising bandpass noise sweep timed to
+    // exactly the 110ms windup duration, so its rising pitch peaks right as
+    // the strike phase begins. This is the "get ready" telegraph.
+    function windupWhoosh() {
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      const len = Math.floor(ctx.sampleRate * 0.13);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.5);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.5;
+      bp.frequency.setValueAtTime(400, t);
+      bp.frequency.exponentialRampToValueAtTime(1800, t + 0.11); // 110ms == the windup phase duration exactly
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.22, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+      src.connect(bp); bp.connect(g); g.connect(sfx);
+      src.start(t);
+    }
+
+    // Strike-connect impact — resolveHits(), on a kill: pitch-drop sine
+    // thump + a short noise click transient. Percussive/punchy on purpose,
+    // the timbral opposite of missBuzz() below so a connect and a miss can
+    // never be confused by ear alone.
+    function strikeImpact() {
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.5, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(240, t);
+      o.frequency.exponentialRampToValueAtTime(55, t + 0.08);
+      o.connect(g); g.connect(sfx);
+      o.start(t); o.stop(t + 0.18);
+
+      const clen = Math.floor(ctx.sampleRate * 0.012);
+      const cbuf = ctx.createBuffer(1, clen, ctx.sampleRate);
+      const cd = cbuf.getChannelData(0);
+      for (let i = 0; i < clen; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / clen, 4);
+      const csrc = ctx.createBufferSource(); csrc.buffer = cbuf;
+      const chp = ctx.createBiquadFilter(); chp.type = 'highpass'; chp.frequency.value = 2000;
+      const cg = ctx.createGain(); cg.gain.value = 0.35;
+      csrc.connect(chp); chp.connect(cg); cg.connect(sfx);
+      csrc.start(t);
+    }
+
+    // Miss buzzer — updateEnemies()'s miss branch, when an enemy reaches
+    // melee range unanswered: two detuned, descending SQUARE oscillators
+    // (harsh/buzzy on purpose — square + detune beating reads as "wrong"),
+    // the timbral opposite of strikeImpact()'s sine thump.
+    function missBuzz() {
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.2, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+      lp.connect(g); g.connect(sfx);
+      const o1 = ctx.createOscillator(); o1.type = 'square';
+      o1.frequency.setValueAtTime(200, t);
+      o1.frequency.exponentialRampToValueAtTime(90, t + 0.24);
+      const o2 = ctx.createOscillator(); o2.type = 'square';
+      o2.frequency.setValueAtTime(206, t); // ~1.03x detune for a harsh beating "wrong" texture
+      o2.frequency.exponentialRampToValueAtTime(92.7, t + 0.24);
+      const g2 = ctx.createGain(); g2.gain.value = 0.6;
+      o1.connect(lp); o2.connect(g2); g2.connect(lp);
+      o1.start(t); o2.start(t); o1.stop(t + 0.27); o2.stop(t + 0.27);
+    }
+
+    // Proximity pulse — updateEnemies(), fired once per enemy at each of
+    // three fixed travel-fraction thresholds (0.4 / 0.7 / 0.9 of
+    // ENEMY_TRAVEL_MS). This is an event-gated one-shot pattern, NOT
+    // continuous per-frame automation: each pulse is a fully-scheduled
+    // burst fired the single frame its threshold is crossed, never a value
+    // ramped again on every tick, so it doesn't need (and deliberately
+    // avoids) the cancel-then-ramp idiom. A pure-sine "beep" — the least
+    // textured of the four voices on purpose, so it never gets mistaken for
+    // the swept whoosh, the punchy impact, or the buzzy miss. Pitch, volume
+    // rise and duration shortens pulse-to-pulse so the three read as an
+    // accelerating "closing in" telegraph rather than three identical dings.
+    const PULSE_DEFS = [
+      { freq: 400, dur: 0.09, vol: 0.12 },
+      { freq: 550, dur: 0.07, vol: 0.16 },
+      { freq: 750, dur: 0.05, vol: 0.22 }
+    ];
+    function proximityPulse(stage) {
+      if (!ctx) return;
+      const def = PULSE_DEFS[stage];
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(def.vol, t + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + def.dur);
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = def.freq;
+      o.connect(g); g.connect(sfx);
+      o.start(t); o.stop(t + def.dur + 0.02);
+    }
+
+    return {
+      ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse,
+      _test: { isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null }
+    };
+  })();
+  const PULSE_THRESHOLDS = [0.4, 0.7, 0.9]; // fraction of ENEMY_TRAVEL_MS at which each proximityPulse stage fires
+
+  // ---- Juice: particles, screen shake, hit/miss flash ----
+  // Pure presentation, deliberately kept separate from collision/timing math
+  // (same separation wonderland's own Juice module guarantees) -- none of
+  // this reads or writes seq/seqIdx/enemy positions used for hit detection.
+  // Scope decision: true hitstop (freezing the timing clock on impact) was
+  // considered and left out of this pass -- it would require threading a
+  // paused "virtual now" through updateSeq/currentPose/startAttack, which
+  // currently read performance.now() directly, and that's real invasive risk
+  // to the just-stabilized timing system for a nice-to-have effect when
+  // flash+punch+particles+shake already deliver most of the impact.
+  function lerpColor(c1, c2, t) {
+    const a = parseInt(c1.slice(1), 16), b = parseInt(c2.slice(1), 16);
+    const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+    const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+    return 'rgb(' + Math.round(lerp(ar, br, t)) + ',' + Math.round(lerp(ag, bg, t)) + ',' + Math.round(lerp(ab, bb, t)) + ')';
+  }
+
+  const MAX_PARTICLES = 40;
+  let particles = [];
+  let shakeMag = 0;   // decaying px magnitude, applied as a random canvas offset
+  let missFlash = 0;  // 0..1, decaying -- translucent full-canvas danger-tint on a miss
+
+  // prefers-reduced-motion (v0.1.8): OS-level signal only -- this file has no
+  // settings menu/Persist module to layer a manual override on the way
+  // wonderland.html/sigilchain.html's Settings module does, and building one
+  // is out of scope for a rendering/feel pass. Still closes a real gap: this
+  // was the one file in the studio with zero handling for it, despite being
+  // the most shake/flash-heavy of the three. Gates screen shake and the
+  // full-bleed missFlash, the two motion-heavy effects here.
+  let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => { reducedMotion = e.matches; });
+
+  function spawnBurst(x, y) {
+    const count = 10;
+    for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
+      const a = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+      const speed = 140 + Math.random() * 80;
+      particles.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 0.3 + Math.random() * 0.2, maxLife: 0.5, color: '#ff4d70' });
+    }
+    for (let i = 0; i < 3 && particles.length < MAX_PARTICLES; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 40;
+      particles.push({ x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 0.2, maxLife: 0.2, color: '#ffffff' });
+    }
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- Enemies ----
+  // Autonomous: enemies spawn and approach on their own schedule, independent
+  // of when the player attacks. Previously the "enemy" only ever existed as
+  // a side effect of the player's own startAttack() call, which meant it
+  // could never actually threaten the player — this is the fix for that.
+  //
+  // These numbers are first guesses, same convention as the pose timings:
+  // expect to hand-tune once this is being watched, not read as final.
+  const ENEMY_HIT_RADIUS = 45;    // generous hitbox around the enemy, for the player's kicking foot
+  const ENEMY_MELEE_REACH = 55;   // how close (px from the pelvis) an enemy gets before it "lands" a hit
+  const ENEMY_TRAVEL_MS = 600;    // spawn-to-contact time; within this rig's own ~430-700ms derived floor
+  const ENEMY_SPAWN_GAP_MS = 550; // gap after an enemy resolves before the next one spawns
+  const ENEMY_DEATH_DUR = 220;    // ms a killed enemy lingers as a fading flash before its slot clears
+
+  // Visible size: quality-pass finding (visual-art-director) -- base 22px
+  // radius growing to 34px as the enemy nears melee range (t 0.65 to 1.0),
+  // reusing the travel fraction updateEnemies() already computes rather than
+  // adding a second timer. Old flat 14px radius (9.4:1 vs the rig's height)
+  // was a directly-reported readability failure. Growth also functions as a
+  // telegraph -- the dot visibly swelling is itself a "get ready" cue.
+  const ENEMY_RADIUS_BASE = 22, ENEMY_RADIUS_PEAK = 34, ENEMY_GROW_START = 0.65;
+  // Color: was #c0392b, matching neither shipped game's --danger token
+  // (#ff4d70, identical in wonderland.html and sigilchain.html) -- untokenized
+  // hex drift the studio's cross-game convention exists to catch. Telegraph
+  // color lerps toward #ff8da0, also reused verbatim from wonderland's own
+  // hp-bar danger gradient, not a new color relationship.
+  const ENEMY_COLOR_BASE = '#ff4d70', ENEMY_COLOR_PEAK = '#ff8da0';
+
+  let enemies = [];
+  let nextSpawnAt = 1000; // small initial grace period before the first enemy
+  let killCount = 0;
+  let missedCount = 0;
+
+  // ---- Session ----
+  // Phase 3 of the plan of action: the previous builds had real hit
+  // detection and real feedback but no actual stakes -- an unanswered
+  // enemy just incremented a counter forever. MAX_MISSES is the plan's
+  // suggested 3-5-miss "winnable but threatening" pool, first-guess like
+  // every other number here. A "gauntlet": endless single-enemy encounters,
+  // scored by kill count, ending on the lives pool running out -- not a
+  // health-bar boss fight, which the studio explicitly didn't build toward.
+  const MAX_MISSES = 5;
+  let sessionState = 'playing'; // 'playing' | 'lose'
+
+  function resetSession() {
+    seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle; queuedSide = null; attackSide = null;
+    enemies = []; nextSpawnAt = performance.now() + 1000;
+    killCount = 0; missedCount = 0;
+    particles = []; shakeMag = 0; missFlash = 0;
+    sessionState = 'playing';
+  }
+
+  function makeEnemy(spawnAt, side) {
+    const pelvisX = canvas.width / 2; // idle pelvisDX is 0; small attack-time offsets are ignored here
+    const spawnX = side === 'R' ? canvas.width + 50 : -50;
+    const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
+    return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true,
+      t: 0, dying: false, deathT: 0,
+      pulsesFired: [false, false, false] }; // tracks which PULSE_THRESHOLDS stages this enemy has already fired
+  }
+
+  function updateEnemies(now, dt) {
+    if (enemies.length === 0 && now >= nextSpawnAt) {
+      enemies.push(makeEnemy(now, Math.random() < 0.5 ? 'L' : 'R'));
+    }
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.dying) {
+        e.deathT += dt * 1000;
+        if (e.deathT >= ENEMY_DEATH_DUR) enemies.splice(i, 1);
+        continue;
+      }
+      const t = Math.min(1, (now - e.spawnAt) / ENEMY_TRAVEL_MS);
+      e.t = t;
+      e.x = lerp(e.spawnX, e.contactX, t);
+      // Fire each proximity-pulse stage once, the frame its threshold is
+      // crossed — an event-gated one-shot, not a per-frame ramp (see SFX
+      // module comment). This is the audio cue for the approach itself,
+      // independent of windup/strike/miss.
+      for (let stage = 0; stage < PULSE_THRESHOLDS.length; stage++) {
+        if (!e.pulsesFired[stage] && t >= PULSE_THRESHOLDS[stage]) {
+          e.pulsesFired[stage] = true;
+          SFX.proximityPulse(stage);
+        }
+      }
+      if (t >= 1) {
+        // Reached melee range with no correct-side hit landed in time.
+        missedCount++;
+        SFX.missBuzz();
+        missFlash = reducedMotion ? 0.4 : 1;
+        shakeMag = Math.min(20, shakeMag + (reducedMotion ? 1 : 3)); // weaker tier than a kill's +6 -- distinct weight, not just a color
+        triggerFlinch();
+        enemies.splice(i, 1);
+        nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
+        if (missedCount >= MAX_MISSES) sessionState = 'lose';
+      }
+    }
+  }
+
+  // Only checked during the strike phase specifically (not windup/recover) —
+  // reads the kicking foot's real world position from solveRig(), which is
+  // exactly what the v0.1.4 refactor exists to make possible.
+  function resolveHits(now, joints) {
+    if (!seq || seqIdx !== 1 || !attackSide) return;
+    const foot = attackSide === 'R' ? joints.footR : joints.footL;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.dying || e.side !== attackSide) continue;
+      const dx = foot.x - e.x, dy = foot.y - e.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= ENEMY_HIT_RADIUS) {
+        // Not an instant splice -- linger briefly as a fading flash (see
+        // drawEnemies()) so the kill actually reads as an impact, not a
+        // silent disappearance. Excluded from further hit/miss checks above
+        // via the e.dying guard.
+        e.dying = true; e.deathT = 0;
+        killCount++;
+        SFX.strikeImpact();
+        spawnBurst(e.x, e.y);
+        shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
+        nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
+      }
+    }
+  }
+
+  // v0.1.8 feel-pass finding: growth + color-lerp made the enemy telegraph
+  // its approach, but it never stopped being a plain ctx.arc() circle -- the
+  // producer's original "the dot is so small" complaint was really "it's a
+  // dot, period," and sizing/coloring a dot better doesn't change that. This
+  // draws a small asymmetric arrowhead/chevron instead: a shape with a nose
+  // and a concave back notch, canonically pointing left (-x). Side 'R'
+  // enemies travel leftward toward the player, so they use this orientation
+  // directly; side 'L' enemies travel rightward, so drawEnemies() mirrors it
+  // with ctx.scale(-1,1) rather than hand-authoring a second shape that could
+  // drift out of sync (same reasoning as mirror() for the player's own
+  // kick poses).
+  function drawEnemyShape(radius) {
+    ctx.beginPath();
+    ctx.moveTo(-radius * 1.3, 0);        // nose
+    ctx.lineTo(radius * 0.6, -radius * 0.9);  // upper back corner
+    ctx.lineTo(radius * 0.15, 0);        // concave back notch -- what makes it read as an arrow, not a kite
+    ctx.lineTo(radius * 0.6, radius * 0.9);   // lower back corner
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // A distinct "about to strike" state, not just a further point on the
+  // continuous grow/color gradient -- the gradient alone reads as "getting
+  // closer," not "about to hit." Fires only in the enemy's final approach
+  // stretch, well after ENEMY_GROW_START but before contact.
+  const ENEMY_STRIKE_WARN_T = 0.85;
+
+  function drawEnemies() {
+    for (const e of enemies) {
+      if (e.dying) {
+        // Punchier kill flash (v0.1.8): the old version was a raw linear
+        // alpha/radius falloff and read as a fade, not an impact. Reuses the
+        // studio's own "give it weight" easeOutBack idiom (already used for
+        // the recovery-phase pose) for a snap-then-settle radius pop, and a
+        // fast easeInQuad alpha drop so it stays bright before cutting out
+        // sharply, closer to a flash than a fade.
+        const dt2 = e.deathT / ENEMY_DEATH_DUR; // 0..1
+        const growEased = easeOutBack(Math.min(1, dt2 * 1.4));
+        ctx.globalAlpha = Math.max(0, 1 - easeInQuad(dt2));
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, ENEMY_RADIUS_PEAK * (1 + 0.4 * growEased), 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      const growT = Math.max(0, Math.min(1, (e.t - ENEMY_GROW_START) / (1 - ENEMY_GROW_START)));
+      const eased = easeOutQuad(growT);
+      const radius = lerp(ENEMY_RADIUS_BASE, ENEMY_RADIUS_PEAK, eased);
+
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      if (e.side === 'L') ctx.scale(-1, 1); // mirror the canonical points-left shape for rightward-traveling enemies
+      ctx.fillStyle = lerpColor(ENEMY_COLOR_BASE, ENEMY_COLOR_PEAK, eased);
+      drawEnemyShape(radius);
+      ctx.restore();
+
+      if (e.t >= ENEMY_STRIKE_WARN_T) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 60);
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, radius + 5 + pulse * 3, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 + pulse * 0.4).toFixed(2) + ')';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Contact shadows (v0.1.8): nothing in this file ever cast a shadow, so
+  // the player and every enemy looked like they were floating slightly above
+  // the ground line rather than standing on it. Kept deliberately simple --
+  // flat ellipses anchored to the ground line, not real projected geometry.
+  function drawShadow(x, rx, ry) {
+    const groundY = canvas.height * 0.78;
+    ctx.beginPath();
+    ctx.ellipse(x, groundY + 4, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+  }
+  function drawShadows(joints) {
+    // One shadow centered under the pelvis, not per-foot -- the feet move
+    // too fast during a kick for a per-foot shadow to read as anything but
+    // noise; a single anchored shadow reads as "planted on the ground."
+    drawShadow(joints.pelvis.x, 34, 8);
+    for (const e of enemies) {
+      if (e.dying) continue;
+      const growT = Math.max(0, Math.min(1, (e.t - ENEMY_GROW_START) / (1 - ENEMY_GROW_START)));
+      const r = lerp(ENEMY_RADIUS_BASE, ENEMY_RADIUS_PEAK, easeOutQuad(growT));
+      drawShadow(e.x, r * 0.8, r * 0.28);
+    }
+  }
+
+  // ---- Input ----
+  // ensureCtx() must be called from a real user-gesture handler (a browser
+  // AudioContext starts suspended until one fires) — keydown/pointerdown are
+  // exactly that, so it's called here rather than at load time. Any input
+  // while sessionState is 'lose' restarts instead of attacking — there's
+  // nothing to strike at on the game-over screen.
+  function handleInput(side) {
+    SFX.ensureCtx();
+    if (sessionState === 'lose') { resetSession(); return; }
+    triggerAttack(side);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') handleInput('L');
+    if (e.key === 'ArrowRight') handleInput('R');
+  });
+  document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
+  document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
+
+  // ---- Test hook (mirrors this studio's Game._test convention) ----
+  // Read-only state introspection plus a direct trigger, so QA/tests can set
+  // up exact scenarios (e.g. "trigger during recovery") instead of guessing
+  // real-time delays around synthetic keyboard events.
+  window.Rig = {
+    _test: {
+      state: () => ({
+        idle: !seq,
+        seqIdx,
+        seqLen: seq ? seq.length : 0,
+        committed: seq ? isCommittedPhase(seqIdx) : false,
+        queuedSide,
+        attackSide,
+        pose: currentPose(),
+        joints: solveRig(currentPose()),
+        enemies: enemies.map(e => ({ side: e.side, x: e.x, alive: e.alive, t: e.t, dying: e.dying, pulsesFired: e.pulsesFired.slice() })),
+        killCount,
+        missedCount,
+        audioStarted: SFX._test.isStarted(),
+        particleCount: particles.length,
+        shakeMag,
+        missFlash,
+        sessionState,
+        livesRemaining: MAX_MISSES - missedCount
+      }),
+      sfxGainValue: () => SFX._test.sfxGainValue(),
+      // Routes through handleInput(), the same entry point real keyboard/tap
+      // input uses — so a trigger call while sessionState is 'lose' restarts
+      // instead of attacking, exactly like a real player's next tap would.
+      trigger: (side) => handleInput(side),
+      resetSession: () => resetSession(),
+      // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
+      // path production spawning does, just backdating spawnAt so the enemy
+      // is already partway (or fully) through its approach on the very next
+      // frame — no separate/duplicated enemy-placement logic to drift out
+      // of sync with the real thing.
+      spawnEnemy: (side, elapsedMs) => {
+        const now = performance.now();
+        const e = makeEnemy(now - (elapsedMs || 0), side);
+        enemies.push(e);
+        return e;
+      },
+      // The autonomous spawner is the point of this system, but that means
+      // it can also fire in the middle of a deterministic test's own waits.
+      // These two let a test isolate a scenario without fighting the timer.
+      clearEnemies: () => { enemies = []; },
+      freezeSpawns: () => { nextSpawnAt = Infinity; }
+    }
+  };
+
+  // ---- Main loop ----
+  let lastFrameTime = 0;
+  function frame(now) {
+    const dt = lastFrameTime ? Math.min(0.05, (now - lastFrameTime) / 1000) : 0.016; // seconds, capped so a tab-switch stall can't fling particles
+    lastFrameTime = now;
+
+    // Gameplay logic freezes once the session ends -- the rig settles into
+    // whatever pose it was heading toward (currentPose()'s eased t clamps at
+    // 1) and holds there under the game-over overlay, rather than continuing
+    // to animate or letting enemies keep spawning behind it.
+    if (sessionState === 'playing') updateSeq(now);
+    const pose = currentPose();
+    const joints = solveRig(pose); // solved once per frame; rendering and hit detection both read from this
+
+    // Screen shake is pure presentation -- a render-time offset only, never
+    // touching the coordinates solveRig()/resolveHits() actually use for hit
+    // timing (same guarantee wonderland's Juice module makes explicit).
+    ctx.save();
+    if (shakeMag > 0.05) {
+      ctx.translate((Math.random() * 2 - 1) * shakeMag, (Math.random() * 2 - 1) * shakeMag);
+    }
+
+    ctx.fillStyle = bgGradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = '#2a2d3a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height * 0.78 + 2);
+    ctx.lineTo(canvas.width, canvas.height * 0.78 + 2);
+    ctx.stroke();
+
+    // resolveHits() runs BEFORE updateEnemies() -- a hit gets first claim on
+    // an enemy before the miss-timeout check can remove it. Reordered from
+    // the original (updateEnemies first) after an engineer audit found that
+    // order let a geometrically clean, comfortably-in-radius hit get stolen
+    // as a miss whenever an enemy's melee-range timeout and the player's
+    // strike-phase start coincided in the same frame -- rare per-attempt,
+    // but one-directional (only ever cost the player) and worse on lower
+    // frame rates. Whichever function removes an enemy first, the other
+    // simply won't find it in the array, so this can't double-count.
+    if (sessionState === 'playing') {
+      resolveHits(now, joints);
+      updateEnemies(now, dt);
+    }
+    updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
+    drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
+    drawEnemies();
+    drawParticles();
+    renderRig(joints);
+    ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
+
+    if (missFlash > 0.01) {
+      // v0.1.8: peak alpha was 0.4 and painted directly over the player's
+      // own white rig lines (drawn just above, inside the same shake-offset
+      // save/restore) at the exact moment -- a possible game over -- they
+      // most needed to still read clearly. Lower peak, faster decay: still a
+      // clear hit-pulse, no longer a wash.
+      ctx.fillStyle = 'rgba(255,77,112,' + (missFlash * (reducedMotion ? 0.12 : 0.22)).toFixed(3) + ')';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    shakeMag = Math.max(0, shakeMag - dt * 90);
+    missFlash = Math.max(0, missFlash - dt * 7);
+
+    if (sessionState === 'lose') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Backing card for the text block -- v0.1.8 fix: the retry hint used to
+      // be a bare fillText directly over the frozen rig, and at this
+      // viewport size it rendered right through the character's head. A card
+      // guarantees legibility regardless of what's underneath it.
+      const cardW = Math.min(280, canvas.width - 40), cardH = 120;
+      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 70;
+      ctx.fillStyle = 'rgba(18,20,28,0.92)';
+      ctx.strokeStyle = 'rgba(255,77,112,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 10); else ctx.rect(cardX, cardY, cardW, cardH);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff4d70';
+      ctx.font = 'bold 32px monospace';
+      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+      ctx.fillStyle = '#e8e8f0';
+      ctx.font = '16px monospace';
+      ctx.fillText('Kills: ' + killCount, canvas.width / 2, canvas.height / 2 + 15);
+      ctx.fillStyle = '#888';
+      ctx.font = '13px monospace';
+      ctx.fillText('tap or press a key to try again', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.restore();
+    }
+
+    hudEl.innerHTML = 'KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
+      '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
+      '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>';
+
+    debugEl.textContent = 'state: ' + (seq ? ('attacking [' + seqIdx + '/' + seq.length + ']') : 'idle') +
+      (queuedSide ? '\nbuffered: ' + queuedSide : '') +
+      '\nsession: ' + sessionState +
+      '\nkills: ' + killCount + '  missed: ' + missedCount +
+      (enemies.length ? '\nenemy: ' + enemies[0].side + ' @ ' + enemies[0].x.toFixed(0) : '');
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
