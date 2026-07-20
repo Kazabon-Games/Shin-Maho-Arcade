@@ -274,6 +274,27 @@ function ok(cond, label) {
   ok(s.sessionState === 'playing' && s.killCount === 0 && s.missedCount === 0 && s.livesRemaining === 5,
     'an input during game over restarts: back to playing, 0/0, full lives');
 
+  console.log('11. Attachment sockets (v0.1.9 consolidation §3)');
+  await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
+  let sockState = await page.evaluate(() => window.Rig._test.state());
+  const socketKeys = ['hand_r', 'hand_l', 'foot_r', 'foot_l', 'hip', 'back', 'head'];
+  ok(socketKeys.every(k => sockState.sockets && Number.isFinite(sockState.sockets[k].x) && Number.isFinite(sockState.sockets[k].y)),
+    'all 7 named sockets present with finite x/y at idle');
+  ok(sockState.sockets.foot_r.x === sockState.joints.footR.x && sockState.sockets.foot_r.y === sockState.joints.footR.y,
+    'foot_r socket aliases solveRig()\'s footR joint exactly (no drift between the two lookup paths)');
+  ok(sockState.sockets.foot_l.x === sockState.joints.footL.x && sockState.sockets.foot_l.y === sockState.joints.footL.y,
+    'foot_l socket aliases solveRig()\'s footL joint exactly');
+  // resolveHits() was migrated to read foot_r/foot_l through getSockets()
+  // instead of joints.footR/footL directly -- confirm a real hit still
+  // lands through that migrated path, not just that the socket values
+  // match in isolation. Same trigger+spawn-in-one-evaluate() and
+  // elapsedMs=455/wait=145ms timing as section 7's well-timed-kill case.
+  const beforeSockKill = await page.evaluate(() => window.Rig._test.state());
+  await page.evaluate(() => { window.Rig._test.trigger('R'); window.Rig._test.spawnEnemy('R', 455); });
+  await page.waitForTimeout(145);
+  let sockKill = await page.evaluate(() => window.Rig._test.state());
+  ok(sockKill.killCount === beforeSockKill.killCount + 1, 'a real kick still kills through the socket-migrated resolveHits() path');
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
   process.exit(fail === 0 ? 0 : 1);

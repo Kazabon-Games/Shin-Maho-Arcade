@@ -93,14 +93,29 @@ of a small lean. Any new angle key added to the pose shape must get a
 mirroring rule added to `mirror()` in the same commit, or the left-side
 version of that pose will silently reuse the un-mirrored value.
 
+## Attachment sockets (consolidation §3 — added v0.1.9)
+
+`getSockets(joints)` resolves 7 named world-space points from `solveRig()`'s
+output: `hand_r`, `hand_l`, `foot_r`, `foot_l`, `hip`, `back`, `head`. Names
+are deliberately distinct from `solveRig()`'s own joint keys (`hand_r` vs.
+`handR`) so a stray direct joint read doesn't silently pass as "using the
+socket system." `resolveHits()` was migrated to read `foot_r`/`foot_l`
+through this layer instead of `joints.footR`/`footL` directly — the first
+real caller, so the convention is enforced starting now, not just
+documented. Every socket is currently a 1:1 alias of an existing joint
+(verified via `tests/rig-sequence.js` §11) — no independent
+orientation/rotation component yet, since no weapon/skin exists to need
+one. Future weapon/skin/attack-reach code should query sockets by name,
+never reach into `solveRig()`'s raw output.
+
 ## What this schema does not yet have (tracked separately, not gaps in this doc)
 
-- **Named attachment/socket points** (`hand_r`, `hand_l`, foot anchors as a
-  queryable API distinct from the raw `solveRig()` output) — see the
-  Section 3 socket doc.
 - **An explicit state/move-set table** (idle/windup/strike/recover/hit-stun,
   plus the new `guard` state) — see the Section 5 move-set doc.
 - **A `guard` pose** — doesn't exist yet; the prototype only ever fought
   one-directional enemies and never needed a defensive stance.
 - **Independent head/look angle** — not needed by anything shipped yet;
   flagged here only so it isn't assumed to exist by a future pass.
+- **Socket orientation/rotation** — sockets are position-only today; add
+  rotation when a weapon/skin actually needs to align to bone direction,
+  not preemptively.

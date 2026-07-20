@@ -11,6 +11,27 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.9 — 2026-07-20 — Game 5 consolidation pass §3: added a named
+                          attachment-socket layer (getSockets(joints):
+                          hand_r, hand_l, foot_r, foot_l, hip, back, head)
+                          on top of solveRig()'s existing joint output.
+                          Socket names are deliberately distinct from
+                          solveRig()'s own joint keys (hand_r vs handR) so
+                          a stray direct joint read doesn't silently pass
+                          as "using the socket system." resolveHits()
+                          migrated to read foot_r/foot_l through this layer
+                          instead of joints.footR/footL directly -- the
+                          first real caller, so the convention is enforced
+                          starting now rather than merely documented.
+                          window.Rig._test.state() now also exposes
+                          sockets alongside joints for test/debug
+                          introspection. No behavior change: sockets
+                          currently alias solveRig()'s own points 1:1
+                          (no independent orientation/rotation component
+                          yet, since no weapon/skin exists to need one).
+                          See prototypes/RYKNDU_RIG_SCHEMA.md for the full
+                          socket-layer doc.
+
   v0.1.8 — 2026-07-09 — Feel pass: visual/art polish, prompted by a live
                           playtest re-raising the pre-v0.1.6 complaint ("the
                           dot is so small") and a follow-up visual-art-
@@ -288,7 +309,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.8</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.9</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -605,6 +626,24 @@
     return {
       pelvis, hipL, kneeL, footL, hipR, kneeR, footR,
       chest, shoulderL, elbowL, handL, shoulderR, elbowR, handR, head
+    };
+  }
+
+  // ---- Attachment sockets (consolidation §3) ----
+  // The one place weapon/skin/hit-detection code should ever ask "where is
+  // X on this rig" -- never by reaching into solveRig()'s raw joint output
+  // directly. Socket names are deliberately distinct from solveRig()'s own
+  // joint keys (hand_r vs handR) so a stray direct joint read is visually
+  // obvious as not going through this layer. Every socket resolves to a
+  // plain world-space {x,y} for now -- no orientation/rotation component,
+  // since nothing attached needs one yet (no weapon/skin exists). Add
+  // rotation here if/when one does, rather than opening a second lookup
+  // path alongside this one.
+  function getSockets(joints) {
+    return {
+      hand_r: joints.handR, hand_l: joints.handL,
+      foot_r: joints.footR, foot_l: joints.footL,
+      hip: joints.pelvis, back: joints.chest, head: joints.head
     };
   }
 
@@ -948,7 +987,8 @@
   // exactly what the v0.1.4 refactor exists to make possible.
   function resolveHits(now, joints) {
     if (!seq || seqIdx !== 1 || !attackSide) return;
-    const foot = attackSide === 'R' ? joints.footR : joints.footL;
+    const sockets = getSockets(joints);
+    const foot = attackSide === 'R' ? sockets.foot_r : sockets.foot_l;
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       if (e.dying || e.side !== attackSide) continue;
@@ -1084,25 +1124,29 @@
   // real-time delays around synthetic keyboard events.
   window.Rig = {
     _test: {
-      state: () => ({
-        idle: !seq,
-        seqIdx,
-        seqLen: seq ? seq.length : 0,
-        committed: seq ? isCommittedPhase(seqIdx) : false,
-        queuedSide,
-        attackSide,
-        pose: currentPose(),
-        joints: solveRig(currentPose()),
-        enemies: enemies.map(e => ({ side: e.side, x: e.x, alive: e.alive, t: e.t, dying: e.dying, pulsesFired: e.pulsesFired.slice() })),
-        killCount,
-        missedCount,
-        audioStarted: SFX._test.isStarted(),
-        particleCount: particles.length,
-        shakeMag,
-        missFlash,
-        sessionState,
-        livesRemaining: MAX_MISSES - missedCount
-      }),
+      state: () => {
+        const joints = solveRig(currentPose());
+        return {
+          idle: !seq,
+          seqIdx,
+          seqLen: seq ? seq.length : 0,
+          committed: seq ? isCommittedPhase(seqIdx) : false,
+          queuedSide,
+          attackSide,
+          pose: currentPose(),
+          joints,
+          sockets: getSockets(joints),
+          enemies: enemies.map(e => ({ side: e.side, x: e.x, alive: e.alive, t: e.t, dying: e.dying, pulsesFired: e.pulsesFired.slice() })),
+          killCount,
+          missedCount,
+          audioStarted: SFX._test.isStarted(),
+          particleCount: particles.length,
+          shakeMag,
+          missFlash,
+          sessionState,
+          livesRemaining: MAX_MISSES - missedCount
+        };
+      },
       sfxGainValue: () => SFX._test.sfxGainValue(),
       // Routes through handleInput(), the same entry point real keyboard/tap
       // input uses — so a trigger call while sessionState is 'lose' restarts
