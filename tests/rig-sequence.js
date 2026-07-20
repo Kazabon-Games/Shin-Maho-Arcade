@@ -295,6 +295,50 @@ function ok(cond, label) {
   let sockKill = await page.evaluate(() => window.Rig._test.state());
   ok(sockKill.killCount === beforeSockKill.killCount + 1, 'a real kick still kills through the socket-migrated resolveHits() path');
 
+  console.log('12. Guard state (v0.1.10 consolidation §5)');
+  await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
+  let idleState = await page.evaluate(() => window.Rig._test.state());
+  ok(idleState.guarding === false, 'guarding starts false after reset');
+
+  await page.evaluate(() => window.Rig._test.setGuard(true));
+  await page.waitForTimeout(50);
+  let guardOn = await page.evaluate(() => window.Rig._test.state());
+  ok(guardOn.guarding === true, 'setGuard(true) from idle sets guarding');
+  ok(guardOn.idle === true, 'guarding does not itself count as a running attack sequence');
+  ok(Math.abs(guardOn.sockets.hand_r.y - idleState.sockets.hand_r.y) > 10,
+    'guard pose visibly repositions the hand sockets vs. idle (not a silent no-op pose)');
+
+  ok((await page.evaluate(() => window.Rig._test.trigger('R'))) === undefined, 'trigger() call itself does not throw while guarding');
+  await page.waitForTimeout(30);
+  let guardBlocksAttack = await page.evaluate(() => window.Rig._test.state());
+  ok(guardBlocksAttack.idle === true && guardBlocksAttack.guarding === true,
+    'an attack input while guarding is refused -- no sequence starts, guard holds');
+
+  await page.evaluate(() => window.Rig._test.setGuard(false));
+  await page.waitForTimeout(30);
+  let guardOff = await page.evaluate(() => window.Rig._test.state());
+  ok(guardOff.guarding === false, 'setGuard(false) drops guarding');
+
+  // Guard cannot be raised mid-committed-attack (windup+strike, 180ms) --
+  // same rule attacks already enforce against each other.
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(30);
+  await page.evaluate(() => window.Rig._test.setGuard(true));
+  let midCommitted = await page.evaluate(() => window.Rig._test.state());
+  ok(midCommitted.guarding === false && midCommitted.committed === true,
+    'setGuard(true) is refused during the committed windup/strike phase');
+
+  // ...but DOES cut off the interruptible recovery tail, same as a fresh
+  // attack already can. Committed phase ends at 180ms; use the same ~280ms-
+  // total margin section 4 already established as stable against real
+  // event-loop/rAF jitter (a tight ~200ms margin was flaky here initially).
+  await page.waitForTimeout(250); // ~280ms total since trigger
+  await page.evaluate(() => window.Rig._test.setGuard(true));
+  let guardInRecovery = await page.evaluate(() => window.Rig._test.state());
+  ok(guardInRecovery.guarding === true && guardInRecovery.idle === true,
+    'setGuard(true) during the interruptible recovery phase succeeds and clears the sequence');
+  await page.evaluate(() => window.Rig._test.setGuard(false));
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
   process.exit(fail === 0 ? 0 : 1);

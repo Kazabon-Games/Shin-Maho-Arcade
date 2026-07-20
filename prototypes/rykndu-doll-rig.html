@@ -11,6 +11,29 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.10 — 2026-07-20 — Game 5 consolidation pass §5: added a `guard`
+                          state -- POSES.guard (a held, low, arms-in brace,
+                          distinct from POSES.flinch's momentary recoil)
+                          plus setGuard(active)/`guarding`. A held state,
+                          not a timed sequence like attacks: guarding is
+                          true for exactly as long as the input is held.
+                          Gated the same way attacks already gate each
+                          other -- can't be raised mid-committed
+                          windup/strike, but does cut off an interruptible
+                          recovery tail. triggerAttack() now refuses to
+                          start an attack while guarding (must release
+                          guard first). Bound to ArrowDown (hold) alongside
+                          the existing ArrowLeft/Right kick inputs, and to
+                          window.Rig._test.setGuard() for tests. This is
+                          the pose/input-gating only -- what guard actually
+                          blocks (a hurtbox, a timer/meter, parry timing)
+                          is real combat design deferred past this
+                          consolidation pass, since there's no incoming-
+                          attack-vs-player hit check to defend against yet
+                          in a still-single-rig-vs-enemy-dots prototype.
+                          See prototypes/RYKNDU_MOVESET.md for the full
+                          state/transition table this pass also wrote.
+
   v0.1.9 — 2026-07-20 — Game 5 consolidation pass §3: added a named
                           attachment-socket layer (getSockets(joints):
                           hand_r, hand_l, foot_r, foot_l, hip, back, head)
@@ -309,7 +332,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.9</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.10</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -443,6 +466,25 @@
     shoulderR: DOWN - 1.55, elbowR: DOWN - 1.9
   };
 
+  // Game 5 consolidation §5: a defensive stance the prototype never needed
+  // (it only ever fought one-directional enemies). Symmetric like flinch,
+  // but distinct from it -- lower/wider base (harder to knock down, not
+  // recoiling), arms pulled in close and crossed toward center rather than
+  // thrown back, reading as a held brace rather than a momentary reaction.
+  // This is the pose only; what guard actually blocks/reduces (a hurtbox,
+  // a guard timer/meter, parry timing) is real combat design deferred to
+  // the next phase per this consolidation pass's own scope -- there's no
+  // incoming-attack-vs-player hit check to defend against yet, since this
+  // is still a single-rig-vs-enemy-dots prototype until the 2-player
+  // extension lands.
+  POSES.guard = {
+    pelvisDX: 0, pelvisDY: 10, spineA: -DOWN + 0.05,
+    hipL: DOWN + 0.35, kneeL: DOWN + 0.45,
+    hipR: DOWN - 0.35, kneeR: DOWN - 0.45,
+    shoulderL: DOWN + 0.35, elbowL: DOWN + 2.6,
+    shoulderR: DOWN - 0.35, elbowR: DOWN - 2.6
+  };
+
   function lerp(a, b, t) { return a + (b - a) * t; }
   function lerpPose(a, b, t) {
     const out = {};
@@ -485,6 +527,26 @@
   const FLINCH_DUR = 180;
   function triggerFlinch() { flinchStart = performance.now(); }
 
+  // ---- Guard (Game 5 consolidation §5) ----
+  // A held state, not a timed sequence like attacks -- guarding is true
+  // for exactly as long as the guard input is held, no duration/timer of
+  // its own yet (that's real combat tuning, deferred). Can't be raised
+  // mid-committed-attack (the same rule attacks already use against each
+  // other) so a guard input can't cut a committed windup/strike short;
+  // it CAN cut off an interruptible recovery tail, the same way a fresh
+  // attack already does.
+  let guarding = false;
+  function setGuard(active) {
+    if (active) {
+      if (seq && isCommittedPhase(seqIdx)) return;
+      guarding = true;
+      seq = null;
+      queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
+    } else {
+      guarding = false;
+    }
+  }
+
   // Convention: the LAST phase of any attackSequence is recovery — cosmetic
   // follow-through with no remaining gameplay function (the hit has already
   // resolved during strike). Every phase before that is committed: once it
@@ -497,6 +559,7 @@
 
   function triggerAttack(side) {
     SFX.ensureCtx(); // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
+    if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
     if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
     // Either idle, or sitting in the (interruptible) recovery phase — start
     // immediately. startAttack() captures currentPose() as fromPose, so an
@@ -518,6 +581,7 @@
   }
 
   function currentPose() {
+    if (guarding) return POSES.guard; // takes priority over idle/flinch -- setGuard() already refuses to set this mid-committed-attack
     if (!seq) {
       // subtle idle breathing so the rig isn't static between attacks
       // (amplitude scaled with the 0.8x rig resize, same as LEN)
@@ -1114,6 +1178,13 @@
   window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft') handleInput('L');
     if (e.key === 'ArrowRight') handleInput('R');
+    // Guard is a hold, not a tap -- gated on 'playing' the same as attacks
+    // effectively are (resetSession() on the 'lose' screen already handles
+    // that path via handleInput()'s own side buttons).
+    if (e.key === 'ArrowDown' && sessionState === 'playing') { SFX.ensureCtx(); setGuard(true); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowDown') setGuard(false);
   });
   document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
   document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
@@ -1131,6 +1202,7 @@
           seqIdx,
           seqLen: seq ? seq.length : 0,
           committed: seq ? isCommittedPhase(seqIdx) : false,
+          guarding,
           queuedSide,
           attackSide,
           pose: currentPose(),
@@ -1152,6 +1224,7 @@
       // input uses — so a trigger call while sessionState is 'lose' restarts
       // instead of attacking, exactly like a real player's next tap would.
       trigger: (side) => handleInput(side),
+      setGuard: (active) => setGuard(active),
       resetSession: () => resetSession(),
       // Test-only spawn: reuses the exact same makeEnemy()/updateEnemies()
       // path production spawning does, just backdating spawnAt so the enemy
