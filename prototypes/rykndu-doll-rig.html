@@ -11,6 +11,66 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.11 — 2026-07-20 — Game 5 2-player extension. Refactored the
+                          player-1 animation state into
+                          createRigController(), a factory (pure refactor,
+                          verified zero behavior change against the full
+                          existing suite), so player 2 could be
+                          instantiated as a genuinely separate closure from
+                          it instead of a hand-copied duplicate of the
+                          state machine -- duplicating that logic would
+                          relocate the exact "two copies of the same math
+                          silently drift apart" trap this file has already
+                          hit twice (mockEnemy.hitAt's duplicated duration
+                          constant; the reason mirror() exists at all).
+                          solveRig(pose, standOffset) gained an optional
+                          second argument (default 0, so every existing
+                          call site is unaffected) for where a rig stands
+                          on screen, distinct from pose.pelvisDX's
+                          transient per-attack lean. renderRig(joints,
+                          color) gained an optional color argument (default
+                          the original white) -- player 1 renders cyan
+                          (#3fd0ff), player 2 indigo-violet (#6b4dff), both
+                          verified against this studio's reserved gold/
+                          red/green color-language bands (STUDIO_BIBLE.md
+                          §11).
+
+                          Player 2 is deliberately NOT wired into the
+                          enemy/session/hit-detection system above (that
+                          stays player-1-only) -- rig-vs-rig combat
+                          resolution (a hurtbox, a guard timer, parry) is
+                          real combat design deferred past this
+                          consolidation pass. This lands the substrate:
+                          two independently-driven, independently-animated
+                          rigs on screen at once, each posable/testable
+                          through its own window.Rig / window.Rig2 test
+                          hook.
+
+                          Input: player 2 gets a split-keyboard fallback
+                          (A/D/S for kick-L/kick-R/guard) alongside
+                          player 1's existing arrows, always live
+                          regardless of gamepad connection. Added generic
+                          Gamepad API support -- plain button indices, not
+                          hardcoded to one controller model, so standard-
+                          mapped devices (most USB arcade sticks included)
+                          work without special-casing. Pad-to-player
+                          assignment is fixed at first connection
+                          (connection order: first pad -> player 1, second
+                          -> player 2) and never re-arbitrated per frame --
+                          deliberately NOT the existing shipped "last
+                          active pad wins" pattern in wardfall.html/
+                          infall.html/iridescentcosmology.html, which would
+                          be actively wrong here since both players' pads
+                          are live simultaneously. Kick buttons use rising-
+                          edge detection (the API has no press-event model,
+                          only a per-frame snapshot) so a held button
+                          doesn't refire every frame; guard is level-
+                          triggered by design, matching the keyboard
+                          guard's hold semantics.
+
+                          See prototypes/RYKNDU_2PLAYER.md for the full
+                          writeup of what this does and doesn't cover.
+
   v0.1.10 — 2026-07-20 — Game 5 consolidation pass §5: added a `guard`
                           state -- POSES.guard (a held, low, arms-in brace,
                           distinct from POSES.flinch's momentary recoil)
@@ -332,7 +392,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.10</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.11</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -1267,6 +1327,80 @@
   document.getElementById('zoneL').addEventListener('pointerdown', () => handleInput('L'));
   document.getElementById('zoneR').addEventListener('pointerdown', () => handleInput('R'));
 
+  // Player 2 split-keyboard fallback (Game 5 2-player extension) -- always
+  // live regardless of whether a gamepad is also assigned to player 2 (see
+  // below), same as player 1's arrows stay live alongside a player-1
+  // gamepad. Not routed through handleInput()/resetSession() -- player 2
+  // has no session/game-over state of its own yet.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'a' || e.key === 'A') p2.triggerAttack('L');
+    if (e.key === 'd' || e.key === 'D') p2.triggerAttack('R');
+    if ((e.key === 's' || e.key === 'S')) p2.setGuard(true);
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 's' || e.key === 'S') p2.setGuard(false);
+  });
+
+  // ---- Gamepad support (Game 5 2-player extension) ----
+  // Generic Gamepad API reading -- plain button indices, not hardcoded to
+  // any one controller model's labels, so any standard-mapped device
+  // (most USB arcade sticks included, since they enumerate as HID
+  // gamepads) works without special-casing. A genuinely non-standard-
+  // mapped device may still land its kick/guard buttons on unexpected
+  // physical buttons -- a remap screen would fix that, deliberately not
+  // built here (real UI/UX work deferred past this consolidation pass).
+  //
+  // Fixed index-to-player assignment, decided once at connect time and
+  // never re-arbitrated per frame -- deliberately NOT the existing shipped
+  // "last active pad wins" pattern (wardfall.html/infall.html/
+  // iridescentcosmology.html's single-pad, first-found/most-recent-input
+  // logic). That pattern is actively wrong for simultaneous local
+  // multiplayer: both players' pads are live at once, so "last one to
+  // produce input wins" would silently steal control from whichever
+  // player didn't press something that frame. Assignment here is
+  // connection-order only (first pad -> player 1's slot, second -> player
+  // 2's), each player's keyboard binding stays live in parallel regardless
+  // of whether a pad is also assigned to them.
+  let p1PadIndex = null, p2PadIndex = null;
+  const padPrevPressed = {}; // padIndex -> { L, R } previous-frame pressed state, for rising-edge kick detection (the API has no press-event model, only a per-frame snapshot -- a naive read fires once per frame a button is held, not once per press)
+  const BTN_KICK_L = 2, BTN_KICK_R = 1, BTN_GUARD = 4; // standard-mapping face/shoulder button indices
+
+  function assignPad(index) {
+    if (p1PadIndex === null && p2PadIndex !== index) { p1PadIndex = index; return; }
+    if (p2PadIndex === null && p1PadIndex !== index) { p2PadIndex = index; return; }
+    // Both slots already taken -- a third pad has nowhere to go yet (no
+    // 3-4 player mode built); left unassigned rather than stealing a slot.
+  }
+  window.addEventListener('gamepadconnected', (e) => assignPad(e.gamepad.index));
+  window.addEventListener('gamepaddisconnected', (e) => {
+    if (p1PadIndex === e.gamepad.index) p1PadIndex = null;
+    if (p2PadIndex === e.gamepad.index) p2PadIndex = null;
+    delete padPrevPressed[e.gamepad.index];
+  });
+
+  function pollOnePad(padIndex, triggerAttackFn, setGuardFn) {
+    if (padIndex === null) return;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = pads[padIndex];
+    if (!gp) return;
+    const prev = padPrevPressed[padIndex] || { L: false, R: false };
+    const nowL = !!(gp.buttons[BTN_KICK_L] && gp.buttons[BTN_KICK_L].pressed);
+    const nowR = !!(gp.buttons[BTN_KICK_R] && gp.buttons[BTN_KICK_R].pressed);
+    if (nowL && !prev.L) triggerAttackFn('L');
+    if (nowR && !prev.R) triggerAttackFn('R');
+    setGuardFn(!!(gp.buttons[BTN_GUARD] && gp.buttons[BTN_GUARD].pressed));
+    padPrevPressed[padIndex] = { L: nowL, R: nowR };
+  }
+
+  // Called once per frame from inside the main loop (gamepad state has no
+  // event model -- it must be polled every tick, per the studio's own
+  // named risk for this API), not from an input event handler.
+  function pollGamepads() {
+    pollOnePad(p1PadIndex, (side) => handleInput(side),
+      (active) => { if (sessionState === 'playing' || !active) setGuard(active); }); // matches the keyboard guard handler's own gating: release always allowed, raise only while playing
+    pollOnePad(p2PadIndex, (side) => p2.triggerAttack(side), (active) => p2.setGuard(active));
+  }
+
   // ---- Test hook (mirrors this studio's Game._test convention) ----
   // Read-only state introspection plus a direct trigger, so QA/tests can set
   // up exact scenarios (e.g. "trigger during recovery") instead of guessing
@@ -1323,6 +1457,47 @@
     }
   };
 
+  // Player 2's own test hook (Game 5 2-player extension) -- deliberately a
+  // separate top-level object from window.Rig, not a property nested
+  // under it, so a test can hold both simultaneously and compare them
+  // directly (the actual "are these genuinely separate objects" check).
+  // No enemies/session/audio fields -- player 2 isn't wired into that
+  // system yet (see the note above p2's instantiation).
+  window.Rig2 = {
+    _test: {
+      state: () => {
+        const joints = solveRig(p2.currentPose(), P2_STAND_OFFSET);
+        return {
+          idle: p2.idle,
+          seqIdx: p2.seqIdx,
+          seqLen: p2.seqLen,
+          committed: p2.committed,
+          guarding: p2.guarding,
+          queuedSide: p2.queuedSide,
+          attackSide: p2.attackSide,
+          pose: p2.currentPose(),
+          joints,
+          sockets: getSockets(joints)
+        };
+      },
+      trigger: (side) => p2.triggerAttack(side),
+      setGuard: (active) => p2.setGuard(active),
+      reset: () => p2.reset(),
+      // Test-only hooks for the gamepad-assignment logic, since real
+      // hardware can't be driven from Playwright -- these call the exact
+      // same assignPad()/pollOnePad() functions a real gamepadconnected
+      // event and rAF tick would, not a separate test-only copy of the
+      // assignment rule.
+      simulateGamepadConnect: (index) => assignPad(index),
+      simulateGamepadDisconnect: (index) => {
+        if (p1PadIndex === index) p1PadIndex = null;
+        if (p2PadIndex === index) p2PadIndex = null;
+        delete padPrevPressed[index];
+      },
+      padAssignment: () => ({ p1PadIndex, p2PadIndex })
+    }
+  };
+
   // ---- Main loop ----
   let lastFrameTime = 0;
   function frame(now) {
@@ -1336,6 +1511,13 @@
     if (sessionState === 'playing') updateSeq(now);
     const pose = currentPose();
     const joints = solveRig(pose); // solved once per frame; rendering and hit detection both read from this
+
+    // Player 2 (Game 5 2-player extension): always updates/renders
+    // regardless of sessionState, since it isn't part of the player-1
+    // enemy/session system -- there's nothing for it to "game over" yet.
+    pollGamepads(); // fixed-index-per-player polling; see the Input section below
+    p2.updateSeq(now);
+    const joints2 = solveRig(p2.currentPose(), P2_STAND_OFFSET);
 
     // Screen shake is pure presentation -- a render-time offset only, never
     // touching the coordinates solveRig()/resolveHits() actually use for hit
@@ -1370,9 +1552,11 @@
     }
     updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
     drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
+    drawShadow(joints2.pelvis.x, 34, 8); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
     drawEnemies();
     drawParticles();
-    renderRig(joints);
+    renderRig(joints, P1_COLOR);
+    renderRig(joints2, P2_COLOR);
     ctx.restore(); // end shake offset -- flash overlay below is screen-space, not shaken
 
     if (missFlash > 0.01) {
