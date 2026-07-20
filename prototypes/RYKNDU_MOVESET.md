@@ -17,7 +17,8 @@ restructure).
 | `windup` | attack trigger from `idle` or `recover` | automatic → `strike` after 110ms | **committed** — a same/other attack input buffers (`queuedSide`), does not interrupt; guard input is refused |
 | `strike` | automatic from `windup` after 110ms | automatic → `recover` after 70ms | **committed**, same as `windup`. Hit resolution (`resolveHits()`) runs only here, checked every frame this phase is active, reading the attack-side foot socket |
 | `recover` | automatic from `strike` after 70ms | automatic → `idle` after 220ms, **or** immediately → `windup` if an input was buffered during the committed phases, **or** immediately → `idle`+`guard` if a guard input arrives here | **interruptible** — a new attack trigger cancels recovery and starts immediately (not buffered); a guard input cancels recovery into `guard` |
-| `guard` | guard input from `idle` or from the interruptible `recover` phase | guard-release input → `idle` | attack triggers are refused outright — must release guard first. Cannot be entered from `windup`/`strike` (refused, no state change) |
+| `guard` | guard input from `idle` or from the interruptible `recover` phase | guard-release input → `idle` | attack triggers are refused outright — must release guard first. Cannot be entered from `windup`/`strike` (refused, no state change). Cannot be entered while `jumping` |
+| `jumping` | jump input from `idle` or `recover` (not `windup`/`strike`, not while `guard`ing) | automatic once integrated height returns to 0 (real gravity, not a timer — see Physics below) | attack and guard inputs are both refused while airborne — no aerial actions in this pass |
 | `flinch` | a miss event (enemy reaches melee range unanswered), but **only visually applied while the idle branch is being evaluated** | 180ms timer, or superseded the instant the idle branch isn't reached (mid-attack) | not a real state in the transition sense — see caveat below |
 
 ## The `flinch` caveat — named honestly, not smoothed over
@@ -50,6 +51,49 @@ treating it as one would overstate what the code actually guarantees.
                                                                                  (immediate)
 ```
 
+## Physics (v0.1.17–v0.1.19 — movement, jump, and recovery momentum)
+
+Added after producer feedback traced "tapping just gives a knee jerk"
+back to its actual cause: nothing in this rig had velocity, mass, or
+momentum before this — every motion was pose-A-to-pose-B interpolation
+on a fixed clock. Three real (not merely re-skinned) physics systems now
+exist, all reusable from a single rig instance (both `p1`/`p2` share
+`createRigController()`), though only player 1 is wired to input as of
+v0.1.19:
+
+- **Movement**: `moveIntent` (-1..1, a direction, set once per frame by
+  the input layer — keyboard held-key state, gamepad stick axis, or the
+  touch joystick's drag offset, whichever is active) drives a real `velX`
+  that accelerates toward the intended speed (`MOVE_ACCEL`) and decays via
+  friction on release (`MOVE_FRICTION`, deliberately higher than
+  `MOVE_ACCEL` so stopping reads snappier than starting). `posX` integrates
+  from `velX` every frame and is fed into `solveRig()` as the rig's stand
+  offset. `facing` tracks actual velocity direction (with a small-speed
+  threshold so friction noise near 0 can't flip it) — attack throws
+  whichever kick matches current `facing`, not an explicit side.
+  Movement intent is forced to 0 during a committed attack phase (no
+  sliding the whole body mid-kick), decelerating into it via the same
+  friction rather than freezing dead.
+- **Jump**: real integrated projectile motion — a takeoff velocity
+  (`JUMP_SPEED`) and a constant downward `GRAVITY` applied every frame,
+  height integrated from velocity, landing detected when integrated
+  height returns to 0 (not a fixed timer). Mutually exclusive with
+  attack/guard in both directions (see the state table above).
+- **Recovery momentum**: the `recover` phase's pose is a closed-form
+  critically-damped-spring solution — `x(t) = (x0 + (v0+ω·x0)·t)·e^(-ω·t)`
+  — seeded with the strike phase's own real exit velocity (its actual pose
+  delta over its actual duration, captured once in `updateSeq()` when
+  recovery begins), not another hand-tuned easing curve. Kept as a
+  stateless closed-form function (not frame-by-frame integration)
+  specifically so the fixed-duration phase-transition timing and
+  buffered-input contract above didn't need to change — only the pose
+  formula inside that unchanged window did.
+
+None of these three are combat-facing yet (no rig-vs-rig hit detection
+exists), and none change anything in the state table above — they're
+additive physics layered under the existing state machine, verified in
+`tests/rig-sequence.js` §§13–17 and `tests/rig-touch-controls.js`.
+
 ## What each phase means for future combat design (deferred, not designed here)
 
 This table is the seam combo-cancel points and parry windows get named
@@ -79,6 +123,9 @@ pass:
 
 Every transition and refusal rule in the table above has a corresponding
 assertion in `tests/rig-sequence.js` (§§2–4 for the attack committed/
-interruptible rules, §12 for guard's three gating rules) — this table was
-written by reading the code these tests already exercise, then confirmed
-against the tests' own pass/fail output, not the reverse.
+interruptible rules, §12 for guard's three gating rules, §§13–17 for
+movement/jump/recovery-momentum physics and their mutual-exclusion gates)
+plus `tests/rig-touch-controls.js` (the same physics driven through the
+real virtual joystick and action buttons, not a shortcut) — this table
+was written by reading the code these tests already exercise, then
+confirmed against the tests' own pass/fail output, not the reverse.
