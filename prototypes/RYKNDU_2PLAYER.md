@@ -1,13 +1,16 @@
-# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21)
+# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21, match structure v0.1.23)
 
-**Status: substrate, physics, AND core combat resolution all landed.**
-This covers what the 2-player extension actually built — two independent,
-simultaneously rendered/animated rigs, each with its own input, real
-shared physics, and now real rig-vs-rig hit detection/knockback/ring-out
-(see `RYKNDU_MOVESET.md`'s Combat resolution section for the mechanics) —
-and draws a hard line around what still deliberately isn't covered:
+**Status: substrate, physics, combat resolution, AND a real match
+structure all landed.** This covers what the 2-player extension actually
+built — two independent, simultaneously rendered/animated rigs, each with
+its own input, real shared physics, real rig-vs-rig hit detection/
+knockback/ring-out, and now an actual win condition (first to 3
+ring-outs wins the match, with a result overlay and a rematch path — see
+`RYKNDU_MOVESET.md`'s Combat resolution section for the mechanics) — and
+draws a hard line around what still deliberately isn't covered:
 combo/parry/guard-timer numeric design remain separate future work, but
-"rig-vs-rig combat resolution" itself is no longer on that list.
+neither "rig-vs-rig combat resolution" nor "a round/match structure" are
+on that list anymore.
 
 ## What exists now
 
@@ -84,14 +87,14 @@ combo/parry/guard-timer numeric design remain separate future work, but
   order), not a "press any button to join" ceremony with on-screen
   confirmation. The underlying assignment rule is real and tested; the UI
   around it is not built.
-- **No round/match structure beyond a running score.** Rig-vs-rig hit
-  detection, knockback, and ring-out ARE built (v0.1.21 — see
-  `RYKNDU_MOVESET.md`'s Combat resolution section), and a ring-out
-  increments a running `p1Score`/`p2Score` and resets positions. What's
-  still missing is anything ABOVE that single running tally — a
-  best-of-N stock/round structure, a match-over screen, a rematch/reset
-  flow. The core loop this game needed is real; the meta-structure around
-  a full match is not.
+- ~~No round/match structure beyond a running score~~ — **built in
+  v0.1.23.** `MATCH_TARGET_SCORE` (first to 3 ring-outs) gives the running
+  `p1Score`/`p2Score` tally an actual endpoint: reaching it sets
+  `matchOver`/`matchWinner`, freezes both rigs, and shows a real result
+  overlay in the winner's own color. A rematch fires from either player's
+  next attack input (`tryRematch()`, wired into every real attack entry
+  point for both players), not just player 1's. See `RYKNDU_MOVESET.md`'s
+  Combat resolution section and `tests/rig-match.js`.
 
 ## Verification
 
@@ -114,6 +117,14 @@ hit detection in both attack directions, knockback magnitude, guard's
 chip-mitigation scale and guard-doesn't-break behavior, one-hit-per-swing,
 and a full ring-out scoring/reset cycle. See `RYKNDU_MOVESET.md`'s Combat
 resolution section for the mechanics themselves.
+
+`tests/rig-match.js` covers the match structure specifically — scores
+accumulating without ending the match early, reaching the target score
+freezing both rigs and crediting the correct winner, a decided match
+blocking further combat resolution, a rematch firing from EITHER
+player's attack input (not just player 1's) and genuinely resetting both
+scores/positions, and a full second match playing out correctly
+afterward (not leftover state from the first).
 
 ## Mobile verification status (v0.1.22 — emulation, not real hardware)
 

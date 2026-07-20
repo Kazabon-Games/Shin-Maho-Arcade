@@ -11,6 +11,31 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.23 — 2026-07-20 — Match structure: a running ring-out score with
+                          no endpoint was never a finished match. Added
+                          MATCH_TARGET_SCORE (first to 3 ring-outs wins),
+                          a matchOver/matchWinner state that freezes BOTH
+                          rigs' movement/attack sequences the instant the
+                          match is decided (same "freeze under the
+                          overlay" precedent v0.1.8's single-player GAME
+                          OVER already established), a real result
+                          overlay in the winning rig's own color, and a
+                          rematch path wired into EVERY real attack-input
+                          entry point for BOTH players (tryRematch(),
+                          checked first in handleInput() for player 1 and
+                          the new handleP2Input() for player 2) so either
+                          player's next attack restarts the match --  not
+                          just whichever one happens to own the single-
+                          player session flow. resolveCombatHits()/
+                          checkRingOuts() both refuse to run once
+                          matchOver, so a decided match can't keep
+                          silently accumulating score. New
+                          tests/rig-match.js (13 assertions) drives a full
+                          match to completion, verifies the freeze, and
+                          confirms a rematch from EITHER player's input
+                          produces a genuinely clean second match, not
+                          leftover state from the first.
+
   v0.1.22 — 2026-07-20 — Real mobile-device-EMULATION pass (Playwright's
                           actual iPhone 13/Pixel 7/iPhone SE device
                           profiles, not a made-up small window) --
@@ -886,7 +911,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.22</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.23</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -2180,6 +2205,7 @@
   }
 
   function resolveCombatHits(joints1, joints2) {
+    if (matchOver) return; // the match is decided -- no more hits land until a rematch
     resolveDuelHit(p1, p2, joints1, joints2);
     resolveDuelHit(p2, p1, joints2, joints1);
   }
@@ -2191,10 +2217,27 @@
   // from resolveDuelHit() above, which is exactly what makes "crossed the
   // line" a meaningful ring-out rather than something either player could
   // trigger just by walking there.
+  //
+  // v0.1.23: a running score alone was never a finished match -- nothing
+  // stopped it once either player hit any number, and there was no result
+  // to show. MATCH_TARGET_SCORE gives ring-outs an actual endpoint: first
+  // to reach it wins the MATCH (not just the exchange), the match freezes
+  // (see resolveCombatHits()/frame()'s input gating below) until either
+  // player's next attack/jump input calls resetMatch() via tryRematch().
   let p1Score = 0, p2Score = 0;
+  let matchOver = false, matchWinner = null; // matchWinner: 'P1' | 'P2' | null
+  const MATCH_TARGET_SCORE = 3;
   function checkRingOuts() {
-    if (Math.abs(p1.posX) > ARENA_BOUND) { p2Score++; resetDuelPositions(); }
-    else if (Math.abs(p2.posX) > ARENA_BOUND) { p1Score++; resetDuelPositions(); }
+    if (matchOver) return;
+    if (Math.abs(p1.posX) > ARENA_BOUND) {
+      p2Score++;
+      if (p2Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P2'; }
+      resetDuelPositions();
+    } else if (Math.abs(p2.posX) > ARENA_BOUND) {
+      p1Score++;
+      if (p1Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P1'; }
+      resetDuelPositions();
+    }
   }
   function resetDuelPositions() {
     // A full reset (not just posX) -- a ring-out ends the exchange
@@ -2203,6 +2246,24 @@
     // means anything once the round position resets under it.
     p1.reset();
     p2.reset();
+  }
+  // A fresh match: scores AND the decided flag both clear, not just
+  // positions -- resetDuelPositions() alone would leave matchOver stuck
+  // true forever with no path back to play.
+  function resetMatch() {
+    p1Score = 0; p2Score = 0; matchOver = false; matchWinner = null;
+    resetDuelPositions();
+  }
+  // Called from every real attack-trigger input path (see handleInput()
+  // for player 1, and the two player-2 call sites in the Input section
+  // below) so EITHER player's next attack press restarts the match --
+  // not just whichever one happens to own the session/game-over flow.
+  // Returns true if it consumed the input as a rematch (caller should not
+  // also throw the attack that triggered it).
+  function tryRematch() {
+    if (!matchOver) return false;
+    resetMatch();
+    return true;
   }
 
   // v0.1.8 feel-pass finding: growth + color-lerp made the enemy telegraph
@@ -2305,6 +2366,7 @@
   // nothing to strike at on the game-over screen.
   function handleInput(side) {
     SFX.ensureCtx();
+    if (tryRematch()) return; // a decided duel match takes priority -- restart the match, don't also throw a kick
     if (sessionState === 'lose') { resetSession(); return; }
     triggerAttack(side);
   }
@@ -2420,12 +2482,19 @@
   // whether a gamepad is also assigned to player 2, same as player 1's
   // arrows stay live alongside a player-1 gamepad. Not routed through
   // handleInput()/resetSession() -- player 2 has no session/game-over
-  // state of its own.
+  // state of its own -- but DOES route through this small equivalent so
+  // player 2's attack input can restart a decided DUEL match too, not
+  // just player 1's (see tryRematch()'s own comment).
+  function handleP2Input(side) {
+    SFX.ensureCtx();
+    if (tryRematch()) return;
+    p2.triggerAttack(side);
+  }
   let p2MoveLeftHeld = false, p2MoveRightHeld = false;
   window.addEventListener('keydown', (e) => {
     if (e.key === 'a' || e.key === 'A') p2MoveLeftHeld = true;
     if (e.key === 'd' || e.key === 'D') p2MoveRightHeld = true;
-    if (e.key === 'f' || e.key === 'F') { SFX.ensureCtx(); p2.triggerAttack(p2.facing); }
+    if (e.key === 'f' || e.key === 'F') handleP2Input(p2.facing);
     if (e.key === 'w' || e.key === 'W') { SFX.ensureCtx(); p2.tryJump(); }
     if (e.key === 's' || e.key === 'S') { SFX.ensureCtx(); p2.setGuard(true); }
   });
@@ -2518,7 +2587,7 @@
   function pollGamepads() {
     pollPlayerPad(p1PadIndex, p1, () => handleInput(p1.facing),
       (guardHeld) => sessionState === 'playing' || !guardHeld); // release always allowed, raise only while playing -- same gating the keyboard guard handler uses
-    pollPlayerPad(p2PadIndex, p2, () => p2.triggerAttack(p2.facing), null); // player 2 has no session state to gate against
+    pollPlayerPad(p2PadIndex, p2, () => handleP2Input(p2.facing), null); // player 2 has no session state to gate against, but does route through the match-over rematch check
   }
 
   // ---- Test hook (mirrors this studio's Game._test convention) ----
@@ -2566,6 +2635,12 @@
       // instead of attacking, exactly like a real player's next tap would.
       trigger: (side) => handleInput(side),
       attack: () => handleInput(p1.facing), // the real attack button's actual call path -- facing-based, not an explicit side
+      // Bypasses handleInput()'s tryRematch()/sessionState checks entirely
+      // -- lets a test verify resolveCombatHits()'s OWN internal
+      // `if (matchOver) return` guard directly (defense in depth), since
+      // every real input path already refuses to reach this state by
+      // routing through tryRematch() first.
+      rawAttack: (side) => triggerAttack(side),
       setGuard: (active) => setGuard(active),
       // setMoveIntent/updatePhysics/stepPhysics expose the real physics
       // integrator directly -- a test drives it the same way the real
@@ -2639,7 +2714,7 @@
           sockets: getSockets(joints)
         };
       },
-      trigger: (side) => p2.triggerAttack(side),
+      trigger: (side) => handleP2Input(side),
       setGuard: (active) => p2.setGuard(active),
       reset: () => p2.reset(),
       teleportTo: (x) => p2.teleportTo(x),
@@ -2676,8 +2751,10 @@
   // get bolted onto one player's own hook.
   window.Duel = {
     _test: {
-      state: () => ({ p1Score, p2Score }),
-      resetPositions: () => resetDuelPositions()
+      state: () => ({ p1Score, p2Score, matchOver, matchWinner }),
+      resetPositions: () => resetDuelPositions(),
+      resetMatch: () => resetMatch(),
+      tryRematch: () => tryRematch()
     }
   };
 
@@ -2690,9 +2767,14 @@
     // Gameplay logic freezes once the session ends -- the rig settles into
     // whatever pose it was heading toward (currentPose()'s eased t clamps at
     // 1) and holds there under the game-over overlay, rather than continuing
-    // to animate or letting enemies keep spawning behind it.
-    if (sessionState === 'playing') applyMoveInput(dt);
-    if (sessionState === 'playing') updateSeq(now);
+    // to animate or letting enemies keep spawning behind it. matchOver
+    // (v0.1.23) freezes BOTH players' movement/sequence the same way once
+    // the duel itself is decided -- this is a deliberate, temporary freeze
+    // pending a rematch, unlike the SHOW_P2 gating mistake named in the
+    // comment below (that one permanently starved updateSeq() with no path
+    // back; this one clears the instant tryRematch() fires).
+    if (sessionState === 'playing' && !matchOver) applyMoveInput(dt);
+    if (sessionState === 'playing' && !matchOver) updateSeq(now);
     const pose = currentPose();
     const joints = solveRig(pose, p1.posX); // solved once per frame; rendering and hit detection both read from this
 
@@ -2705,8 +2787,8 @@
     // joint-solve/render calls below are gated -- SHOW_P2 controls
     // visibility, not whether player 2 is alive.
     pollGamepads(); // fixed-index-per-player polling; see the Input section below -- still runs unconditionally since it also drives player 1's pad
-    applyP2MoveInput(dt);
-    p2.updateSeq(now);
+    if (!matchOver) applyP2MoveInput(dt);
+    if (!matchOver) p2.updateSeq(now);
     // Solved unconditionally now (not gated behind SHOW_P2) -- combat
     // resolution below needs player 2's actual joints to check hits every
     // frame regardless of whether player 2 happens to be rendered.
@@ -2798,10 +2880,45 @@
       ctx.restore();
     }
 
+    // Match-over overlay (v0.1.23) -- a running score with no endpoint
+    // was never a finished match; this is the actual result screen, same
+    // card treatment as the single-player GAME OVER overlay above but in
+    // the winning rig's own color, and gated on a real attack input
+    // (tryRematch(), wired into every attack entry point for BOTH
+    // players) rather than a passive timer.
+    if (matchOver) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const winnerColor = matchWinner === 'P1' ? P1_COLOR : P2_COLOR;
+      const cardW = Math.min(300, canvas.width - 40), cardH = 130;
+      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 75;
+      ctx.fillStyle = 'rgba(18,20,28,0.92)';
+      ctx.strokeStyle = winnerColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 10); else ctx.rect(cardX, cardY, cardW, cardH);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = winnerColor;
+      ctx.font = 'bold 30px monospace';
+      ctx.fillText(matchWinner + ' WINS THE MATCH', canvas.width / 2, canvas.height / 2 - 25);
+      ctx.fillStyle = '#e8e8f0';
+      ctx.font = '16px monospace';
+      ctx.fillText(p1Score + ' — ' + p2Score, canvas.width / 2, canvas.height / 2 + 10);
+      ctx.fillStyle = '#888';
+      ctx.font = '13px monospace';
+      ctx.fillText('either player: attack to start a rematch', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.restore();
+    }
+
     hudEl.innerHTML = 'KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
       '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
       '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>' +
-      '&nbsp;&nbsp;&nbsp;<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2</span>';
+      '&nbsp;&nbsp;&nbsp;<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2 (first to ' + MATCH_TARGET_SCORE + ')</span>';
 
     debugEl.textContent = 'state: ' + (!p1.idle ? ('attacking [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
       (p1.queuedSide ? '\nbuffered: ' + p1.queuedSide : '') +

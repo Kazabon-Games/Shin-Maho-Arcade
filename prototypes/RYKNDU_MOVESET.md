@@ -143,7 +143,7 @@ the code.
   `createRigController()` itself so either rig can flinch from either
   cause through one mechanism, not two.
 
-## Ring-out (v0.1.21 — the duel's win condition)
+## Ring-out (v0.1.21 — scores a point toward the match)
 
 `ARENA_BOUND` (170) is the same wall voluntary movement already clamps
 against in `updateMovement()` — walking can never cross it. Knockback is
@@ -153,6 +153,36 @@ just walking there. `checkRingOuts()` checks both rigs' `posX` against it
 every frame; whichever rig is over the line concedes a point to the other
 player, and both rigs fully reset (`reset()`, not just position) back to
 their duel spawn points.
+
+## Match structure (v0.1.23 — the duel's actual win condition)
+
+A running score alone was never a finished match — nothing stopped it at
+any number, and there was no result to show. `MATCH_TARGET_SCORE` (3)
+gives ring-outs an actual endpoint:
+
+- **Match end**: the instant either player's score reaches
+  `MATCH_TARGET_SCORE`, `matchOver` is set true and `matchWinner` records
+  `'P1'`/`'P2'`. `resolveCombatHits()` and `checkRingOuts()` both refuse
+  to run once `matchOver` — a decided match can't keep silently
+  accumulating score from combat that shouldn't matter anymore.
+- **Freeze**: `matchOver` gates the exact same per-frame calls
+  `sessionState === 'lose'` already gates for player 1's single-player
+  session (`applyMoveInput`/`updateSeq` for player 1,
+  `applyP2MoveInput`/`p2.updateSeq` for player 2) — both rigs hold at
+  whatever pose they were in, under the result overlay, the same
+  established "freeze, don't keep animating" precedent from v0.1.8's
+  GAME OVER screen.
+- **Result overlay**: a canvas-drawn card (same treatment as the
+  single-player GAME OVER card) reading `"<WINNER> WINS THE MATCH"` in
+  the winning rig's own color (`P1_COLOR`/`P2_COLOR`), the final score,
+  and a rematch prompt.
+- **Rematch**: `tryRematch()` is checked first in every real attack-input
+  entry point for BOTH players — `handleInput()` for player 1 (keyboard/
+  touch/gamepad/test-hook all already funnel through it) and the new
+  `handleP2Input()` for player 2 (keydown `F`, gamepad, test-hook). Either
+  player's next attack input calls `resetMatch()` (scores AND `matchOver`
+  both clear, not just positions) and consumes that input — it does not
+  also throw the kick that triggered it.
 
 ## What's still deferred (not designed in this pass)
 
@@ -190,4 +220,8 @@ confirmed against the tests' own pass/fail output, not the reverse.
 Combat resolution and ring-out are covered by `tests/rig-combat.js` —
 including driving BOTH attack directions (not just p1-attacks-p2), the
 guard-mitigation scale, the one-hit-per-swing guard, and a full ring-out
-scoring/reset cycle.
+scoring/reset cycle. The match structure itself is covered by
+`tests/rig-match.js` — score accumulation short of the target, the
+freeze on reaching it, a decided match blocking further combat
+resolution, a rematch from either player's input, and a clean second
+match afterward.
