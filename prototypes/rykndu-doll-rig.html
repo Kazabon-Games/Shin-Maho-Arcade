@@ -11,6 +11,43 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.13 — 2026-07-20 — Second rendering pass, this time against seven
+                          reference images the producer supplied directly
+                          (the "Stick Fight"/mobile-stickman-brawler visual
+                          language: bold flat-color silhouettes, no visible
+                          neck, thick chunky limbs, rounded blob hands/
+                          feet, a crisp outline making the figure pop off
+                          the background). This supersedes v0.1.12's
+                          gradient-shaded-volume direction, which wasn't
+                          wrong exactly but doesn't match what every
+                          supplied reference actually does -- none of them
+                          are gradient-shaded, all of them are flat color.
+
+                          drawLimb() reworked: flat fill instead of a
+                          linear gradient, with a same-hue-darker outline
+                          pass (shadeHex(color,-38,-10), not a universal
+                          black, so player 1/2 stay distinguishable by
+                          outline too) drawn oversized behind the fill for
+                          a clean sticker-style edge. New drawTerminal()
+                          adds a distinct rounded fist/foot mass at each
+                          hand/foot rather than a limb tapering to a point.
+                          LEN.neck dropped 11px -> 2px (no visible neck
+                          gap, matching every reference). Limb widths
+                          roughly 40-50% thicker across the board (thigh
+                          11/7 -> 16/11, spine 9/12 -> 13/17, etc.) for the
+                          chunkier reference proportions. Head goes back
+                          to a flat fill (was a radial gradient in
+                          v0.1.12) with the same outline treatment as the
+                          limbs, so it reads as one consistent character
+                          rather than a shaded ball on a flat body.
+
+                          Pure rendering change, verified against the full
+                          existing suite with zero test changes needed:
+                          42/42 rig-sequence + 20/20 rig-2player + 14/14
+                          rig-audio. Verified visually via idle, mid-
+                          strike, and a 2-player guard/kick composite
+                          screenshot, not just a code read.
+
   v0.1.12 — 2026-07-20 — Rendering pass, prompted directly by producer
                           feedback that the rig read as "drawn in paint" --
                           a flat single-width stroked line per limb, plain
@@ -420,7 +457,7 @@
 </head>
 <body>
 <canvas id="stage"></canvas>
-<div class="version-marker">Doll Rig Prototype — v0.1.12</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.13</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr; / &rarr; keys, or tap left/right half, to strike</div>
@@ -466,7 +503,7 @@
   // desync the visible foot from the real hit-checked foot.
   const LEN = {
     thigh: 50, shin: 48, upperArm: 37, forearm: 37,
-    spine: 62, neck: 11, headR: 19,
+    spine: 62, neck: 2, headR: 19,
     hipW: 13, shoulderW: 24
   };
 
@@ -907,86 +944,91 @@
     return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
   }
 
-  // Tapered, gradient-shaded limb segment -- replaces a flat single-width
-  // stroked line (the "drawn in paint" stick-figure look) with something
-  // that reads as having actual volume. widthStart/widthEnd taper the
-  // segment (wider at the proximal joint, narrower distal, the natural
-  // shape of a limb) and the gradient runs perpendicular to the limb's own
-  // axis, light to dark, a fixed light-from-one-side convention across
-  // every limb so the whole rig reads as lit consistently. The
-  // light/dark shift amounts (+16/-14 lightness, +/-6-8 saturation) match
-  // this studio's own faceted-gem alternating-facet shading exactly (see
-  // the faceted-gem-rendering skill) -- same technique, applied to a
-  // tapered quad instead of a triangle-fan facet.
-  function drawLimb(p1, p2, widthStart, widthEnd, baseColor) {
+  // Tapered, flat-color limb segment with a dark outline stroke -- the
+  // "Stick Fight"/mobile-stickman-brawler visual language (bold flat
+  // silhouette, high contrast, crisp edge), per the producer's own
+  // reference set for this rig, replacing the v0.1.12 gradient-shaded
+  // look that direct feedback found too subtle/generic. widthStart/
+  // widthEnd taper the segment (wider at the proximal joint, narrower
+  // distal). A single flat fill instead of a gradient is a deliberate
+  // style choice here, not a downgrade -- every reference image is flat
+  // color, not shaded volume; the read comes from bold proportions and a
+  // crisp silhouette edge, not from simulated lighting.
+  function drawLimb(p1, p2, widthStart, widthEnd, baseColor, outlineColor) {
     const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
     const nx = Math.cos(angle + Math.PI / 2), ny = Math.sin(angle + Math.PI / 2);
     const p1a = { x: p1.x + nx * widthStart / 2, y: p1.y + ny * widthStart / 2 };
     const p1b = { x: p1.x - nx * widthStart / 2, y: p1.y - ny * widthStart / 2 };
     const p2a = { x: p2.x + nx * widthEnd / 2, y: p2.y + ny * widthEnd / 2 };
     const p2b = { x: p2.x - nx * widthEnd / 2, y: p2.y - ny * widthEnd / 2 };
-    const grad = ctx.createLinearGradient(p1a.x, p1a.y, p1b.x, p1b.y);
-    grad.addColorStop(0, shadeHex(baseColor, 16, 8));
-    grad.addColorStop(1, shadeHex(baseColor, -14, -6));
+    // Outline pass first, slightly oversized, sits entirely behind the
+    // flat fill drawn on top -- this is what gives the "sticker popped off
+    // the background" edge several references show, without needing a
+    // separate stroke-then-fill-exact-path (which leaves the stroke
+    // straddling the fill edge and half-covered).
+    const o = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(p1a.x + nx * o, p1a.y + ny * o);
+    ctx.lineTo(p2a.x + nx * o, p2a.y + ny * o);
+    ctx.lineTo(p2b.x - nx * o, p2b.y - ny * o);
+    ctx.lineTo(p1b.x - nx * o, p1b.y - ny * o);
+    ctx.closePath();
+    ctx.fillStyle = outlineColor;
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2 + o, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2 + o, 0, Math.PI * 2); ctx.fill();
+
     ctx.beginPath();
     ctx.moveTo(p1a.x, p1a.y);
     ctx.lineTo(p2a.x, p2a.y);
     ctx.lineTo(p2b.x, p2b.y);
     ctx.lineTo(p1b.x, p1b.y);
     ctx.closePath();
-    ctx.fillStyle = grad;
+    ctx.fillStyle = baseColor;
     ctx.fill();
-    // Specular highlight -- a slim translucent-white strip along the lit
-    // edge, the same "fake a highlight catching the light" idea the
-    // faceted-gem technique already uses (one flat white facet at ~40%
-    // alpha), applied to a tapered limb instead of a polygon facet fan.
-    ctx.beginPath();
-    ctx.moveTo(p1.x + nx * widthStart * 0.32, p1.y + ny * widthStart * 0.32);
-    ctx.lineTo(p2.x + nx * widthEnd * 0.32, p2.y + ny * widthEnd * 0.32);
-    ctx.lineWidth = Math.max(1, widthStart * 0.22);
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.stroke();
     // Rounded end caps so adjacent segments blend at the joint instead of
-    // a hard seam -- filled with the flat base color, which sits close to
-    // the gradient's own midpoint so the seam doesn't read as a visible
-    // ring.
+    // a hard seam.
     ctx.beginPath(); ctx.arc(p1.x, p1.y, widthStart / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
     ctx.beginPath(); ctx.arc(p2.x, p2.y, widthEnd / 2, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
   }
 
+  // A distinct rounded "fist"/"foot" mass at a limb's terminal joint --
+  // several references make hands/feet read as a clearly rounded blob,
+  // not just a line tapering to a point. Drawn after the limb it caps so
+  // it sits on top, same outline-behind-fill technique as drawLimb.
+  function drawTerminal(p, radius, baseColor, outlineColor) {
+    ctx.beginPath(); ctx.arc(p.x, p.y, radius + 2.4, 0, Math.PI * 2); ctx.fillStyle = outlineColor; ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2); ctx.fillStyle = baseColor; ctx.fill();
+  }
+
   function renderRig(j, color) {
     const c = color || '#e8e8f0';
-    // legs first (drawn behind torso) -- tapered wider at hip/knee,
-    // narrower at knee/foot, the natural shape of a thigh/shin
-    drawLimb(j.hipL, j.kneeL, 11, 7, c);
-    drawLimb(j.kneeL, j.footL, 7, 5, c);
-    drawLimb(j.hipR, j.kneeR, 11, 7, c);
-    drawLimb(j.kneeR, j.footR, 7, 5, c);
+    const outline = shadeHex(c, -38, -10); // a darker shade of the same hue, not a universal black -- keeps P1/P2 distinguishable by outline too, not just fill
+    // legs first (drawn behind torso) -- chunkier taper (hip/knee wider,
+    // knee/foot narrower) than a classic stick figure, matching the
+    // reference set's thick-limb proportions
+    drawLimb(j.hipL, j.kneeL, 16, 11, c, outline);
+    drawLimb(j.kneeL, j.footL, 11, 8, c, outline);
+    drawLimb(j.hipR, j.kneeR, 16, 11, c, outline);
+    drawLimb(j.kneeR, j.footR, 11, 8, c, outline);
+    drawTerminal(j.footL, 7, c, outline);
+    drawTerminal(j.footR, 7, c, outline);
 
-    // spine -- widens toward the chest/shoulders rather than a uniform bar
-    drawLimb(j.pelvis, j.chest, 9, 12, c);
+    // spine -- solid wedge widening toward the chest/shoulders
+    drawLimb(j.pelvis, j.chest, 13, 17, c, outline);
 
     // arms
-    drawLimb(j.shoulderL, j.elbowL, 7, 5, c);
-    drawLimb(j.elbowL, j.handL, 5, 4, c);
-    drawLimb(j.shoulderR, j.elbowR, 7, 5, c);
-    drawLimb(j.elbowR, j.handR, 5, 4, c);
+    drawLimb(j.shoulderL, j.elbowL, 10, 8, c, outline);
+    drawLimb(j.elbowL, j.handL, 8, 7, c, outline);
+    drawLimb(j.shoulderR, j.elbowR, 10, 8, c, outline);
+    drawLimb(j.elbowR, j.handR, 8, 7, c, outline);
+    drawTerminal(j.handL, 6.5, c, outline);
+    drawTerminal(j.handR, 6.5, c, outline);
 
-    // head -- radial gradient for a sense of volume instead of a flat fill,
-    // same lightness-shift tool as the limbs, just gradient stops instead
-    // of a linear axis (matches the faceted-gem technique's own "round
-    // pickup" variant: base color -> shaded edge, shaded-lighter center)
-    const headGrad = ctx.createRadialGradient(
-      j.head.x - LEN.headR * 0.3, j.head.y - LEN.headR * 0.3, LEN.headR * 0.15,
-      j.head.x, j.head.y, LEN.headR
-    );
-    headGrad.addColorStop(0, shadeHex(c, 26, 10));
-    headGrad.addColorStop(1, shadeHex(c, -18, 0));
-    ctx.beginPath();
-    ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2);
-    ctx.fillStyle = headGrad;
-    ctx.fill();
+    // head -- flat fill matching the flat-silhouette style, same outline
+    // treatment as the limbs so it reads as one consistent character
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR + 2.4, 0, Math.PI * 2); ctx.fillStyle = outline; ctx.fill();
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
   }
 
   // ---- Audio (SFX only — no music yet, nothing to score). One sfxGain ->
