@@ -11,6 +11,54 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.18 — 2026-07-20 — Weighted attack follow-through: the recovery
+                          phase (strike-end -> idle) was still a fixed-
+                          duration lerpPose()+easeOutBack() blend, the same
+                          canned-curve shape movement/jump had before
+                          v0.1.17 -- meaning the exact "knee jerk" symptom
+                          could still show up at the one moment (recovery)
+                          this pass hadn't reached yet.
+
+                          Replaced with a real damped-spring follow-
+                          through, seeded with the strike phase's own exit
+                          velocity (computed once, in updateSeq(), as the
+                          strike's actual pose delta over its actual
+                          duration -- not an invented number). Deliberately
+                          kept as a closed-form solution -- x(t) =
+                          (x0+(v0+omega*x0)*t)*e^(-omega*t), the analytic
+                          critically-damped-spring position at time t given
+                          an initial displacement and velocity -- rather
+                          than frame-by-frame integration, specifically so
+                          recovery stays a stateless "evaluate the pose at
+                          any t" function like every other phase here, and
+                          the fixed-duration phase-transition timing/
+                          buffered-input contract in updateSeq() didn't
+                          need to change at all -- only the pose formula
+                          did. The real payoff, even though the current
+                          fixed-timing attack always exits the strike at
+                          the same velocity: continuity of velocity across
+                          the strike/recovery boundary, where the old
+                          fixed-curve blend restarted from zero velocity
+                          every time regardless of how fast the strike was
+                          actually moving -- a real, if subtle, discontinuity
+                          at exactly the moment recovery began.
+
+                          5 new assertions (tests/rig-sequence.js §17):
+                          exit velocity is captured and substantial (not
+                          zero/invented), recovery's starting pose is
+                          continuous with the strike's own end pose (not
+                          snapped toward idle), and the phase still ends on
+                          the same fixed schedule as before. One real
+                          flaky-test bug caught and fixed during this pass:
+                          a 190ms margin against the 180ms committed-phase
+                          boundary was too tight once the suite had grown
+                          this long (the same class of timing bug §4/§12
+                          already named and fixed once), corrected to the
+                          same ~280ms safe margin used elsewhere rather
+                          than inventing a new tight number. Full suite
+                          stable across repeated runs: 73/73 rig-sequence
+                          + 20/20 rig-2player + 14/14 rig-audio.
+
   v0.1.17 — 2026-07-20 — Real physics, replacing v0.1.16's instant-delta
                           movement and canned sine-arc jump -- producer
                           feedback that tapping just produced a "knee jerk"
@@ -652,7 +700,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.17</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.18</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -862,6 +910,11 @@
     let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
     let attackSide = null; // which side the currently-playing (or most recent) attack was on
     let guarding = false;
+    // Recovery follow-through state (real damped-spring momentum -- see
+    // currentPose()'s recovery branch and updateSeq()'s exit-velocity
+    // capture). null until the first attack ever enters recovery.
+    let recoverEnterPose = null, recoverExitVel = null;
+    const RECOVER_OMEGA = 18; // spring decay rate -- tuned so a near-zero exit velocity still settles within the same ~220ms window recovery always had (e^(-18*0.22) ≈ 1.9% residual)
     // ---- Movement physics (producer request: "detail the physics of the
     // rig" -- replacing the v0.1.16 instant-delta move() with a real
     // velocity/acceleration model). posX is a persistent world position,
@@ -1017,10 +1070,31 @@
         });
         return opts.idleOverlay ? opts.idleOverlay(base) : base;
       }
+      // Recovery: a real damped-spring follow-through instead of another
+      // canned easing curve, seeded with the strike's actual exit velocity
+      // (captured in updateSeq() the instant this phase began). Closed-
+      // form critically-damped solution -- x(t) = (x0 + (v0+omega*x0)*t) *
+      // e^(-omega*t) -- chosen specifically so this stays a stateless
+      // "evaluate at any t" function like every other phase here, instead
+      // of needing frame-by-frame integration and a change to how/when
+      // this phase ends. A hard, fully-committed kick carries measurably
+      // more momentum through this window than one interrupted early --
+      // that's the actual "weight" a fixed-duration blend can't produce.
+      if (!isCommittedPhase(seqIdx)) {
+        const t = (performance.now() - seqStart) / 1000; // seconds since recovery began
+        const decay = Math.exp(-RECOVER_OMEGA * t);
+        const pose = {};
+        for (const k in POSES.idle) {
+          const x0 = recoverEnterPose[k] - POSES.idle[k];
+          const v0 = recoverExitVel[k];
+          pose[k] = POSES.idle[k] + (x0 + (v0 + RECOVER_OMEGA * x0) * t) * decay;
+        }
+        return pose;
+      }
       const step = seq[seqIdx];
       const t = Math.min(1, (performance.now() - seqStart) / step.dur);
       const eased = step.ease(t);
-      const target = step.pose === 'idle' ? POSES.idle : POSES[step.pose];
+      const target = POSES[step.pose];
       return lerpPose(fromPose, target, eased);
     }
 
@@ -1045,6 +1119,23 @@
           }
           return;
         }
+        // Entering recovery: seed the damped-spring follow-through (see
+        // currentPose()) with the strike's actual exit velocity -- fromPose
+        // still holds the strike's OWN starting pose here (not yet
+        // overwritten below) and `completed`/`step.dur` are the strike's
+        // ending pose and duration, so this is a real average angular
+        // velocity for the phase that just finished, not an invented
+        // number. A fast, fully-committed kick carries measurably more
+        // momentum into recovery than one interrupted early -- this is
+        // what actually answers the "knee jerk" complaint at the attack
+        // itself, not just movement/jump.
+        if (!isCommittedPhase(seqIdx)) {
+          recoverEnterPose = completed;
+          recoverExitVel = {};
+          for (const k in completed) {
+            recoverExitVel[k] = (completed[k] - fromPose[k]) / (step.dur / 1000);
+          }
+        }
         fromPose = completed;
         // The committed phases (windup+strike) just finished, so we're
         // about to enter recovery — which has no gameplay function left. If
@@ -1061,6 +1152,7 @@
     function reset() {
       seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
       queuedSide = null; attackSide = null; guarding = false;
+      recoverEnterPose = null; recoverExitVel = null;
       posX = 0; velX = 0; moveIntent = 0; facing = 'R';
       jumping = false; velY = 0; jumpHeight = 0;
     }
@@ -1079,7 +1171,9 @@
       get velX() { return velX; },
       get facing() { return facing; },
       get jumping() { return jumping; },
-      get velY() { return velY; }
+      get velY() { return velY; },
+      get recoverExitVel() { return recoverExitVel; },
+      get recoverEnterPose() { return recoverEnterPose; }
     };
   }
 
@@ -2029,6 +2123,8 @@
           facing: p1.facing,
           jumping: p1.jumping,
           velY: p1.velY,
+          recoverExitVel: p1.recoverExitVel,
+          recoverEnterPose: p1.recoverEnterPose,
           pose: p1.currentPose(),
           joints,
           sockets: getSockets(joints),

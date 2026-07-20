@@ -457,6 +457,36 @@ function ok(cond, label) {
   let attackDuringJump = await page.evaluate(() => window.Rig._test.state());
   ok(attackDuringJump.idle === true && attackDuringJump.jumping === true, 'an attack input is refused while airborne (no aerial attacks in this pass)');
 
+  console.log('17. Weighted attack recovery: real momentum, not another canned curve (v0.1.18)');
+  await page.evaluate(() => window.Rig._test.resetSession());
+  let beforeAttack = await page.evaluate(() => window.Rig._test.state());
+  ok(beforeAttack.recoverExitVel === null && beforeAttack.recoverEnterPose === null,
+    'no recovery momentum state exists before any attack has ever run');
+
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  // Committed phase is 110+70=180ms; a ~190ms margin was flaky here under
+  // this file's accumulated load by this point (section 4/§12 already
+  // named this exact class of timing bug against the same 180ms boundary
+  // and fixed it the same way) -- use the same ~280ms-total safe margin
+  // established there instead of guessing a new tight number.
+  await page.waitForTimeout(280);
+  let justEntered = await page.evaluate(() => window.Rig._test.state());
+  ok(justEntered.committed === false && justEntered.idle === false, 'recovery phase has begun (interruptible, not idle yet)');
+  ok(justEntered.recoverExitVel !== null && Math.abs(justEntered.recoverExitVel.kneeR) > 1,
+    'a real, substantial exit velocity was captured from the strike\'s own pose delta -- not zero, not invented');
+  // Right at the start of recovery, decay ~= 1 and t ~= 0, so the spring's
+  // closed-form position should still read very close to the pose
+  // recovery entered with -- continuity across the strike/recovery
+  // boundary, the opposite of the old fixed-curve blend's zero-velocity
+  // restart at this exact instant.
+  ok(Math.abs(justEntered.pose.kneeR - justEntered.recoverEnterPose.kneeR) < 0.15,
+    'recovery pose starts continuous with the strike\'s own end pose, not snapped back toward idle immediately');
+
+  await page.waitForTimeout(260); // ~540ms since trigger, comfortably past the full ~400ms sequence duration
+  let recoverySettled = await page.evaluate(() => window.Rig._test.state());
+  ok(recoverySettled.idle === true,
+    'the sequence still ends and returns to idle on the same fixed schedule as before -- the spring changes the pose formula during recovery, not the phase-transition timing/contract');
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   await browser.close();
   process.exit(fail === 0 ? 0 : 1);
