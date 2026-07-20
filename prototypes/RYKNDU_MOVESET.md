@@ -244,18 +244,35 @@ holding guard defensively. `PARRY_WINDOW_MS` (120ms) closes that:
   logic unchanged — guard itself didn't get worse, parry only added a
   narrow bonus window on top of it.
 
-## What's still deferred (not designed in this pass)
+## Combo-cancel (v0.1.26 — a confirmed hit rewards a faster follow-up)
 
-Combat resolution, guard stamina, and parry above are the game's core
-loop and its full guard-vs-attack interaction — what's left is chaining
-attacks together, not defending against them:
+The last item on this doc's own former "still deferred" list. The
+existing "buffered input fires immediately at recovery start" behavior
+was already a cancel window in everything but name; `cancelIntoBufferedAttack()`
+extends it to fire on a CONFIRMED hit instead of waiting for the
+sequence to finish on its own:
 
-- **Combo-cancel candidate points:** the existing "buffered input fires
-  immediately at recovery start" behavior is already a cancel window in
-  everything but name. A combo system extends this — e.g. a second attack
-  type that can cancel `strike` itself (not just `recover`) into a new
-  `windup` on a landed hit. Not built; the seam is `isCommittedPhase()`
-  and the `queuedSide` buffer, both already isolated enough to extend.
+- **Trigger**: called from `resolveDuelHit()`'s existing blocked/
+  unblocked split — only on the unblocked (clean connect) branch, not on
+  a block or a parry. A blocked hit still costs guard meter as before
+  and does not cancel; a parried hit fully interrupts the attacker via
+  `applyKnockback()`'s existing unblocked branch (clearing any buffer as
+  part of that same interrupt), which was already true for any landed
+  hit against a rig — the parry branch doesn't add a new rule here, it
+  was just confirmed rather than assumed (see `tests/rig-combo-cancel.js`
+  §4).
+- **Effect**: if the attacker already buffered a follow-up (`queuedSide`,
+  set by `triggerAttack()` during their own committed windup/strike —
+  unchanged, pre-existing behavior), the confirmed hit immediately clears
+  it and calls `startAttack()` for that follow-up — skipping the rest of
+  the current strike and the entire 220ms recovery tail. With nothing
+  buffered, it's a no-op and the sequence continues exactly as it always
+  did (windup → strike → recovery → idle).
+- **Scope**: this is the seam `isCommittedPhase()`/`queuedSide` were
+  always isolated enough to extend, and it only rewards a single
+  attack type re-fired against itself (this rig still only has one kick
+  per side) — a genuinely new second attack type that cancels differently
+  is a further, separate extension, not built here.
 
 ## Verification
 
@@ -282,4 +299,8 @@ player 2 sharing the exact same behavior through the same factory. Parry
 is covered by `tests/rig-parry.js` — a hit landing inside the window
 (full negation, attacker punished), one landing outside it (ordinary
 block), a re-raise opening a genuinely fresh window, and both attack
-directions.
+directions. Combo-cancel is covered by `tests/rig-combo-cancel.js` — a
+confirmed hit with a buffer firing the follow-up immediately, one with no
+buffer behaving exactly as before, a blocked hit NOT canceling, a parried
+hit fully interrupting the attacker (buffer cleared, not preserved), and
+both attack directions.

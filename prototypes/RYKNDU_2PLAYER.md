@@ -1,19 +1,23 @@
-# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21, match structure v0.1.23, guard meter v0.1.24, parry v0.1.25)
+# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity v0.1.20, combat resolution v0.1.21, match structure v0.1.23, guard meter v0.1.24, parry v0.1.25, combo-cancel v0.1.26)
 
 **Status: substrate, physics, combat resolution, a real match structure,
-guard stamina, AND parry all landed.** This covers what the 2-player
-extension actually built — two independent, simultaneously rendered/
-animated rigs, each with its own input, real shared physics, real
-rig-vs-rig hit detection/knockback/ring-out, an actual win condition
+guard stamina, parry, AND combo-cancel all landed.** This covers what the
+2-player extension actually built — two independent, simultaneously
+rendered/animated rigs, each with its own input, real shared physics,
+real rig-vs-rig hit detection/knockback/ring-out, an actual win condition
 (first to 3 ring-outs wins the match, with a result overlay and a
 rematch path), a real stamina cost on guard (drains while blocking,
-regenerates slower, force-drops at empty, costs extra per blocked hit),
-and now a precision-timing reward for a well-read block — a hit landing
-within 120ms of the moment guard was raised fully negates and punishes
-the attacker instead (see `RYKNDU_MOVESET.md`'s Combat resolution, Guard
-meter, and Parry sections for the mechanics) — and draws a hard line
-around what still deliberately isn't covered: only combo-cancel depth
-remains separate future work now.
+regenerates slower, force-drops at empty, costs extra per blocked hit), a
+precision-timing reward for a well-read block (a hit landing within
+120ms of the moment guard was raised fully negates and punishes the
+attacker instead), and now a reward for a confirmed hit — landing a
+clean, unblocked strike immediately fires a buffered follow-up instead of
+making the attacker wait out the rest of their own sequence (see
+`RYKNDU_MOVESET.md`'s Combat resolution, Guard meter, Parry, and
+Combo-cancel sections for the mechanics). Every specific mechanic named
+across this rig's own design docs as a deferred gap — rig-vs-rig combat,
+a match structure, guard cost, parry, and combo-cancel — is now built and
+tested.
 
 ## What exists now
 
@@ -148,6 +152,13 @@ guard-meter cost, the attacker punished instead), one landing well
 outside it (an ordinary block, verifying the two don't get confused with
 each other), a re-raise opening a genuinely fresh window rather than
 reusing stale state, and both attack directions.
+
+`tests/rig-combo-cancel.js` covers the combo-cancel path — a confirmed
+hit with a buffered follow-up firing immediately, one with no buffer
+behaving exactly as before, a blocked (non-parried) hit NOT canceling, a
+parried hit fully interrupting the attacker's buffer too (via the
+pre-existing hit-interrupt rule, not a new one), and both attack
+directions.
 
 ## Mobile verification status (v0.1.22 — emulation, not real hardware)
 

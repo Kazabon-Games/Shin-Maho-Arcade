@@ -11,6 +11,32 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.26 — 2026-07-20 — Combo-cancel: the last item on this project's own
+                          "still deferred" list. The existing "buffered
+                          input fires immediately at recovery start"
+                          behavior was already a cancel window in
+                          everything but name -- cancelIntoBufferedAttack()
+                          extends it so a CONFIRMED hit (a clean,
+                          unblocked connect during strike, not a blocked
+                          or parried one) fires a buffered follow-up
+                          immediately instead of making the attacker wait
+                          out the rest of strike plus the whole 220ms
+                          recovery tail. Called from resolveDuelHit() on
+                          the else-branch of its existing blocked/
+                          unblocked split -- still one shared, both-
+                          directions function, the cancel is a new branch
+                          inside it, not a second copy. A parry-punish
+                          still fully interrupts the attacker (clearing
+                          any buffer too) via the exact same
+                          applyKnockback() unblocked-branch every landed
+                          hit already goes through -- this isn't a new
+                          rule, just confirmed by tests/rig-combo-cancel.js
+                          (11 assertions) rather than assumed. Also
+                          confirms a blocked (non-parried) hit does NOT
+                          cancel, deliberately scoping this to a clean
+                          connect only. All 225 assertions across the
+                          full suite pass.
+
   v0.1.25 — 2026-07-20 — Parry: guard now has real teeth but still no
                           precision-timing reward for a well-timed block,
                           a gap named directly in this project's own
@@ -977,7 +1003,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.25</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.26</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1487,6 +1513,31 @@
       startAttack(side);
     }
 
+    // ---- Combo-cancel (v0.1.26) ----
+    // Until now, a buffered follow-up (queuedSide, set by triggerAttack()
+    // above during a committed windup/strike) only ever fired once the
+    // CURRENT sequence finished its full run -- windup, strike, and the
+    // ENTIRE 220ms recovery tail, even if the attack had already landed a
+    // real hit partway through strike. That's the "buffered input fires
+    // at recovery start" cancel window this rig's own design docs already
+    // named as the seam a combo system would extend -- this is that
+    // extension: called from resolveDuelHit() the instant a hit CONNECTS
+    // (not blocked, not parried -- a genuine confirm), it skips the rest
+    // of strike and the whole recovery tail and, if a follow-up was
+    // buffered, starts it immediately. A confirmed hit is rewarded with a
+    // faster follow-up than a whiffed one, the same "landing a hit gets
+    // you something a miss doesn't" idea `hasHitThisSwing`/knockback
+    // already embody elsewhere in this rig, extended to the attacker's
+    // own tempo instead of just the defender's.
+    // No-op if nothing was buffered -- safe to call unconditionally on
+    // every confirmed hit rather than needing a caller-side check first.
+    function cancelIntoBufferedAttack() {
+      if (!seq || !queuedSide) return;
+      const s = queuedSide;
+      queuedSide = null;
+      startAttack(s);
+    }
+
     function currentPose() {
       if (jumping) {
         // jumpHeight is real integrated projectile motion (see
@@ -1612,7 +1663,7 @@
     return {
       triggerAttack, setGuard, currentPose, updateSeq, reset, tryJump,
       setMoveIntent, updatePhysics, triggerFlinch, markHit, applyKnockback, teleportTo,
-      damageGuardMeter, isInParryWindow,
+      damageGuardMeter, isInParryWindow, cancelIntoBufferedAttack,
       get guarding() { return guarding; },
       get seqIdx() { return seqIdx; },
       get seqLen() { return seq ? seq.length : 0; },
@@ -2407,7 +2458,16 @@
       return;
     }
     defender.applyKnockback(dir * KNOCKBACK_SPEED * (blocked ? GUARD_CHIP_SCALE : 1), blocked);
-    if (blocked) defender.damageGuardMeter(GUARD_BLOCK_HIT_DRAIN); // guard mitigates knockback but isn't free -- a real stamina cost per blocked hit, on top of the continuous drain from just holding guard (see updateGuardMeter())
+    if (blocked) {
+      defender.damageGuardMeter(GUARD_BLOCK_HIT_DRAIN); // guard mitigates knockback but isn't free -- a real stamina cost per blocked hit, on top of the continuous drain from just holding guard (see updateGuardMeter())
+    } else {
+      // Combo-cancel (v0.1.26): a clean, unblocked connect is a real
+      // confirm, not just a whiff -- if the attacker already buffered a
+      // follow-up during their own committed phase, this fires it
+      // immediately instead of making them wait out the rest of strike
+      // plus the full recovery tail. No-op if nothing was buffered.
+      attacker.cancelIntoBufferedAttack();
+    }
     SFX.strikeImpact();
     spawnBurst(hurtbox.x, hurtbox.y);
     shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6) * (blocked ? 0.4 : 1));
