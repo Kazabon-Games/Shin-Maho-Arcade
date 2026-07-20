@@ -51,15 +51,17 @@ treating it as one would overstate what the code actually guarantees.
                                                                                  (immediate)
 ```
 
-## Physics (v0.1.17–v0.1.19 — movement, jump, and recovery momentum)
+## Physics (v0.1.17–v0.1.20 — movement, jump, and recovery momentum)
 
 Added after producer feedback traced "tapping just gives a knee jerk"
 back to its actual cause: nothing in this rig had velocity, mass, or
 momentum before this — every motion was pose-A-to-pose-B interpolation
 on a fixed clock. Three real (not merely re-skinned) physics systems now
 exist, all reusable from a single rig instance (both `p1`/`p2` share
-`createRigController()`), though only player 1 is wired to input as of
-v0.1.19:
+`createRigController()`). As of v0.1.20 both players are wired to input —
+player 2 was given the same physics and a matching facing-based control
+scheme (see `RYKNDU_2PLAYER.md`), closing the gap left when v0.1.19
+shipped this pass for player 1 only:
 
 - **Movement**: `moveIntent` (-1..1, a direction, set once per frame by
   the input layer — keyboard held-key state, gamepad stick axis, or the
@@ -92,7 +94,8 @@ v0.1.19:
 None of these three are combat-facing yet (no rig-vs-rig hit detection
 exists), and none change anything in the state table above — they're
 additive physics layered under the existing state machine, verified in
-`tests/rig-sequence.js` §§13–17 and `tests/rig-touch-controls.js`.
+`tests/rig-sequence.js` §§13–17, `tests/rig-touch-controls.js`, and (for
+player 2's parity) `tests/rig-2player.js`.
 
 ## What each phase means for future combat design (deferred, not designed here)
 

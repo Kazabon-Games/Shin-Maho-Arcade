@@ -11,6 +11,32 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.20 — 2026-07-20 — Player 2 gets the same physics pass player 1
+                          already had: real movement (velX/friction),
+                          gravity-driven jump, and recovery momentum, all
+                          through the same createRigController() factory
+                          (no second copy of the math). Reworked P2's
+                          input scheme from the old explicit-side two-kick-
+                          button model (A=kickL, D=kickR) to match P1's
+                          facing-based scheme: A/D move, W jump, S guard,
+                          F attack. Gamepad polling consolidated into one
+                          shared pollPlayerPad() used identically for both
+                          players, replacing the old P1-only pollP1Pad()
+                          and the two-kick-button pollOnePad(). Both rigs
+                          now spawn at real duel positions (P1 at -80 left
+                          side facing right, P2 at +80 right side facing
+                          left) instead of P2 sitting at a fixed render-
+                          only offset, and SHOW_P2 is back on so both are
+                          live on screen simultaneously. window.Rig2._test
+                          exposes the same physics fields window.Rig._test
+                          always has (posX/velX/facing/jumping/velY/
+                          recoverExitVel/recoverEnterPose) plus
+                          setMoveIntent/updatePhysics/stepPhysics/jump --
+                          it had silently fallen behind P1's test hook
+                          when the physics pass landed, caught by
+                          tests/rig-2player.js's own new assertions
+                          reading undefined instead of failing loud.
+
   v0.1.19 — 2026-07-20 — Touch controls reworked to match the movement/
                           facing/jump rework -- the original "tapping the
                           screen just gives a knee jerk" complaint that
@@ -786,7 +812,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.19</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.20</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1017,8 +1043,9 @@
     // (MOVE_ACCEL/MOVE_FRICTION) instead of snapping to a speed. facing
     // tracks actual velocity direction, not raw input, so it lags very
     // slightly behind an instant reversal the same way a real body would.
-    let posX = 0, velX = 0, moveIntent = 0;
-    let facing = 'R';
+    const START_X = opts.startX || 0; // spawn point -- 0 for player 1, an offset for player 2 so a real duel doesn't start with both rigs on top of each other
+    let posX = START_X, velX = 0, moveIntent = 0;
+    let facing = opts.startFacing || 'R';
     const MOVE_MIN = -170, MOVE_MAX = 170; // arena bounds, arbitrary first guess -- same "expect to hand-tune once you see it" status every pose constant in this file already carries
     const MOVE_MAX_SPEED = 220; // px/sec top speed
     const MOVE_ACCEL = 1400; // px/sec^2 -- how fast velocity ramps toward the intended speed while input is held
@@ -1243,7 +1270,7 @@
       seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
       queuedSide = null; attackSide = null; guarding = false;
       recoverEnterPose = null; recoverExitVel = null;
-      posX = 0; velX = 0; moveIntent = 0; facing = 'R';
+      posX = START_X; velX = 0; moveIntent = 0; facing = opts.startFacing || 'R';
       jumping = false; velY = 0; jumpHeight = 0;
     }
 
@@ -1277,6 +1304,7 @@
   const FLINCH_DUR = 180;
   function triggerFlinch() { flinchStart = performance.now(); }
   const p1 = createRigController({
+    startX: -80, startFacing: 'R', // duel spawn: left side, facing right toward player 2
     onAttackStart: () => SFX.windupWhoosh(), // every attack starts at the windup phase, so this is exactly the windup trigger point
     // Player hit-reaction (v0.1.8): a plain additive blend toward
     // POSES.flinch, not routed through the seq/seqIdx/attackSide machinery
@@ -1298,26 +1326,18 @@
     }
   });
 
-  // Player 2 (Game 5 2-player extension): a second, independent instance
-  // from the SAME factory -- genuinely separate closure variables, not a
-  // reference to player 1's. Deliberately NOT wired into the
-  // enemy/session/hit-detection system below (that stays player-1-only) --
-  // rig-vs-rig combat resolution (a hurtbox, a guard timer, parry) is real
-  // combat design deferred past this consolidation pass. This only proves
-  // two independently-driven, independently-animated rigs run at once.
-  // Producer request: "let's make it one rig for now" -- p2's controller,
-  // tests (window.Rig2, tests/rig-2player.js), and input plumbing all
-  // stay fully intact and correct; this just stops it from being
-  // updated/rendered/polled in the live build while movement/jump lands
-  // and gets proven on one rig first, matching the same "prove it
-  // single-threaded/single-rig before adding the second" sequencing the
-  // engineer draft recommended back at the start of the 2-player work.
-  // Flip back to true to resume the 2-player build where it left off.
-  const SHOW_P2 = false;
-  const P2_STAND_OFFSET = 130;
+  // Player 2 (2-player extension): a second, independent instance from the
+  // SAME factory -- genuinely separate closure variables, not a reference
+  // to player 1's. Was held back behind SHOW_P2=false ("let's make it one
+  // rig for now") while movement/jump/momentum got proven on one rig
+  // first; re-enabled now that player 2 has the same physics and a real
+  // input scheme (see the Input section) and rig-vs-rig combat resolution
+  // exists (resolveCombatHits() below) -- a fully-2-player build is the
+  // actual goal this rig work has been driving toward.
+  const SHOW_P2 = true;
   const P1_COLOR = '#3fd0ff'; // cyan -- verified-safe vs. this studio's reserved gold/red/green bands (STUDIO_BIBLE.md §11)
   const P2_COLOR = '#6b4dff'; // indigo-violet -- same verification
-  const p2 = createRigController();
+  const p2 = createRigController({ startX: 80, startFacing: 'L' }); // duel spawn: right side, facing left toward player 1
 
   function triggerAttack(side) { SFX.ensureCtx(); p1.triggerAttack(side); } // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
   function setGuard(active) { p1.setGuard(active); }
@@ -1865,7 +1885,7 @@
   }
 
   function makeEnemy(spawnAt, side) {
-    const pelvisX = canvas.width / 2; // idle pelvisDX is 0; small attack-time offsets are ignored here
+    const pelvisX = canvas.width / 2 + p1.posX; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here
     const spawnX = side === 'R' ? canvas.width + 50 : -50;
     const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
     return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true,
@@ -2144,19 +2164,40 @@
     () => { SFX.ensureCtx(); if (sessionState === 'playing') setGuard(true); }, // same gating as the keyboard/gamepad guard-raise
     () => setGuard(false));
 
-  // Player 2 split-keyboard fallback (Game 5 2-player extension) -- always
-  // live regardless of whether a gamepad is also assigned to player 2 (see
-  // below), same as player 1's arrows stay live alongside a player-1
-  // gamepad. Not routed through handleInput()/resetSession() -- player 2
-  // has no session/game-over state of its own yet.
+  // Player 2 split-keyboard fallback (2-player extension, reworked to
+  // match player 1's physics-driven model -- A/D move, W jump, S guard, F
+  // attack via current facing, instead of the old A/D=explicit-side-kick
+  // scheme, which predated movement/jump entirely and left player 2
+  // unable to ever actually approach player 1). Always live regardless of
+  // whether a gamepad is also assigned to player 2, same as player 1's
+  // arrows stay live alongside a player-1 gamepad. Not routed through
+  // handleInput()/resetSession() -- player 2 has no session/game-over
+  // state of its own.
+  let p2MoveLeftHeld = false, p2MoveRightHeld = false;
   window.addEventListener('keydown', (e) => {
-    if (e.key === 'a' || e.key === 'A') p2.triggerAttack('L');
-    if (e.key === 'd' || e.key === 'D') p2.triggerAttack('R');
-    if ((e.key === 's' || e.key === 'S')) p2.setGuard(true);
+    if (e.key === 'a' || e.key === 'A') p2MoveLeftHeld = true;
+    if (e.key === 'd' || e.key === 'D') p2MoveRightHeld = true;
+    if (e.key === 'f' || e.key === 'F') { SFX.ensureCtx(); p2.triggerAttack(p2.facing); }
+    if (e.key === 'w' || e.key === 'W') { SFX.ensureCtx(); p2.tryJump(); }
+    if (e.key === 's' || e.key === 'S') { SFX.ensureCtx(); p2.setGuard(true); }
   });
   window.addEventListener('keyup', (e) => {
+    if (e.key === 'a' || e.key === 'A') p2MoveLeftHeld = false;
+    if (e.key === 'd' || e.key === 'D') p2MoveRightHeld = false;
     if (e.key === 's' || e.key === 'S') p2.setGuard(false);
   });
+  function applyP2MoveInput(dt) {
+    let intent = 0;
+    if (p2MoveLeftHeld) intent -= 1;
+    if (p2MoveRightHeld) intent += 1;
+    if (p2PadIndex !== null) {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = pads[p2PadIndex];
+      if (gp && gp.axes && Math.abs(gp.axes[0]) > 0.15) intent = gp.axes[0];
+    }
+    p2.setMoveIntent(intent);
+    p2.updatePhysics(dt);
+  }
 
   // ---- Gamepad support (Game 5 2-player extension) ----
   // Generic Gamepad API reading -- plain button indices, not hardcoded to
@@ -2180,13 +2221,11 @@
   // of whether a pad is also assigned to them.
   let p1PadIndex = null, p2PadIndex = null;
   const padPrevPressed = {}; // padIndex -> per-button previous-frame pressed state, for rising-edge detection (the API has no press-event model, only a per-frame snapshot -- a naive read fires once per frame a button is held, not once per press)
-  // Player 2 keeps its original two-kick-button scheme (unchanged --
-  // player 2 isn't getting the movement rework in this pass, per "one rig
-  // for now"). Player 1's new scheme (single attack button + jump,
-  // movement comes from the analog stick handled in applyMoveInput/pollP1Pad)
-  // uses its own distinct button indices below.
-  const BTN_KICK_L = 2, BTN_KICK_R = 1, BTN_GUARD = 4; // standard-mapping face/shoulder button indices (player 2)
-  const P1_BTN_ATTACK = 0, P1_BTN_JUMP = 3; // standard-mapping bottom/top face buttons (player 1); reuses BTN_GUARD's index for the same physical shoulder button
+  // Both players now share one gamepad scheme (player 2's old two-kick-
+  // button layout is gone along with its explicit-side attack model) --
+  // a single attack button read via facing, a jump button, and the
+  // existing shoulder for guard.
+  const BTN_ATTACK = 0, BTN_JUMP = 3, BTN_GUARD = 4; // standard-mapping bottom/top face buttons + shoulder
 
   function assignPad(index) {
     if (p1PadIndex === null && p2PadIndex !== index) { p1PadIndex = index; return; }
@@ -2201,47 +2240,37 @@
     delete padPrevPressed[e.gamepad.index];
   });
 
-  function pollOnePad(padIndex, triggerAttackFn, setGuardFn) {
+  // Shared gamepad poll for either player's rig -- analog stick for
+  // movement (handled in applyMoveInput/applyP2MoveInput so keyboard-held
+  // and stick input share one path), a single attack button read via
+  // facing (not an explicit side), and a jump button. Rising-edge
+  // detection on attack/jump, same reason kicks always needed it -- a
+  // per-frame snapshot read naively would refire every frame a button
+  // stays held. One shared function for both players (not two hand-copied
+  // versions) since the scheme is now identical -- the exact "duplicated
+  // logic silently drifts apart" trap this file has already hit before.
+  function pollPlayerPad(padIndex, rig, onAttack, guardGate) {
     if (padIndex === null) return;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const gp = pads[padIndex];
     if (!gp) return;
-    const prev = padPrevPressed[padIndex] || { L: false, R: false };
-    const nowL = !!(gp.buttons[BTN_KICK_L] && gp.buttons[BTN_KICK_L].pressed);
-    const nowR = !!(gp.buttons[BTN_KICK_R] && gp.buttons[BTN_KICK_R].pressed);
-    if (nowL && !prev.L) triggerAttackFn('L');
-    if (nowR && !prev.R) triggerAttackFn('R');
-    setGuardFn(!!(gp.buttons[BTN_GUARD] && gp.buttons[BTN_GUARD].pressed));
-    padPrevPressed[padIndex] = { L: nowL, R: nowR };
-  }
-
-  // Player 1's gamepad poll: analog stick for movement (folded into
-  // applyMoveInput so keyboard-held and stick input share one path), a
-  // single attack button read via facing (not two kick buttons), and a
-  // jump button. Rising-edge detection on attack/jump for the same reason
-  // pollOnePad already needs it for kicks -- a per-frame snapshot read
-  // naively would refire every frame a button stays held.
-  function pollP1Pad() {
-    if (p1PadIndex === null) return;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = pads[p1PadIndex];
-    if (!gp) return;
-    const prev = padPrevPressed[p1PadIndex] || { attack: false, jump: false };
-    const nowAttack = !!(gp.buttons[P1_BTN_ATTACK] && gp.buttons[P1_BTN_ATTACK].pressed);
-    const nowJump = !!(gp.buttons[P1_BTN_JUMP] && gp.buttons[P1_BTN_JUMP].pressed);
-    if (nowAttack && !prev.attack) handleInput(p1.facing);
-    if (nowJump && !prev.jump) { SFX.ensureCtx(); p1.tryJump(); }
+    const prev = padPrevPressed[padIndex] || { attack: false, jump: false };
+    const nowAttack = !!(gp.buttons[BTN_ATTACK] && gp.buttons[BTN_ATTACK].pressed);
+    const nowJump = !!(gp.buttons[BTN_JUMP] && gp.buttons[BTN_JUMP].pressed);
+    if (nowAttack && !prev.attack) onAttack();
+    if (nowJump && !prev.jump) { SFX.ensureCtx(); rig.tryJump(); }
     const guardHeld = !!(gp.buttons[BTN_GUARD] && gp.buttons[BTN_GUARD].pressed);
-    if (sessionState === 'playing' || !guardHeld) setGuard(guardHeld); // same release-always/raise-only-while-playing gating as the keyboard guard handler
-    padPrevPressed[p1PadIndex] = { attack: nowAttack, jump: nowJump };
+    if (!guardGate || guardGate(guardHeld)) rig.setGuard(guardHeld);
+    padPrevPressed[padIndex] = { attack: nowAttack, jump: nowJump };
   }
 
   // Called once per frame from inside the main loop (gamepad state has no
   // event model -- it must be polled every tick, per the studio's own
   // named risk for this API), not from an input event handler.
   function pollGamepads() {
-    pollP1Pad();
-    pollOnePad(p2PadIndex, (side) => p2.triggerAttack(side), (active) => p2.setGuard(active));
+    pollPlayerPad(p1PadIndex, p1, () => handleInput(p1.facing),
+      (guardHeld) => sessionState === 'playing' || !guardHeld); // release always allowed, raise only while playing -- same gating the keyboard guard handler uses
+    pollPlayerPad(p2PadIndex, p2, () => p2.triggerAttack(p2.facing), null); // player 2 has no session state to gate against
   }
 
   // ---- Test hook (mirrors this studio's Game._test convention) ----
@@ -2333,7 +2362,7 @@
   window.Rig2 = {
     _test: {
       state: () => {
-        const joints = solveRig(p2.currentPose(), P2_STAND_OFFSET);
+        const joints = solveRig(p2.currentPose(), p2.posX);
         return {
           idle: p2.idle,
           seqIdx: p2.seqIdx,
@@ -2342,6 +2371,13 @@
           guarding: p2.guarding,
           queuedSide: p2.queuedSide,
           attackSide: p2.attackSide,
+          posX: p2.posX,
+          velX: p2.velX,
+          facing: p2.facing,
+          jumping: p2.jumping,
+          velY: p2.velY,
+          recoverExitVel: p2.recoverExitVel,
+          recoverEnterPose: p2.recoverEnterPose,
           pose: p2.currentPose(),
           joints,
           sockets: getSockets(joints)
@@ -2350,6 +2386,18 @@
       trigger: (side) => p2.triggerAttack(side),
       setGuard: (active) => p2.setGuard(active),
       reset: () => p2.reset(),
+      setMoveIntent: (v) => p2.setMoveIntent(v),
+      updatePhysics: (dt) => p2.updatePhysics(dt),
+      stepPhysics: (totalMs, stepMs) => {
+        stepMs = stepMs || 16;
+        let remaining = totalMs;
+        while (remaining > 0) {
+          const step = Math.min(stepMs, remaining);
+          p2.updatePhysics(step / 1000);
+          remaining -= step;
+        }
+      },
+      jump: () => p2.tryJump(),
       // Test-only hooks for the gamepad-assignment logic, since real
       // hardware can't be driven from Playwright -- these call the exact
       // same assignPad()/pollOnePad() functions a real gamepadconnected
@@ -2389,8 +2437,9 @@
     // joint-solve/render calls below are gated -- SHOW_P2 controls
     // visibility, not whether player 2 is alive.
     pollGamepads(); // fixed-index-per-player polling; see the Input section below -- still runs unconditionally since it also drives player 1's pad
+    applyP2MoveInput(dt);
     p2.updateSeq(now);
-    const joints2 = SHOW_P2 ? solveRig(p2.currentPose(), P2_STAND_OFFSET) : null;
+    const joints2 = SHOW_P2 ? solveRig(p2.currentPose(), p2.posX) : null;
 
     // Screen shake is pure presentation -- a render-time offset only, never
     // touching the coordinates solveRig()/resolveHits() actually use for hit

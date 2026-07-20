@@ -1,4 +1,4 @@
-# Rykndu Rig — 2-Player Extension (v0.1.11)
+# Rykndu Rig — 2-Player Extension (v0.1.11, physics parity added v0.1.20)
 
 **Status: substrate landed, combat not designed.** This covers what the
 2-player extension actually built — two independent, simultaneously
@@ -17,22 +17,40 @@ rig-vs-rig combat resolution, are separate future work.
   effect on the other — verified in `tests/rig-2player.js`, not just
   asserted.
 - **Player 1** keeps everything from v0.1.0–v0.1.10 unchanged: the
-  enemy-dot single-player mode, session/lives/game-over, arrows for kick,
-  `ArrowDown` for guard, `window.Rig._test` for introspection. Renders
-  cyan (`#3fd0ff`).
-- **Player 2** renders at a fixed screen offset (`P2_STAND_OFFSET = 130`px
-  from center), indigo-violet (`#6b4dff`), both colors checked against
+  enemy-dot single-player mode, session/lives/game-over,
+  `window.Rig._test` for introspection. Renders cyan (`#3fd0ff`).
+  Movement/jump/guard/attack all route through the v0.1.17–v0.1.19
+  physics pass described in `RYKNDU_MOVESET.md`.
+- **Player 2 now shares that exact same physics** (v0.1.20) — real
+  `velX`-based movement with acceleration/friction, gravity-driven jump,
+  and closed-form recovery momentum — through the same
+  `createRigController()` factory instance both rigs are built from, not
+  a second hand-copied implementation. Each rig has its own **duel spawn
+  point**: player 1 at `posX = -80` (left side, facing right), player 2
+  at `posX = +80` (right side, facing left), replacing the old fixed
+  render-only `P2_STAND_OFFSET` offset with a real, independently movable
+  position. Player 2 renders indigo-violet (`#6b4dff`), checked against
   this studio's reserved gold/red/green color-language bands
-  (`STUDIO_BIBLE.md` §11). Player 2 has its own `window.Rig2._test` hook
-  mirroring player 1's shape (minus the enemy/session/audio fields, which
-  don't apply to it). Keyboard: `A`/`D` kick left/right, `S` (hold) guards.
-- **Generic Gamepad API support** for both players: plain button indices
-  (`BTN_KICK_L = 2`, `BTN_KICK_R = 1`, `BTN_GUARD = 4`), not hardcoded to
-  any specific controller's labeled buttons, so standard-mapped devices
-  work generically — most USB arcade sticks enumerate this way. A
-  genuinely non-standard-mapped device may still land buttons somewhere
-  unexpected; a remap screen would fix that and is explicitly not built
-  here.
+  (`STUDIO_BIBLE.md` §11). `window.Rig2._test` mirrors player 1's test
+  hook shape exactly — including `posX`/`velX`/`facing`/`jumping`/`velY`/
+  `recoverExitVel`/`recoverEnterPose` and `setMoveIntent`/`updatePhysics`/
+  `stepPhysics`/`jump` — minus the enemy/session/audio fields, which
+  don't apply to it.
+- **Player 2's input scheme now matches player 1's facing-based model**
+  instead of the old explicit-side two-kick-button layout (`A`=kick-left,
+  `D`=kick-right). As of v0.1.20: `A`/`D` move left/right (held), `W`
+  jumps, `S` (hold) guards, `F` attacks — throwing whichever kick matches
+  player 2's current `facing`, the same way player 1's attack button
+  does.
+- **Generic Gamepad API support** for both players through one shared
+  `pollPlayerPad(padIndex, rig, onAttack, guardGate)` function (v0.1.20;
+  replaces the earlier per-player `pollP1Pad()`/`pollOnePad()` pair) —
+  plain button indices (`BTN_ATTACK = 0`, `BTN_JUMP = 3`, `BTN_GUARD = 4`),
+  not hardcoded to any specific controller's labeled buttons, so
+  standard-mapped devices work generically — most USB arcade sticks
+  enumerate this way. A genuinely non-standard-mapped device may still
+  land buttons somewhere unexpected; a remap screen would fix that and is
+  explicitly not built here.
 - **Fixed pad-to-player assignment**, decided once at first
   `gamepadconnected` (connection order: first pad → player 1, second →
   player 2) and never re-evaluated per frame. This is a deliberate
@@ -56,7 +74,11 @@ rig-vs-rig combat resolution, are separate future work.
 - **No rig-vs-rig hit detection.** Player 1's `resolveHits()` only ever
   checks against the enemy-dot array; player 2 isn't in it, and nothing
   checks player 2's kicks against player 1 (or vice versa). There is no
-  hurtbox on either rig yet.
+  hurtbox on either rig yet. Both rigs now have real, symmetric physics
+  (movement/jump/momentum) and real, distinct duel spawn positions, so
+  the substrate a knockback impulse would apply against now exists on
+  both sides — this is the next piece of work, not a design gap in the
+  physics itself.
 - **No guard timer/meter, no parry.** `setGuard()` is free for as long as
   the input is held, on both rigs, with no resource cost and no
   precision-timing reward. Confirmed feasible (see the Game 5 rig
@@ -76,9 +98,11 @@ rig-vs-rig combat resolution, are separate future work.
 ## Verification
 
 `tests/rig-2player.js` covers: both rigs starting independent and idle;
-triggering an attack/guard on one leaving the other's state completely
-unaffected; player 2's own committed/interruptible-phase gating (the same
-three rules `tests/rig-sequence.js` §12 verifies for player 1); the
+each rig's own duel spawn point (`posX === -80`/`+80`) and the resulting
+on-screen separation (160px, exact, not approximate); triggering an
+attack/guard on one leaving the other's state completely unaffected;
+player 2's own committed/interruptible-phase gating (the same three rules
+`tests/rig-sequence.js` §12 verifies for player 1); the
 gamepad-assignment algorithm via `window.Rig2._test.simulateGamepadConnect()`
 (connection order, slot exhaustion, disconnect clearing a slot) — real
 hardware can't be driven from Playwright, so this calls the exact same

@@ -36,7 +36,10 @@ function ok(cond, label) {
   console.log('1. Virtual joystick drives real movement physics, same as keyboard/gamepad');
   await page.evaluate(() => window.Rig._test.resetSession());
   const before = await page.evaluate(() => window.Rig._test.state());
-  ok(before.posX === 0 && before.velX === 0, 'starts at rest');
+  // Player 1 spawns at its duel spawn point (-80, left side) as of the
+  // 2-player extension, not screen center -- this only checks velX is at
+  // rest, not an absolute posX of 0.
+  ok(before.posX === -80 && before.velX === 0, 'starts at rest at the duel spawn point');
 
   const stickBox = await page.locator('#touchStick').boundingBox();
   const stickCx = stickBox.x + stickBox.width / 2, stickCy = stickBox.y + stickBox.height / 2;
@@ -45,7 +48,7 @@ function ok(cond, label) {
   await page.mouse.move(stickCx + 30, stickCy, { steps: 5 }); // drag right, well within MAX_RADIUS (34px)
   await page.waitForTimeout(350);
   const dragged = await page.evaluate(() => window.Rig._test.state());
-  ok(dragged.posX > 0 && dragged.velX > 0, 'dragging the stick right moves the rig right with real velocity, not a teleport');
+  ok(dragged.posX > before.posX && dragged.velX > 0, 'dragging the stick right moves the rig right with real velocity, not a teleport');
   ok(dragged.facing === 'R', 'facing tracks the drag direction');
 
   await page.mouse.up();

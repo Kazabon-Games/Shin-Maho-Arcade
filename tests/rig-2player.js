@@ -41,10 +41,15 @@ function ok(cond, label) {
   ok(s1.idle === true && s2.idle === true, 'both player 1 and player 2 start idle');
   ok(s2.sockets && Number.isFinite(s2.sockets.foot_r.x), 'player 2 exposes its own sockets, resolved from its own solveRig() output');
 
-  console.log('2. Player 2 renders at a distinct screen position from player 1');
-  ok(s2.joints.pelvis.x !== s1.joints.pelvis.x, 'player 2\'s pelvis is not at the same x as player 1\'s (standOffset applied)');
-  ok(Math.abs(s2.joints.pelvis.x - s1.joints.pelvis.x - 130) < 0.01,
-    'the offset is exactly P2_STAND_OFFSET (130px), not an approximation');
+  console.log('2. Player 2 renders at a distinct screen position from player 1 (duel spawn points)');
+  ok(s2.joints.pelvis.x !== s1.joints.pelvis.x, 'player 2\'s pelvis is not at the same x as player 1\'s');
+  // Both players now have real, movable posX physics (v0.1.17) with their
+  // own duel spawn point (p1: -80 left side, p2: +80 right side) instead
+  // of a fixed render-only offset -- this checks the actual spawn
+  // separation (160px), not an approximation.
+  ok(s1.posX === -80 && s2.posX === 80, 'player 1 spawns left (-80), player 2 spawns right (+80)');
+  ok(Math.abs((s2.joints.pelvis.x - s1.joints.pelvis.x) - 160) < 0.01,
+    'the on-screen separation matches the duel spawn points exactly, not an approximation');
 
   console.log('3. Triggering player 2 does not affect player 1 (genuinely separate state)');
   const before1 = await page.evaluate(() => window.Rig._test.state());

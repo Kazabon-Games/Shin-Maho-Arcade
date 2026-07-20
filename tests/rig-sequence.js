@@ -350,14 +350,15 @@ function ok(cond, label) {
   // function in isolation.
   await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
   let beforeMove = await page.evaluate(() => window.Rig._test.state());
-  ok(beforeMove.posX === 0 && beforeMove.velX === 0 && beforeMove.facing === 'R', 'posX/velX start at 0, facing defaults to R after reset');
+  ok(beforeMove.posX === -80 && beforeMove.velX === 0 && beforeMove.facing === 'R',
+    'posX starts at player 1\'s duel spawn point (-80, left side facing right), velX at rest');
 
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(80); // well under the ~157ms MOVE_ACCEL needs to reach MOVE_MAX_SPEED (220/1400)
   let midAccel = await page.evaluate(() => window.Rig._test.state());
   ok(midAccel.velX > 0 && midAccel.velX < 220,
     'velocity is still ramping up toward top speed at 80ms, not already there -- real acceleration, not a teleport');
-  ok(midAccel.posX > 0, 'position has advanced while accelerating');
+  ok(midAccel.posX > beforeMove.posX, 'position has advanced right of the spawn point while accelerating');
 
   await page.waitForTimeout(300); // comfortably past the ~157ms ramp time
   let atSpeed = await page.evaluate(() => window.Rig._test.state());
@@ -391,7 +392,7 @@ function ok(cond, label) {
   let atWall = await page.evaluate(() => window.Rig._test.state());
   ok(atWall.posX === -170, 'sustained movement clamps at MOVE_MIN instead of running off unbounded');
   ok(atWall.velX === 0, 'hitting the arena wall zeroes velocity rather than pinning it against the clamp with residual speed every frame');
-  ok(Math.abs(atWall.joints.pelvis.x - (beforeMove.joints.pelvis.x - 170)) < 0.01,
+  ok(Math.abs((atWall.joints.pelvis.x - beforeMove.joints.pelvis.x) - (atWall.posX - beforeMove.posX)) < 0.01,
     'the clamped position is reflected in solveRig()\'s actual output, not just the internal posX value');
 
   console.log('15. Attack throws the kick matching current facing, not an explicit side');
