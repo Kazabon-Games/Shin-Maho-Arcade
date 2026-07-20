@@ -114,3 +114,23 @@ hit detection in both attack directions, knockback magnitude, guard's
 chip-mitigation scale and guard-doesn't-break behavior, one-hit-per-swing,
 and a full ring-out scoring/reset cycle. See `RYKNDU_MOVESET.md`'s Combat
 resolution section for the mechanics themselves.
+
+## Mobile verification status (v0.1.22 — emulation, not real hardware)
+
+`tests/rig-mobile-emulation.js` drives the real page through Playwright's
+actual iPhone 13, Pixel 7, and iPhone SE device profiles (real viewport
+dimensions and device pixel ratios, not an arbitrary small window) and
+found a real bug on its first run: both rigs' duel-spawn separation and
+arm-spans were sized assuming 700px+ of width, so player 2 rendered
+mostly or entirely off-screen on an actual phone-width viewport. Fixed
+with a `renderScale` camera factor that shrinks only the on-screen pixel
+size below that width — world-space physics (`posX`, `velX`,
+`ARENA_BOUND`, knockback speed) are untouched, so gameplay feel is
+identical on every device. Layout is now clean at 390px (iPhone 13) and
+412px (Pixel 7); at 320px (iPhone SE, the narrowest/oldest real screen
+tested) player 2 still visually overlaps the JUMP button a little —
+improved from fully clipped off-screen, not perfectly resolved.
+
+This is still emulation. Nobody on this project has run the build on
+real phone hardware yet — that remains a real, open gap, not something
+this pass claims to close.

@@ -11,6 +11,41 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.22 — 2026-07-20 — Real mobile-device-EMULATION pass (Playwright's
+                          actual iPhone 13/Pixel 7/iPhone SE device
+                          profiles, not a made-up small window) --
+                          explicitly still emulation, not a substitute for
+                          real hardware (see tests/rig-mobile-emulation.js's
+                          own header comment). Caught a real bug on the
+                          first run: both rigs' duel-spawn separation and
+                          arm-spans were authored assuming 700px+ of
+                          width, so on an actual narrow phone viewport
+                          (as narrow as 320px) player 2 rendered mostly or
+                          entirely off-screen, clipped past the right
+                          edge. Fixed with a renderScale camera factor
+                          (resize()/solveRig()/renderRig()) that shrinks
+                          solveRig()'s PIXEL output on narrow viewports
+                          only -- world-space posX/velX/ARENA_BOUND and
+                          every physics constant stay untouched, so
+                          movement/knockback/ring-out distances and feel
+                          are identical on every device; only how many
+                          screen pixels one world unit maps to changes.
+                          checkPvpHit()'s hit-radius comparison and
+                          makeEnemy()'s pelvisX both updated to apply the
+                          same scale, so combat range and single-player
+                          enemy contact points stay correct (not just
+                          rendering) at any viewport width -- the second
+                          would have silently drifted the exact
+                          "duplicated position math" way this file's own
+                          history already warns about. Layout is now
+                          clean on iPhone 13 (390px) and Pixel 7 (412px);
+                          iPhone SE (320px, the oldest/narrowest real
+                          screen tested) still has minor visual overlap
+                          between player 2 and the JUMP button -- improved
+                          from fully off-screen, not perfectly resolved,
+                          and named as a known remaining gap rather than
+                          overstated.
+
   v0.1.21 — 2026-07-20 — Rig-vs-rig combat resolution: the game's actual
                           core mechanic, previously entirely absent (both
                           rigs could attack, guard, and now move/jump, but
@@ -851,7 +886,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.21</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.22</div>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -871,9 +906,28 @@
   if (new URLSearchParams(location.search).has('debug')) debugEl.style.display = 'block';
 
   let bgGradient = null;
+  // Render-only camera scale (v0.1.22 mobile-emulation fix) -- a real
+  // Playwright device-emulation pass (tests/rig-mobile-emulation.js)
+  // caught both rigs' arm-spans and their ~160px duel separation
+  // reaching past the edges of narrow phone viewports (as narrow as
+  // 320px), overlapping the touch controls docked in the screen corners.
+  // Both rigs rendered fine on every desktop-width test in this file's
+  // history because 700px+ of width was always assumed, implicitly.
+  // renderScale shrinks solveRig()'s PIXEL output only -- world-space
+  // posX/velX/ARENA_BOUND and every physics constant stay in the same
+  // units on every device, so movement/knockback/ring-out distances and
+  // feel are identical regardless of screen size; only how many actual
+  // screen pixels one world unit maps to changes. 700 is the narrowest
+  // width the original (pre-mobile-pass) layout was ever screenshot-
+  // verified at without complaint -- below that, scale down linearly;
+  // at or above it, this is a no-op (scale stays 1, matching every
+  // existing desktop-width test and screenshot in this file's history).
+  let renderScale = 1;
+  const RENDER_SCALE_REFERENCE_WIDTH = 700;
   function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    renderScale = Math.min(1, canvas.width / RENDER_SCALE_REFERENCE_WIDTH);
     // Subtle vertical gradient instead of a flat fill (v0.1.8): the large
     // empty canvas above/below the rig (roughly half the viewport at a
     // typical phone aspect ratio) read as literally nothing against a flat
@@ -1451,29 +1505,38 @@
     // 0 reproduces the original single-rig behavior exactly, so every
     // existing caller/test that never passes a second argument is
     // unaffected.
+    //
+    // Every length/offset below is multiplied by renderScale -- a pure
+    // screen-pixel camera scale (see resize()'s own comment), never
+    // applied to standOffset's own WORLD value (that stays real
+    // world-space px, matching posX/velX/ARENA_BOUND exactly, so movement
+    // speed and physics feel are identical on every device). Only how
+    // many actual screen pixels one world unit maps to shrinks on a
+    // narrow viewport.
+    const s = renderScale;
     const groundY = canvas.height * 0.78;
-    const cx = canvas.width / 2 + (standOffset || 0) + pose.pelvisDX;
-    const pelvis = { x: cx, y: groundY - LEN.thigh - LEN.shin + pose.pelvisDY };
+    const cx = canvas.width / 2 + (standOffset || 0) * s + pose.pelvisDX * s;
+    const pelvis = { x: cx, y: groundY - (LEN.thigh + LEN.shin) * s + pose.pelvisDY * s };
 
-    const hipL = { x: pelvis.x - LEN.hipW * 0.4, y: pelvis.y };
-    const kneeL = segEnd(hipL.x, hipL.y, pose.hipL, LEN.thigh);
-    const footL = segEnd(kneeL.x, kneeL.y, pose.kneeL, LEN.shin);
+    const hipL = { x: pelvis.x - LEN.hipW * 0.4 * s, y: pelvis.y };
+    const kneeL = segEnd(hipL.x, hipL.y, pose.hipL, LEN.thigh * s);
+    const footL = segEnd(kneeL.x, kneeL.y, pose.kneeL, LEN.shin * s);
 
-    const hipR = { x: pelvis.x + LEN.hipW * 0.4, y: pelvis.y };
-    const kneeR = segEnd(hipR.x, hipR.y, pose.hipR, LEN.thigh);
-    const footR = segEnd(kneeR.x, kneeR.y, pose.kneeR, LEN.shin);
+    const hipR = { x: pelvis.x + LEN.hipW * 0.4 * s, y: pelvis.y };
+    const kneeR = segEnd(hipR.x, hipR.y, pose.hipR, LEN.thigh * s);
+    const footR = segEnd(kneeR.x, kneeR.y, pose.kneeR, LEN.shin * s);
 
-    const chest = segEnd(pelvis.x, pelvis.y, pose.spineA, LEN.spine);
+    const chest = segEnd(pelvis.x, pelvis.y, pose.spineA, LEN.spine * s);
 
-    const shoulderL = { x: chest.x - LEN.shoulderW * 0.5, y: chest.y + 6 };
-    const elbowL = segEnd(shoulderL.x, shoulderL.y, pose.shoulderL, LEN.upperArm);
-    const handL = segEnd(elbowL.x, elbowL.y, pose.elbowL, LEN.forearm);
+    const shoulderL = { x: chest.x - LEN.shoulderW * 0.5 * s, y: chest.y + 6 * s };
+    const elbowL = segEnd(shoulderL.x, shoulderL.y, pose.shoulderL, LEN.upperArm * s);
+    const handL = segEnd(elbowL.x, elbowL.y, pose.elbowL, LEN.forearm * s);
 
-    const shoulderR = { x: chest.x + LEN.shoulderW * 0.5, y: chest.y + 6 };
-    const elbowR = segEnd(shoulderR.x, shoulderR.y, pose.shoulderR, LEN.upperArm);
-    const handR = segEnd(elbowR.x, elbowR.y, pose.elbowR, LEN.forearm);
+    const shoulderR = { x: chest.x + LEN.shoulderW * 0.5 * s, y: chest.y + 6 * s };
+    const elbowR = segEnd(shoulderR.x, shoulderR.y, pose.shoulderR, LEN.upperArm * s);
+    const handR = segEnd(elbowR.x, elbowR.y, pose.elbowR, LEN.forearm * s);
 
-    const head = { x: chest.x, y: chest.y - LEN.neck - LEN.headR };
+    const head = { x: chest.x, y: chest.y - (LEN.neck + LEN.headR) * s };
 
     return {
       pelvis, hipL, kneeL, footL, hipR, kneeR, footR,
@@ -1689,42 +1752,49 @@
   function renderRig(j, color) {
     const c = color || '#e8e8f0';
     const outline = shadeHex(c, -38, -10); // a darker shade of the same hue, not a universal black -- keeps P1/P2 distinguishable by outline too, not just fill
+    // Every thickness/radius below is scaled by the same renderScale
+    // solveRig() already applies to joint positions (see resize()'s own
+    // comment) -- without this, a narrow-viewport rig would keep its full
+    // desktop limb thickness/joint-gem size around a shrunk skeleton and
+    // read as stubby/disproportionate instead of a consistently smaller
+    // version of the same character.
+    const s = renderScale;
     // legs first (drawn behind torso) -- each leg is now ONE continuous
     // chain (hip->knee->foot) instead of two separate tapered shapes
     // meeting at the knee, so there's no internal seam for the joint gem
     // to have to hide. Chunkier taper than a classic stick figure, matching
     // the reference set's thick-limb proportions.
-    drawLimbChain([j.hipL, j.kneeL, j.footL], [16, 11, 8], c, outline);
-    drawLimbChain([j.hipR, j.kneeR, j.footR], [16, 11, 8], c, outline);
-    drawTerminal(j.footL, 7, c, outline);
-    drawTerminal(j.footR, 7, c, outline);
-    drawJointGem(j.hipL, 4.5, c); drawJointGem(j.kneeL, 4, c);
-    drawJointGem(j.hipR, 4.5, c); drawJointGem(j.kneeR, 4, c);
+    drawLimbChain([j.hipL, j.kneeL, j.footL], [16 * s, 11 * s, 8 * s], c, outline);
+    drawLimbChain([j.hipR, j.kneeR, j.footR], [16 * s, 11 * s, 8 * s], c, outline);
+    drawTerminal(j.footL, 7 * s, c, outline);
+    drawTerminal(j.footR, 7 * s, c, outline);
+    drawJointGem(j.hipL, 4.5 * s, c); drawJointGem(j.kneeL, 4 * s, c);
+    drawJointGem(j.hipR, 4.5 * s, c); drawJointGem(j.kneeR, 4 * s, c);
 
     // spine -- solid wedge widening toward the chest/shoulders (already a
     // single 2-point segment, no internal joint to smooth)
-    drawLimb(j.pelvis, j.chest, 13, 17, c, outline);
+    drawLimb(j.pelvis, j.chest, 13 * s, 17 * s, c, outline);
 
     // arms -- same one-continuous-chain treatment as the legs
     // (shoulder->elbow->hand)
-    drawLimbChain([j.shoulderL, j.elbowL, j.handL], [10, 8, 7], c, outline);
-    drawLimbChain([j.shoulderR, j.elbowR, j.handR], [10, 8, 7], c, outline);
-    drawTerminal(j.handL, 6.5, c, outline);
-    drawTerminal(j.handR, 6.5, c, outline);
-    drawJointGem(j.shoulderL, 4.5, c); drawJointGem(j.elbowL, 4, c);
-    drawJointGem(j.shoulderR, 4.5, c); drawJointGem(j.elbowR, 4, c);
+    drawLimbChain([j.shoulderL, j.elbowL, j.handL], [10 * s, 8 * s, 7 * s], c, outline);
+    drawLimbChain([j.shoulderR, j.elbowR, j.handR], [10 * s, 8 * s, 7 * s], c, outline);
+    drawTerminal(j.handL, 6.5 * s, c, outline);
+    drawTerminal(j.handR, 6.5 * s, c, outline);
+    drawJointGem(j.shoulderL, 4.5 * s, c); drawJointGem(j.elbowL, 4 * s, c);
+    drawJointGem(j.shoulderR, 4.5 * s, c); drawJointGem(j.elbowR, 4 * s, c);
 
     // chest core -- a slightly larger signature gem, the one Rykndu-
     // specific mark rather than a repeated joint detail (the studio's
     // "Grimoire vocabulary" already treats a core/rite/rune as the
     // recognizable emblem of a character or system elsewhere -- this is
     // that idea applied to the rig itself)
-    drawJointGem(j.chest, 6.5, c);
+    drawJointGem(j.chest, 6.5 * s, c);
 
     // head -- flat fill matching the flat-silhouette style, same outline
     // treatment as the limbs so it reads as one consistent character
-    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR + 2.4, 0, Math.PI * 2); ctx.fillStyle = outline; ctx.fill();
-    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, (LEN.headR + 2.4) * s, 0, Math.PI * 2); ctx.fillStyle = outline; ctx.fill();
+    ctx.beginPath(); ctx.arc(j.head.x, j.head.y, LEN.headR * s, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
   }
 
   // ---- Audio (SFX only — no music yet, nothing to score). One sfxGain ->
@@ -1982,7 +2052,7 @@
   }
 
   function makeEnemy(spawnAt, side) {
-    const pelvisX = canvas.width / 2 + p1.posX; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here
+    const pelvisX = canvas.width / 2 + p1.posX * renderScale; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here. *renderScale matches solveRig()'s own cx formula exactly -- without it, this drifts from the player's actual rendered/hit-tested position the instant renderScale != 1 (any viewport narrower than RENDER_SCALE_REFERENCE_WIDTH), sending enemies toward a stale contact point
     const spawnX = side === 'R' ? canvas.width + 50 : -50;
     const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
     return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true,
@@ -2084,7 +2154,16 @@
     const foot = attacker.attackSide === 'R' ? getSockets(attackerJoints).foot_r : getSockets(attackerJoints).foot_l;
     const hurtbox = getSockets(defenderJoints).stance; // ankle height, matching where a strike pose actually solves to -- see getSockets()'s own comment
     const dx = foot.x - hurtbox.x, dy = foot.y - hurtbox.y;
-    if (Math.sqrt(dx * dx + dy * dy) > PVP_HIT_RADIUS) return null;
+    // *renderScale (not a bare PVP_HIT_RADIUS pixel comparison): foot/
+    // hurtbox are both solveRig() output, scaled by renderScale on a
+    // narrow viewport (see resize()'s own comment) -- a fixed pixel
+    // threshold would make combat range effectively bigger in world-space
+    // terms on a small screen than on a desktop-width one. Scaling the
+    // threshold the same way keeps the real world-space hit range
+    // identical regardless of device, matching every other physics
+    // constant (ARENA_BOUND, KNOCKBACK_SPEED, MOVE_MAX_SPEED) already
+    // being pure world-units untouched by renderScale.
+    if (Math.sqrt(dx * dx + dy * dy) > PVP_HIT_RADIUS * renderScale) return null;
     return hurtbox;
   }
 
@@ -2209,7 +2288,7 @@
     // One shadow centered under the pelvis, not per-foot -- the feet move
     // too fast during a kick for a per-foot shadow to read as anything but
     // noise; a single anchored shadow reads as "planted on the ground."
-    drawShadow(joints.pelvis.x, 34, 8);
+    drawShadow(joints.pelvis.x, 34 * renderScale, 8 * renderScale);
     for (const e of enemies) {
       if (e.dying) continue;
       const growT = Math.max(0, Math.min(1, (e.t - ENEMY_GROW_START) / (1 - ENEMY_GROW_START)));
@@ -2668,7 +2747,7 @@
     }
     updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
     drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
-    if (SHOW_P2) drawShadow(joints2.pelvis.x, 34, 8); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
+    if (SHOW_P2) drawShadow(joints2.pelvis.x, 34 * renderScale, 8 * renderScale); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
     drawEnemies();
     drawParticles();
     renderRig(joints, P1_COLOR);
