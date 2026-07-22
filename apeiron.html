@@ -9,6 +9,23 @@
   APEIRON — CHANGE LOG
   (one line per change, most recent on top)
 
+  v0.1.5 — 2026-07-22 — Phase 1.5: gait solver built and verified moving,
+                         per APEIRON_FLAGSHIP_DESIGN.md §8's guardrail --
+                         movement is a velocity-driven walk cycle (leg
+                         swing, opposite arm counter-swing, idle breathing
+                         sway), never a static pose translated across the
+                         screen, checked here by literally taking a
+                         screenshot of the rig walking, not inferred from
+                         code. Physics module implements a damped-angular-
+                         spring solve per constrained joint (see its own
+                         header comment for how this differs from the pure
+                         Verlet/PBD APEIRON_RIG_SCHEMA.md describes, and
+                         why). No combat, no hit reactions, no audio/VFX
+                         yet -- two rigs stand in an arena and one of them
+                         (keyboard/touch-controlled) walks. Phase 2 (the
+                         first verb-class move and hit resolution) is the
+                         next real commit, not this one.
+
   v0.1.1 — 2026-07-22 — Phase 1: lock the skeleton/mass/constraint schema
                          in the Rig module (JOINT enum, dynamic-vs-fixed-
                          offset split, Float32Array SoA state, default
@@ -72,33 +89,51 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   pointer-events:none;
 }
 
-.scaffold-notice{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:100%;gap:14px;text-align:center;padding:24px;
-}
-.scaffold-notice h1{font-family:var(--display);font-size:2.4rem;color:var(--ink);}
-.scaffold-notice p{color:var(--ink-mid);max-width:36em;line-height:1.5;}
-.scaffold-notice code{font-family:var(--mono);color:var(--neon2);}
 .btn{
   display:inline-block;padding:10px 20px;border-radius:8px;
   border:1px solid var(--border);color:var(--ink);text-decoration:none;
   font-family:var(--body-font);font-weight:600;background:var(--panel2);
 }
 .btn:hover{background:var(--panel);}
+
+#gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;}
+
+.controls-hint{
+  position:fixed;top:8px;left:50%;transform:translateX(-50%);
+  font-size:11px;color:var(--ink-soft);opacity:0.65;font-family:var(--mono);
+  z-index:40;pointer-events:none;text-align:center;white-space:nowrap;
+}
+
+.arcade-link{
+  position:fixed;top:6px;left:10px;font-size:11px;font-family:var(--mono);
+  color:var(--ink-soft);opacity:0.65;text-decoration:none;z-index:40;
+}
+.arcade-link:hover{opacity:1;color:var(--neon2);}
+
+.touch-controls{
+  position:fixed;bottom:16px;left:0;right:0;display:flex;
+  justify-content:space-between;padding:0 16px;z-index:40;pointer-events:none;
+}
+.touch-btn{
+  pointer-events:auto;width:64px;height:64px;border-radius:50%;
+  border:1px solid var(--border);background:rgba(35,20,66,0.55);
+  color:var(--ink);font-size:22px;-webkit-tap-highlight-color:transparent;
+}
+.touch-btn:active{background:rgba(48,28,88,0.85);}
 </style>
 </head>
 <body>
 
-<div class="version-marker" id="versionMarker">Apeiron — v0.1.1</div>
+<div class="version-marker" id="versionMarker">Apeiron — v0.1.5</div>
+<a class="arcade-link" href="index.html">✦ Arcade</a>
+<div class="controls-hint">Move: ←/→ or A/D</div>
 
-<div class="scaffold-notice">
-  <h1>Apeiron</h1>
-  <p>Phase 1 — the rig's skeleton, mass, and constraint schema is now locked
-     in code (see <code>Rig.createState()</code> below), but there is still
-     no solver, no IK, and no rendering. See
-     <code>APEIRON_RIG_SCHEMA.md</code> for the full rationale behind every
-     number in that data.</p>
-  <a class="btn" href="index.html">✦&nbsp; Back to the Arcade</a>
+<canvas id="gameCanvas"></canvas>
+
+<div class="touch-controls">
+  <button class="touch-btn" id="btnLeft" aria-label="Move left">◀</button>
+  <div></div>
+  <button class="touch-btn" id="btnRight" aria-label="Move right">▶</button>
 </div>
 
 <script>
@@ -113,29 +148,31 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   line-range column accurate as each module grows past its stub; a stale
   TOC on a 30-40k line file is worse than no TOC.
 
-    Rig        Skeleton/joint mass+constraint schema, IK, impulse
-               response. Structure-of-Arrays over Float32Array, not an
-               array of joint objects — cache-coherent by design.       (Phase 1)
-    Physics    Spatial-hash broad-phase, constraint resolution.         (Phase 1-2)
-    Combat     First Principles verb-classes, hit resolution.           (Phase 2)
-    MatchState Round flow, win/loss, the shared intensity signal that
-               Audio/VFX both read from — one source, not three
-               independently-tuned approximations of it.                (Phase 2)
+    Rig        Skeleton/joint mass+constraint schema. Structure-of-Arrays
+               over Float32Array, not an array of joint objects.        (Phase 1, done)
+    Physics    Gait + damped-angular-spring limb solver, translation.
+               See its own header comment for the disclosed gap between
+               this and the schema's planned Verlet/PBD solve. Impulse
+               response exists here already (Combat needs it) even
+               though nothing calls it yet in this phase.               (Phase 1.5, done)
+    Combat     First Principles verb-classes, hit resolution.           (Phase 2, not started)
+    MatchState Round flow, win/loss.                                    (Phase 2, not started)
     Audio      Adaptive score, mixing, synthesized-IR reverb.           (Phase 3)
     VFX        WebGL2 shader layer, composited over the Canvas2D
                rig/arena layer via stacked canvases.                    (Phase 3)
+    Renderer   Canvas2D background/arena and tapered gradient-shaded
+               rig draw. Not in the original module map -- added
+               because base rendering needs its own boundary distinct
+               from Physics (simulation).                               (Phase 1.5, done -- HUD/win-screen come with Combat in Phase 2)
+    Input      Keyboard/touch, unified into one input state. Attack
+               and Gamepad API are not wired yet.                       (Phase 2/4, partial)
     Threading  Worker/OffscreenCanvas message protocol; owns the
-               transferable-ArrayBuffer contract, not structured-clone
-               of plain objects. transferControlToOffscreen() is
-               one-way, so the ownership boundary is decided here in
-               Phase 1, even though the worker itself stays a no-op
-               passthrough until Phase 3.5.                             (Phase 1 boundary / 3.5 wired)
-    Input      Keyboard/touch/Gamepad API, unified into one input
-               state (Gamepad support already proven elsewhere in the
-               studio — reuse that pattern, don't reinvent it).         (Phase 4)
+               transferable-ArrayBuffer contract. transferControlTo-
+               Offscreen() is one-way, so this boundary must be decided
+               before Physics grows further, not assumed retrofittable. (Phase 3.5, not started)
     Ledger     Cross-game Essence ledger (IndexedDB) read/write and
                schema validation — fails loudly on a missing or
-               malformed record, never silently defaults to zero.       (Phase 4)
+               malformed record, never silently defaults to zero.       (Phase 4, not started)
   ------------------------------------------------------------------------
 */
 
@@ -259,9 +296,213 @@ const Rig = (() => {
   return { JOINT_COUNT, JOINT, DYNAMIC_JOINTS, FIXED_OFFSET_JOINTS, createState };
 })();
 
-/** Broad-phase spatial-hash collision, constraint resolution. */
+/**
+ * Gait + limb solver, translation, impulse response.
+ *
+ * Disclosed gap from APEIRON_RIG_SCHEMA.md: that doc specs a uniform
+ * Verlet/PBD solve for every dynamic joint. What's actually built here is
+ * a hybrid: PELVIS is a real translating point (the only joint whose
+ * position is a primary state variable), while every constrained limb
+ * joint is represented as an ANGLE (relative to its parent bone's
+ * direction, exactly per the schema's own convention) driven by a damped
+ * angular spring -- angle/angular-velocity integrated with semi-implicit
+ * Euler, clamped to the schema's angleMin/angleMax, pulled toward a
+ * per-frame target by ANGULAR_STIFFNESS/DAMPING. This is a legitimate,
+ * simpler reading of "constraint-solved, not pose-blended" (a joint with
+ * rotational inertia under a recovery torque IS a physical model, not a
+ * lookup table) chosen because it's stable at real mobile frame times
+ * and fast to get right; the uniform Verlet/PBD version is a real future
+ * upgrade, not a correctness bug in this one.
+ */
 const Physics = (() => {
-  return {};
+  const { JOINT } = Rig;
+  const DOWN = Math.PI / 2;
+  const UP = -Math.PI / 2;
+
+  const ANGULAR_STIFFNESS = 260;  // rad/s^2 per rad of target error
+  const ANGULAR_DAMPING = 14;     // 1/s
+  const MOVE_ACCEL = 2600;        // px/s^2
+  const MOVE_MAX_SPEED = 210;     // px/s
+  const MOVE_FRICTION = 1400;     // px/s^2, applied when no input
+  const DISPLAY_SCALE = 1.3;      // uniform scale on every schema length; shared by render + hit-test so they can't desync
+
+  // Every constrained joint's angle is measured against this reference.
+  // Root-attached bones (spine/thigh/upper-arm) have no parent bone of
+  // their own, so they reference a fixed world direction; chained bones
+  // (shin/forearm) compose onto their parent's already-resolved angle --
+  // this is what makes the limit "relative to parent bone direction" as
+  // promised in the schema doc, for joints two bones deep too.
+  const REF = Object.freeze({
+    [JOINT.CHEST]: { base: UP, from: null },
+    [JOINT.KNEE_L]: { base: DOWN, from: null },
+    [JOINT.KNEE_R]: { base: DOWN, from: null },
+    [JOINT.ELBOW_L]: { base: DOWN, from: null },
+    [JOINT.ELBOW_R]: { base: DOWN, from: null },
+    [JOINT.FOOT_L]: { base: 0, from: JOINT.KNEE_L },
+    [JOINT.FOOT_R]: { base: 0, from: JOINT.KNEE_R },
+    [JOINT.HAND_L]: { base: 0, from: JOINT.ELBOW_L },
+    [JOINT.HAND_R]: { base: 0, from: JOINT.ELBOW_R },
+  });
+
+  const CONSTRAINED_JOINTS = Object.freeze([
+    JOINT.CHEST, JOINT.KNEE_L, JOINT.FOOT_L, JOINT.KNEE_R, JOINT.FOOT_R,
+    JOINT.ELBOW_L, JOINT.HAND_L, JOINT.ELBOW_R, JOINT.HAND_R,
+  ]);
+
+  const dirX = a => Math.cos(a);
+  const dirY = a => Math.sin(a);
+
+  /**
+   * One fighter's live simulation state. Phase 1 deliberately stopped at
+   * the schema; everything that changes frame to frame lives here.
+   */
+  function createBody(groundY, x, facing) {
+    const rig = Rig.createState();
+    const angle = new Float32Array(Rig.JOINT_COUNT);
+    const angVel = new Float32Array(Rig.JOINT_COUNT);
+    for (let i = 0; i < Rig.JOINT_COUNT; i++) angle[i] = rig.restAngle[i];
+    // PELVIS is the hip line, not the feet -- stand height is thigh+shin
+    // below it, so the pelvis itself sits that far above groundY, not on it.
+    const standHeight = (rig.boneLength[JOINT.KNEE_L] + rig.boneLength[JOINT.FOOT_L]) * DISPLAY_SCALE;
+    return {
+      rig, angle, angVel,
+      x, y: groundY - standHeight, vx: 0,
+      facing, groundY,
+      phase: 0,       // gait cycle phase accumulator
+      hitstun: 0,
+      poseOverride: null, // Map<jointIndex, targetAngle>, set by Combat during an attack
+    };
+  }
+
+  function worldAngle(body, j) {
+    const ref = REF[j];
+    if (!ref) return 0;
+    const base = ref.from === null ? ref.base : worldAngle(body, ref.from);
+    return base + body.angle[j];
+  }
+
+  /**
+   * Forward-kinematics: resolves rig.posX/posY from the current angle[]
+   * state. This is the ONLY place world positions are computed, and both
+   * rendering and hit-detection read from it -- the exact discipline
+   * RYKNDU_RIG_SCHEMA.md calls out (a draw-only mirror desyncing from the
+   * real hit-checked joints) is what this single-resolve avoids.
+   */
+  function resolvePose(body) {
+    const rig = body.rig;
+    const s = DISPLAY_SCALE;
+    const set = (j, x, y) => { rig.posX[j] = x; rig.posY[j] = y; };
+
+    set(JOINT.PELVIS, body.x, body.y);
+
+    const chestA = worldAngle(body, JOINT.CHEST);
+    set(JOINT.CHEST,
+      body.x + dirX(chestA) * rig.boneLength[JOINT.CHEST] * s,
+      body.y + dirY(chestA) * rig.boneLength[JOINT.CHEST] * s);
+
+    set(JOINT.HEAD,
+      rig.posX[JOINT.CHEST] + dirX(chestA) * rig.boneLength[JOINT.HEAD] * s,
+      rig.posY[JOINT.CHEST] + dirY(chestA) * rig.boneLength[JOINT.HEAD] * s);
+
+    set(JOINT.HIP_L, body.x - rig.boneLength[JOINT.HIP_L] * s, body.y);
+    set(JOINT.HIP_R, body.x + rig.boneLength[JOINT.HIP_R] * s, body.y);
+    set(JOINT.SHOULDER_L, rig.posX[JOINT.CHEST] - rig.boneLength[JOINT.SHOULDER_L] * s, rig.posY[JOINT.CHEST] + 4 * s);
+    set(JOINT.SHOULDER_R, rig.posX[JOINT.CHEST] + rig.boneLength[JOINT.SHOULDER_R] * s, rig.posY[JOINT.CHEST] + 4 * s);
+
+    const chains = [
+      [JOINT.HIP_L, JOINT.KNEE_L, JOINT.FOOT_L],
+      [JOINT.HIP_R, JOINT.KNEE_R, JOINT.FOOT_R],
+      [JOINT.SHOULDER_L, JOINT.ELBOW_L, JOINT.HAND_L],
+      [JOINT.SHOULDER_R, JOINT.ELBOW_R, JOINT.HAND_R],
+    ];
+    for (const [root, mid, end] of chains) {
+      const midA = worldAngle(body, mid);
+      set(mid, rig.posX[root] + dirX(midA) * rig.boneLength[mid] * s, rig.posY[root] + dirY(midA) * rig.boneLength[mid] * s);
+      const endA = worldAngle(body, end);
+      set(end, rig.posX[mid] + dirX(endA) * rig.boneLength[end] * s, rig.posY[mid] + dirY(endA) * rig.boneLength[end] * s);
+    }
+
+    // Canonical pose is authored facing right (R = front limbs, per
+    // RYKNDU_RIG_SCHEMA.md's own convention, reused here); mirror the
+    // whole resolved joint set around pelvis.x when facing left, exactly
+    // as Rykndu's v0.1.28 redesign does -- proven, and it's a single
+    // post-process pass rather than a second copy of every pose.
+    if (body.facing < 0) {
+      for (let i = 0; i < Rig.JOINT_COUNT; i++) rig.posX[i] = 2 * body.x - rig.posX[i];
+    }
+  }
+
+  /** Idle sway blended with a velocity-driven walk cycle -- never a static pose translated across the screen. */
+  function computeGaitTargets(body) {
+    const rig = body.rig;
+    const idle = i => rig.restAngle[i];
+    const sway = Math.sin(performance.now() * 0.0015) * 0.02;
+    const speed = Math.abs(body.vx);
+    const moving = speed > 15;
+    if (moving) body.phase += (2.2 + speed * 0.01) / 60;
+
+    const t = { [JOINT.CHEST]: idle(JOINT.CHEST) + sway };
+    if (moving) {
+      const swingL = Math.sin(body.phase);
+      const swingR = Math.sin(body.phase + Math.PI);
+      t[JOINT.KNEE_L] = idle(JOINT.KNEE_L) + swingL * 0.55;
+      t[JOINT.KNEE_R] = idle(JOINT.KNEE_R) + swingR * 0.55;
+      t[JOINT.FOOT_L] = idle(JOINT.FOOT_L) + Math.max(0, Math.sin(body.phase + 0.6)) * 0.9;
+      t[JOINT.FOOT_R] = idle(JOINT.FOOT_R) + Math.max(0, Math.sin(body.phase + Math.PI + 0.6)) * 0.9;
+      t[JOINT.ELBOW_L] = idle(JOINT.ELBOW_L) - swingR * 0.3;
+      t[JOINT.ELBOW_R] = idle(JOINT.ELBOW_R) - swingL * 0.3;
+    } else {
+      t[JOINT.KNEE_L] = idle(JOINT.KNEE_L);
+      t[JOINT.KNEE_R] = idle(JOINT.KNEE_R);
+      t[JOINT.FOOT_L] = idle(JOINT.FOOT_L);
+      t[JOINT.FOOT_R] = idle(JOINT.FOOT_R);
+      t[JOINT.ELBOW_L] = idle(JOINT.ELBOW_L) + sway * 0.5;
+      t[JOINT.ELBOW_R] = idle(JOINT.ELBOW_R) - sway * 0.5;
+    }
+    return t;
+  }
+
+  function step(body, dt, moveX, minX, maxX) {
+    const targetVX = moveX * MOVE_MAX_SPEED;
+    if (Math.abs(targetVX) > 1) {
+      body.vx += Math.sign(targetVX - body.vx) * Math.min(Math.abs(targetVX - body.vx), MOVE_ACCEL * dt);
+    } else {
+      const decel = Math.min(Math.abs(body.vx), MOVE_FRICTION * dt);
+      body.vx -= Math.sign(body.vx) * decel;
+    }
+    body.x += body.vx * dt;
+    if (minX !== undefined) body.x = Math.max(minX, Math.min(maxX, body.x));
+
+    const gait = body.hitstun > 0 ? null : computeGaitTargets(body);
+
+    for (const j of CONSTRAINED_JOINTS) {
+      const rig = body.rig;
+      let target;
+      if (body.poseOverride && body.poseOverride.has(j)) target = body.poseOverride.get(j);
+      else if (gait && gait[j] !== undefined) target = gait[j];
+      else target = rig.restAngle[j];
+
+      const err = target - body.angle[j];
+      const accel = err * ANGULAR_STIFFNESS - body.angVel[j] * ANGULAR_DAMPING;
+      body.angVel[j] += accel * dt;
+      body.angle[j] += body.angVel[j] * dt;
+
+      const lo = rig.angleMin[j], hi = rig.angleMax[j];
+      if (body.angle[j] < lo) { body.angle[j] = lo; if (body.angVel[j] < 0) body.angVel[j] = 0; }
+      if (body.angle[j] > hi) { body.angle[j] = hi; if (body.angVel[j] > 0) body.angVel[j] = 0; }
+    }
+
+    if (body.hitstun > 0) body.hitstun = Math.max(0, body.hitstun - dt);
+    resolvePose(body);
+  }
+
+  /** A hit converted into an angular kick at one joint -- "computed, not selected", per the design doc. Not called by anything yet in this phase; Combat (Phase 2) is the first caller. */
+  function applyImpulse(body, jointIndex, magnitude) {
+    const invMass = body.rig.invMass[jointIndex] || 1;
+    body.angVel[jointIndex] += magnitude * invMass * 0.02;
+  }
+
+  return { createBody, step, resolvePose, applyImpulse, DISPLAY_SCALE, MOVE_MAX_SPEED };
 })();
 
 /** First Principles verb-classes (Distinction/Relation/Transformation/Persistence) and hit resolution. */
@@ -284,19 +525,196 @@ const VFX = (() => {
   return {};
 })();
 
+/** Canvas2D background/arena and tapered gradient-shaded rig draw. Not in the original module map -- added because base rendering needs its own boundary distinct from Physics (simulation). HUD/particles/win-screen arrive with Combat in Phase 2. */
+const Renderer = (() => {
+  const J = Rig.JOINT;
+
+  const BACK_LIMBS = Object.freeze([
+    [J.HIP_L, J.KNEE_L, 7, 6], [J.KNEE_L, J.FOOT_L, 6, 4],
+    [J.SHOULDER_L, J.ELBOW_L, 6, 5], [J.ELBOW_L, J.HAND_L, 5, 4],
+  ]);
+  const FRONT_LIMBS = Object.freeze([
+    [J.HIP_R, J.KNEE_R, 8, 6], [J.KNEE_R, J.FOOT_R, 7, 5],
+    [J.SHOULDER_R, J.ELBOW_R, 6.5, 5], [J.ELBOW_R, J.HAND_R, 5.5, 4],
+  ]);
+
+  function drawLimb(ctx, x1, y1, x2, y2, w1, w2, base, highlight) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    ctx.beginPath();
+    ctx.moveTo(x1 + nx * w1, y1 + ny * w1);
+    ctx.lineTo(x2 + nx * w2, y2 + ny * w2);
+    ctx.lineTo(x2 - nx * w2, y2 - ny * w2);
+    ctx.lineTo(x1 - nx * w1, y1 - ny * w1);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(x1 + nx * w1, y1 + ny * w1, x1 - nx * w1, y1 - ny * w1);
+    grad.addColorStop(0, base);
+    grad.addColorStop(0.5, highlight);
+    grad.addColorStop(1, base);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(10,6,32,0.55)';
+    ctx.stroke();
+  }
+
+  function drawJointAccent(ctx, x, y, r, color) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, -r); ctx.lineTo(r * 0.7, 0); ctx.lineTo(0, r); ctx.lineTo(-r * 0.7, 0);
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0, -r * 0.3, 0, 0, 0, r);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.4, color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawRig(ctx, body, colors) {
+    const P = body.rig.posX, Q = body.rig.posY;
+    for (const [a, b, w1, w2] of BACK_LIMBS) drawLimb(ctx, P[a], Q[a], P[b], Q[b], w1, w2, colors.limbBack, colors.limbBackLight);
+    drawLimb(ctx, P[J.PELVIS], Q[J.PELVIS], P[J.CHEST], Q[J.CHEST], 10, 8, colors.torso, colors.torsoLight);
+    drawLimb(ctx, P[J.CHEST], Q[J.CHEST], P[J.HEAD], Q[J.HEAD], 7, 6, colors.torso, colors.torsoLight);
+    ctx.beginPath();
+    ctx.arc(P[J.HEAD], Q[J.HEAD], 13, 0, Math.PI * 2);
+    const hg = ctx.createRadialGradient(P[J.HEAD] - 4, Q[J.HEAD] - 4, 1, P[J.HEAD], Q[J.HEAD], 14);
+    hg.addColorStop(0, colors.torsoLight);
+    hg.addColorStop(1, colors.torso);
+    ctx.fillStyle = hg;
+    ctx.fill();
+    for (const [a, b, w1, w2] of FRONT_LIMBS) drawLimb(ctx, P[a], Q[a], P[b], Q[b], w1, w2, colors.limbFront, colors.limbFrontLight);
+    drawJointAccent(ctx, P[J.CHEST], Q[J.CHEST], 5, colors.accent);
+    drawJointAccent(ctx, P[J.KNEE_R], Q[J.KNEE_R], 5, colors.accent);
+    drawJointAccent(ctx, P[J.ELBOW_R], Q[J.ELBOW_R], 4, colors.accent);
+  }
+
+  function drawBackground(ctx, w, h, groundY) {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#1c0f42');
+    g.addColorStop(1, '#0a0620');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    const rg = ctx.createRadialGradient(w / 2, groundY, 10, w / 2, groundY, w * 0.6);
+    rg.addColorStop(0, 'rgba(185,138,255,0.10)');
+    rg.addColorStop(1, 'rgba(185,138,255,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(255,215,107,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    ctx.lineTo(w, groundY);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(10,6,32,0.55)';
+    ctx.fillRect(0, groundY, w, h - groundY);
+  }
+
+  return { drawRig, drawBackground };
+})();
+
 /** Worker/OffscreenCanvas message protocol; owns the transferable-buffer contract. */
 const Threading = (() => {
   return {};
 })();
 
-/** Keyboard/touch/Gamepad API input, unified into one input state. */
+/** Keyboard + on-screen touch buttons, unified into one input state. Attack and Gamepad API are not wired yet -- Combat (Phase 2) is the first thing that will need them. */
 const Input = (() => {
-  return {};
+  const keys = new Set();
+  const touch = { left: false, right: false };
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') e.preventDefault();
+    keys.add(e.code);
+  }, { passive: false });
+  window.addEventListener('keyup', e => keys.delete(e.code));
+
+  function bindTouchButton(el, key) {
+    if (!el) return;
+    const on = e => { e.preventDefault(); touch[key] = true; };
+    const off = e => { e.preventDefault(); touch[key] = false; };
+    el.addEventListener('touchstart', on, { passive: false });
+    el.addEventListener('touchend', off, { passive: false });
+    el.addEventListener('touchcancel', off, { passive: false });
+    el.addEventListener('mousedown', on);
+    el.addEventListener('mouseup', off);
+    el.addEventListener('mouseleave', off);
+  }
+
+  function p1() {
+    return {
+      left: keys.has('ArrowLeft') || keys.has('KeyA') || touch.left,
+      right: keys.has('ArrowRight') || keys.has('KeyD') || touch.right,
+    };
+  }
+
+  return { p1, bindTouchButton, keys };
 })();
 
 /** Cross-game Essence ledger (IndexedDB) read/write and schema validation. */
 const Ledger = (() => {
   return {};
+})();
+
+/**
+ * Demo bootstrap: canvas setup, two rigs standing in the arena, movement
+ * for the player-controlled one, and the render loop. No combat -- this
+ * phase's only job is proving the gait solver moves correctly.
+ */
+(function main() {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0, H = 0, groundY = 0;
+
+  function resize() {
+    W = canvas.clientWidth;
+    H = canvas.clientHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    groundY = H * 0.78;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const P1_COLORS = { limbBack: '#5a4a8a', limbBackLight: '#7a68b8', limbFront: '#7a5fd6', limbFrontLight: '#a98fff', torso: '#4ea8ff', torsoLight: '#8fd0ff', accent: '#b98aff' };
+  const P2_COLORS = { limbBack: '#8a4a5a', limbBackLight: '#b8687a', limbFront: '#d65f6f', limbFrontLight: '#ff8fa0', torso: '#ff8f4e', torsoLight: '#ffcf8f', accent: '#ffcb5c' };
+
+  const p1Body = Physics.createBody(groundY, W * 0.32, 1);
+  const p2Body = Physics.createBody(groundY, W * 0.68, -1);
+  Physics.resolvePose(p1Body);
+  Physics.resolvePose(p2Body);
+
+  Input.bindTouchButton(document.getElementById('btnLeft'), 'left');
+  Input.bindTouchButton(document.getElementById('btnRight'), 'right');
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
+    requestAnimationFrame(frame);
+
+    const input = Input.p1();
+    p1Body.facing = p2Body.x >= p1Body.x ? 1 : -1;
+    p2Body.facing = p1Body.x >= p2Body.x ? 1 : -1;
+
+    const moveX1 = (input.left ? -1 : 0) + (input.right ? 1 : 0);
+    Physics.step(p1Body, dt, moveX1, 60, W - 60);
+    Physics.step(p2Body, dt, 0, 60, W - 60); // CPU stands idle in this phase -- Combat (Phase 2) is what gives it something to do
+
+    Renderer.drawBackground(ctx, W, H, groundY);
+    Renderer.drawRig(ctx, p1Body, P1_COLORS);
+    Renderer.drawRig(ctx, p2Body, P2_COLORS);
+  }
+  requestAnimationFrame(frame);
 })();
 </script>
 
