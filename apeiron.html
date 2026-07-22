@@ -9,22 +9,28 @@
   APEIRON — CHANGE LOG
   (one line per change, most recent on top)
 
-  v0.1.5 — 2026-07-22 — Phase 1.5: gait solver built and verified moving,
-                         per APEIRON_FLAGSHIP_DESIGN.md §8's guardrail --
-                         movement is a velocity-driven walk cycle (leg
-                         swing, opposite arm counter-swing, idle breathing
-                         sway), never a static pose translated across the
-                         screen, checked here by literally taking a
-                         screenshot of the rig walking, not inferred from
-                         code. Physics module implements a damped-angular-
-                         spring solve per constrained joint (see its own
-                         header comment for how this differs from the pure
-                         Verlet/PBD APEIRON_RIG_SCHEMA.md describes, and
-                         why). No combat, no hit reactions, no audio/VFX
-                         yet -- two rigs stand in an arena and one of them
-                         (keyboard/touch-controlled) walks. Phase 2 (the
-                         first verb-class move and hit resolution) is the
-                         next real commit, not this one.
+  v0.2.0 — 2026-07-22 — First playable demo: real-time gait (Phase 1.5),
+                         a physics-driven kick with computed hit reactions
+                         (Phase 2, one verb-class move: "Rift Kick",
+                         Distinction), KO win condition, synthesized hit/
+                         whoosh/KO audio, and Canvas2D juice (screen shake,
+                         hit-stop, hit-flash, particle burst). Deliberately
+                         descoped for this milestone, per feasibility
+                         review: WebGL2 shader layer, AudioWorklet,
+                         Worker/OffscreenCanvas threading, the Essence
+                         ledger, and Gamepad support are all still Phase 3+
+                         and not in this build -- Canvas2D + main-thread
+                         physics gets to "playable and feels good" without
+                         their risk. Solve method is a hybrid, not the pure
+                         Verlet/PBD sketched in APEIRON_RIG_SCHEMA.md: the
+                         PELVIS is a real translating point mass; every
+                         constrained limb joint is a damped angular spring
+                         (angle + angular velocity) relative to its parent
+                         bone's direction, clamped to the schema's angle
+                         limits and pulled toward restAngle by the
+                         recovery-torque spring. This is a disclosed
+                         implementation choice, not a schema change -- see
+                         the Physics module's own comment for why.
 
   v0.1.1 — 2026-07-22 — Phase 1: lock the skeleton/mass/constraint schema
                          in the Rig module (JOINT enum, dynamic-vs-fixed-
@@ -124,15 +130,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 </head>
 <body>
 
-<div class="version-marker" id="versionMarker">Apeiron — v0.1.5</div>
+<div class="version-marker" id="versionMarker">Apeiron — v0.2.0</div>
 <a class="arcade-link" href="index.html">✦ Arcade</a>
-<div class="controls-hint">Move: ←/→ or A/D</div>
+<div class="controls-hint">Move: ←/→ or A/D &nbsp;•&nbsp; Kick: Space or K</div>
 
 <canvas id="gameCanvas"></canvas>
 
 <div class="touch-controls">
   <button class="touch-btn" id="btnLeft" aria-label="Move left">◀</button>
-  <div></div>
+  <button class="touch-btn" id="btnKick" aria-label="Kick">⚔</button>
   <button class="touch-btn" id="btnRight" aria-label="Move right">▶</button>
 </div>
 
@@ -150,22 +156,26 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 
     Rig        Skeleton/joint mass+constraint schema. Structure-of-Arrays
                over Float32Array, not an array of joint objects.        (Phase 1, done)
-    Physics    Gait + damped-angular-spring limb solver, translation.
-               See its own header comment for the disclosed gap between
-               this and the schema's planned Verlet/PBD solve. Impulse
-               response exists here already (Combat needs it) even
-               though nothing calls it yet in this phase.               (Phase 1.5, done)
-    Combat     First Principles verb-classes, hit resolution.           (Phase 2, not started)
-    MatchState Round flow, win/loss.                                    (Phase 2, not started)
-    Audio      Adaptive score, mixing, synthesized-IR reverb.           (Phase 3)
-    VFX        WebGL2 shader layer, composited over the Canvas2D
-               rig/arena layer via stacked canvases.                    (Phase 3)
-    Renderer   Canvas2D background/arena and tapered gradient-shaded
-               rig draw. Not in the original module map -- added
-               because base rendering needs its own boundary distinct
-               from Physics (simulation).                               (Phase 1.5, done -- HUD/win-screen come with Combat in Phase 2)
-    Input      Keyboard/touch, unified into one input state. Attack
-               and Gamepad API are not wired yet.                       (Phase 2/4, partial)
+    Physics    Gait + damped-angular-spring limb solver, translation,
+               impulse response. See its own header comment for the
+               disclosed gap between this and the schema's planned
+               Verlet/PBD solve.                                        (Phase 1.5-2, demo scope done)
+    Combat     First Principles verb-classes, hit resolution. One move
+               shipped ("Rift Kick", Distinction); Relation/Transformation/
+               Persistence moves are not yet built.                     (Phase 2, partial)
+    MatchState Round flow, win/loss.                                    (Phase 2, demo scope done)
+    Audio      Synthesized hit/whoosh/KO SFX, main thread. NOT the
+               AudioWorklet adaptive score from the design doc -- the
+               audio-designer review found that not worth building for
+               this game; deferred indefinitely, not just to Phase 3.   (demo scope done, Phase 3 target dropped)
+    VFX        Canvas2D juice: screen shake, hit-stop, hit-flash,
+               particle burst. NOT the WebGL2 shader layer -- still a
+               real Phase 3 target if the visual ceiling needs raising
+               later, just not required to feel good right now.        (demo scope done, Phase 3 deferred)
+    Renderer   Canvas2D background/arena, tapered gradient-shaded rig
+               draw, joint accents, HUD (health bars, win screen).      (demo scope done)
+    Input      Keyboard + on-screen touch buttons, unified into one
+               state. Gamepad API not wired yet.                        (Phase 4, partial)
     Threading  Worker/OffscreenCanvas message protocol; owns the
                transferable-ArrayBuffer contract. transferControlTo-
                Offscreen() is one-way, so this boundary must be decided
@@ -496,7 +506,7 @@ const Physics = (() => {
     resolvePose(body);
   }
 
-  /** A hit converted into an angular kick at one joint -- "computed, not selected", per the design doc. Not called by anything yet in this phase; Combat (Phase 2) is the first caller. */
+  /** A hit converted into an angular kick at one joint -- "computed, not selected", per the design doc. */
   function applyImpulse(body, jointIndex, magnitude) {
     const invMass = body.rig.invMass[jointIndex] || 1;
     body.angVel[jointIndex] += magnitude * invMass * 0.02;
@@ -505,29 +515,263 @@ const Physics = (() => {
   return { createBody, step, resolvePose, applyImpulse, DISPLAY_SCALE, MOVE_MAX_SPEED };
 })();
 
-/** First Principles verb-classes (Distinction/Relation/Transformation/Persistence) and hit resolution. */
+/**
+ * First Principles verb-classes and hit resolution. Demo scope: one move,
+ * "Rift Kick" -- classified Distinction (it separates the opponent from
+ * their footing/guard on contact), per the design doc's own rule that
+ * every move must fit exactly one of the four or be cut. Relation/
+ * Transformation/Persistence moves are real future work, not silently
+ * dropped -- see the module map above.
+ */
 const Combat = (() => {
-  return {};
+  const J = Rig.JOINT;
+
+  const RIFT_KICK = Object.freeze({
+    windup: 0.18, strike: 0.10, recover: 0.28,
+    range: 70 * Physics.DISPLAY_SCALE,
+    damage: 14,
+    knockback: 340,
+    principle: 'Distinction',
+  });
+
+  const HIT_CANDIDATE_JOINTS = Object.freeze([J.CHEST, J.HEAD, J.KNEE_L, J.KNEE_R, J.ELBOW_L, J.ELBOW_R]);
+
+  function createFighter(body) {
+    return { body, hp: 100, attackT: 0, phase: 'idle', hasHit: false, cooldown: 0, name: '' };
+  }
+
+  /** @returns {boolean} whether the kick actually started (false if already mid-attack or on cooldown) */
+  function startKick(f, onWhoosh) {
+    if (f.phase !== 'idle' || f.cooldown > 0) return false;
+    f.phase = 'windup';
+    f.attackT = 0;
+    f.hasHit = false;
+    const rig = f.body.rig;
+    const ov = new Map();
+    ov.set(J.KNEE_R, rig.restAngle[J.KNEE_R] - 0.9);
+    ov.set(J.FOOT_R, rig.angleMax[J.FOOT_R] * 0.85);
+    f.body.poseOverride = ov;
+    onWhoosh && onWhoosh();
+    return true;
+  }
+
+  function update(f, dt) {
+    if (f.cooldown > 0) f.cooldown = Math.max(0, f.cooldown - dt);
+    if (f.phase === 'idle') return;
+    f.attackT += dt;
+    const rig = f.body.rig;
+
+    if (f.phase === 'windup' && f.attackT >= RIFT_KICK.windup) {
+      f.phase = 'strike';
+      f.attackT = 0;
+      f.body.poseOverride.set(J.KNEE_R, rig.restAngle[J.KNEE_R] - 0.25);
+      f.body.poseOverride.set(J.FOOT_R, rig.angleMin[J.FOOT_R]);
+      f.body.angVel[J.FOOT_R] = -15;
+      f.body.angVel[J.KNEE_R] = -5;
+    } else if (f.phase === 'strike' && f.attackT >= RIFT_KICK.strike) {
+      f.phase = 'recover';
+      f.attackT = 0;
+      f.body.poseOverride = null;
+    } else if (f.phase === 'recover' && f.attackT >= RIFT_KICK.recover) {
+      f.phase = 'idle';
+      f.cooldown = 0.15;
+    }
+  }
+
+  /** Attacker's front-foot (contact point) vs. defender's nearest limb/torso joint -- both read from the same resolvePose() output. */
+  function checkHit(attackerF, defenderF, onHit) {
+    if (attackerF.phase !== 'strike' || attackerF.hasHit) return;
+    const aRig = attackerF.body.rig;
+    const ax = aRig.posX[J.FOOT_R], ay = aRig.posY[J.FOOT_R];
+    const dRig = defenderF.body.rig;
+
+    let best = null, bestD = Infinity;
+    for (const j of HIT_CANDIDATE_JOINTS) {
+      const dx = dRig.posX[j] - ax, dy = dRig.posY[j] - ay;
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; best = j; }
+    }
+    if (bestD > RIFT_KICK.range) return;
+
+    attackerF.hasHit = true;
+    defenderF.hp = Math.max(0, defenderF.hp - RIFT_KICK.damage);
+    defenderF.body.hitstun = 0.30;
+    const dir = defenderF.body.x >= attackerF.body.x ? 1 : -1;
+    defenderF.body.vx += dir * RIFT_KICK.knockback;
+    defenderF.body.angVel[J.CHEST] += dir * 3;
+    Physics.applyImpulse(defenderF.body, best, dir * 220);
+
+    onHit && onHit({
+      attacker: attackerF, defender: defenderF, joint: best,
+      x: (ax + dRig.posX[best]) / 2, y: (ay + dRig.posY[best]) / 2,
+    });
+  }
+
+  return { RIFT_KICK, createFighter, startKick, update, checkHit };
 })();
 
-/** Round flow, win/loss state, and the single shared intensity signal. */
+/** Round flow and win/loss. The shared intensity signal (driving audio/VFX escalation together) is a real Phase 3 item, not built for this demo's single-move, single-round scope. */
 const MatchState = (() => {
-  return {};
+  function create() {
+    return { over: false, winner: null };
+  }
+  function update(state, f1, f2) {
+    if (state.over) return;
+    if (f1.hp <= 0 || f2.hp <= 0) {
+      state.over = true;
+      state.winner = (f1.hp <= 0 && f2.hp <= 0) ? 'draw' : (f1.hp <= 0 ? 'p2' : 'p1');
+    }
+  }
+  return { create, update };
 })();
 
-/** Adaptive score, mixing, synthesized-IR reverb. */
+/**
+ * Synthesized hit-feedback SFX, main thread, oscillator/noise graphs --
+ * the same technique already proven in this studio's other games (see
+ * infall.html's Music module). NOT the AudioWorklet adaptive score the
+ * design doc originally called for: the audio-designer review found that
+ * port not worth its complexity for this game, so it's dropped here
+ * rather than half-built. AudioContext is created lazily on first user
+ * gesture (browser autoplay policy is a real boundary; guarded, not
+ * assumed away) -- if construction fails for any reason, every play*
+ * function becomes a silent no-op instead of throwing into the game loop.
+ */
 const Audio = (() => {
-  return {};
+  let ctx = null;
+
+  function ensure() {
+    if (ctx) return ctx;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { ctx = null; }
+    return ctx;
+  }
+
+  function playWhoosh() {
+    const c = ensure();
+    if (!c) return;
+    const t0 = c.currentTime;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, t0);
+    osc.frequency.exponentialRampToValueAtTime(90, t0 + 0.15);
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t0); osc.stop(t0 + 0.18);
+  }
+
+  function playHit() {
+    const c = ensure();
+    if (!c) return;
+    const t0 = c.currentTime;
+
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, t0);
+    osc.frequency.exponentialRampToValueAtTime(45, t0 + 0.18);
+    gain.gain.setValueAtTime(0.5, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t0); osc.stop(t0 + 0.24);
+
+    const bufSize = Math.floor(c.sampleRate * 0.08);
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufSize);
+    const noise = c.createBufferSource();
+    noise.buffer = buf;
+    const nGain = c.createGain();
+    nGain.gain.setValueAtTime(0.35, t0);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.08);
+    const filt = c.createBiquadFilter();
+    filt.type = 'highpass';
+    filt.frequency.value = 800;
+    noise.connect(filt).connect(nGain).connect(c.destination);
+    noise.start(t0);
+  }
+
+  let pad = null;
+  function startAmbientPad() {
+    const c = ensure();
+    if (!c || pad) return;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.05, c.currentTime);
+    gain.connect(c.destination);
+    const o1 = c.createOscillator(), o2 = c.createOscillator();
+    o1.type = 'sine'; o2.type = 'sine';
+    o1.frequency.value = 55; o2.frequency.value = 55.6; // slight detune for a slow beat/shimmer
+    o1.connect(gain); o2.connect(gain);
+    o1.start(); o2.start();
+    pad = { gain, o1, o2 };
+  }
+
+  function playKO() {
+    const c = ensure();
+    if (!c) return;
+    const t0 = c.currentTime;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(300, t0);
+    osc.frequency.exponentialRampToValueAtTime(60, t0 + 0.6);
+    gain.gain.setValueAtTime(0.25, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.7);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t0); osc.stop(t0 + 0.72);
+  }
+
+  return { ensure, playWhoosh, playHit, playKO, startAmbientPad };
 })();
 
-/** WebGL2 shader-driven VFX layer, composited over the Canvas2D rig layer. */
+/** Canvas2D juice: screen shake, hit-flash, particle burst. The WebGL2 shader layer from the design doc is a real future upgrade, not built here -- see the module map above for why that's fine for this milestone. */
 const VFX = (() => {
-  return {};
+  let shake = 0;
+  let flash = 0;
+  const particles = [];
+
+  function addShake(amount) { shake = Math.min(1, shake + amount); }
+  function addFlash(amount) { flash = Math.min(1, flash + amount); }
+
+  function burst(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 60 + Math.random() * 220;
+      particles.push({
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+        life: 0.35 + Math.random() * 0.25, age: 0, color, size: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function update(dt) {
+    shake = Math.max(0, shake - dt * 3.2);
+    flash = Math.max(0, flash - dt * 4.5);
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.age += dt;
+      if (p.age >= p.life) { particles.splice(i, 1); continue; }
+      p.vy += 500 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+  }
+
+  function shakeOffset() {
+    if (shake <= 0) return [0, 0];
+    const m = shake * 10;
+    return [(Math.random() * 2 - 1) * m, (Math.random() * 2 - 1) * m];
+  }
+
+  return { addShake, addFlash, burst, update, shakeOffset, particles, get flash() { return flash; } };
 })();
 
-/** Canvas2D background/arena and tapered gradient-shaded rig draw. Not in the original module map -- added because base rendering needs its own boundary distinct from Physics (simulation). HUD/particles/win-screen arrive with Combat in Phase 2. */
+/** Canvas2D background/arena, rig draw, HUD. Not in the original module map -- added here because base rendering needs its own boundary distinct from VFX (juice) and Physics (simulation). */
 const Renderer = (() => {
   const J = Rig.JOINT;
+  const s = Physics.DISPLAY_SCALE;
 
   const BACK_LIMBS = Object.freeze([
     [J.HIP_L, J.KNEE_L, 7, 6], [J.KNEE_L, J.FOOT_L, 6, 4],
@@ -617,7 +861,68 @@ const Renderer = (() => {
     ctx.fillRect(0, groundY, w, h - groundY);
   }
 
-  return { drawRig, drawBackground };
+  function drawParticles(ctx) {
+    for (const p of VFX.particles) {
+      ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHUD(ctx, w, f1, f2, names) {
+    const barW = w * 0.36, barH = 16, pad = 18;
+    function bar(x, hp, alignRight) {
+      ctx.fillStyle = 'rgba(20,11,48,0.7)';
+      ctx.fillRect(x, pad, barW, barH);
+      const pct = Math.max(0, hp) / 100;
+      const fw = barW * pct;
+      ctx.fillStyle = pct > 0.35 ? '#5eff9c' : '#ff4d70';
+      ctx.fillRect(alignRight ? x + barW - fw : x, pad, fw, barH);
+      ctx.strokeStyle = 'rgba(255,215,107,0.5)';
+      ctx.strokeRect(x, pad, barW, barH);
+    }
+    bar(pad, f1.hp, false);
+    bar(w - pad - barW, f2.hp, true);
+    ctx.fillStyle = '#f4ecff';
+    ctx.font = '13px "IBM Plex Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(names[0], pad, pad + barH + 16);
+    ctx.textAlign = 'right';
+    ctx.fillText(names[1], w - pad, pad + barH + 16);
+  }
+
+  function drawWinScreen(ctx, w, h, match) {
+    ctx.fillStyle = 'rgba(10,6,32,0.55)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#f4ecff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 42px "Cormorant Garamond", serif';
+    const label = match.winner === 'p1' ? 'You Win' : match.winner === 'p2' ? 'CPU Wins' : 'Draw';
+    ctx.fillText(label, w / 2, h / 2 - 10);
+    ctx.font = '16px "Quicksand", sans-serif';
+    ctx.fillText('Press K or tap Kick to restart', w / 2, h / 2 + 26);
+  }
+
+  function drawIntro(ctx, w, h, introT, introDuration) {
+    const elapsed = introDuration - introT;
+    const alpha = introT < 0.3 ? introT / 0.3 : 1;
+    const scale = 1 + Math.max(0, 0.35 - elapsed * 1.2);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(w / 2, h * 0.4);
+    ctx.scale(scale, scale);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd76b';
+    ctx.font = 'bold 56px "Cormorant Garamond", serif';
+    ctx.fillText(elapsed < 0.5 ? 'Apeiron' : 'FIGHT!', 0, 0);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  return { drawRig, drawBackground, drawParticles, drawHUD, drawWinScreen, drawIntro };
 })();
 
 /** Worker/OffscreenCanvas message protocol; owns the transferable-buffer contract. */
@@ -625,13 +930,13 @@ const Threading = (() => {
   return {};
 })();
 
-/** Keyboard + on-screen touch buttons, unified into one input state. Attack and Gamepad API are not wired yet -- Combat (Phase 2) is the first thing that will need them. */
+/** Keyboard + on-screen touch buttons, unified into one input state. Gamepad API is a real Phase 4 item, not wired yet -- the studio's existing pattern (infall.html/wardfall.html) is the reference to reuse when it is. */
 const Input = (() => {
   const keys = new Set();
-  const touch = { left: false, right: false };
+  const touch = { left: false, right: false, attack: false };
 
   window.addEventListener('keydown', e => {
-    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') e.preventDefault();
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'Space') e.preventDefault();
     keys.add(e.code);
   }, { passive: false });
   window.addEventListener('keyup', e => keys.delete(e.code));
@@ -652,6 +957,7 @@ const Input = (() => {
     return {
       left: keys.has('ArrowLeft') || keys.has('KeyA') || touch.left,
       right: keys.has('ArrowRight') || keys.has('KeyD') || touch.right,
+      attack: keys.has('Space') || keys.has('KeyK') || touch.attack,
     };
   }
 
@@ -664,9 +970,9 @@ const Ledger = (() => {
 })();
 
 /**
- * Demo bootstrap: canvas setup, two rigs standing in the arena, movement
- * for the player-controlled one, and the render loop. No combat -- this
- * phase's only job is proving the gait solver moves correctly.
+ * Demo bootstrap: canvas setup, two fighters (player vs. a simple CPU),
+ * the game loop, and event wiring. Not a module -- the entry point that
+ * uses them, per the studio's usual single-file structure.
  */
 (function main() {
   const canvas = document.getElementById('gameCanvas');
@@ -688,31 +994,125 @@ const Ledger = (() => {
   const P1_COLORS = { limbBack: '#5a4a8a', limbBackLight: '#7a68b8', limbFront: '#7a5fd6', limbFrontLight: '#a98fff', torso: '#4ea8ff', torsoLight: '#8fd0ff', accent: '#b98aff' };
   const P2_COLORS = { limbBack: '#8a4a5a', limbBackLight: '#b8687a', limbFront: '#d65f6f', limbFrontLight: '#ff8fa0', torso: '#ff8f4e', torsoLight: '#ffcf8f', accent: '#ffcb5c' };
 
-  const p1Body = Physics.createBody(groundY, W * 0.32, 1);
-  const p2Body = Physics.createBody(groundY, W * 0.68, -1);
-  Physics.resolvePose(p1Body);
-  Physics.resolvePose(p2Body);
+  let p1Body, p2Body, f1, f2, match, matchOverAt, introT;
+  const RESTART_DELAY = 0.8; // seconds the win screen must show before a restart press is honored -- otherwise a held attack key skips it instantly
+  const INTRO_DURATION = 1.1;
 
+  function resetMatch() {
+    p1Body = Physics.createBody(groundY, W * 0.32, 1);
+    p2Body = Physics.createBody(groundY, W * 0.68, -1);
+    Physics.resolvePose(p1Body);
+    Physics.resolvePose(p2Body);
+    f1 = Combat.createFighter(p1Body);
+    f2 = Combat.createFighter(p2Body);
+    match = MatchState.create();
+    matchOverAt = 0;
+    introT = INTRO_DURATION;
+  }
+  resetMatch();
+
+  window.addEventListener('keydown', e => {
+    if (match.over && (e.code === 'Space' || e.code === 'KeyK') && (performance.now() - matchOverAt) / 1000 > RESTART_DELAY) resetMatch();
+  });
   Input.bindTouchButton(document.getElementById('btnLeft'), 'left');
   Input.bindTouchButton(document.getElementById('btnRight'), 'right');
+  Input.bindTouchButton(document.getElementById('btnKick'), 'attack');
 
+  function unlockAudio() {
+    Audio.ensure();
+    Audio.startAmbientPad();
+    window.removeEventListener('keydown', unlockAudio);
+    window.removeEventListener('touchstart', unlockAudio);
+  }
+  window.addEventListener('keydown', unlockAudio);
+  window.addEventListener('touchstart', unlockAudio);
+
+  function onHit(info) {
+    Audio.playHit();
+    VFX.addShake(0.7);
+    VFX.addFlash(0.4);
+    VFX.burst(info.x, info.y, info.attacker === f1 ? P1_COLORS.accent : P2_COLORS.accent, 18);
+    hitstop = 0.06;
+  }
+
+  let prevAttack = false;
+  let cpuCooldown = 1.0;
+  let hitstop = 0;
   let last = performance.now();
+
   function frame(now) {
-    const dt = Math.min(0.033, (now - last) / 1000);
+    let dt = Math.min(0.033, (now - last) / 1000);
     last = now;
     requestAnimationFrame(frame);
 
+    if (hitstop > 0) { hitstop -= dt; dt *= 0.05; }
+
     const input = Input.p1();
-    p1Body.facing = p2Body.x >= p1Body.x ? 1 : -1;
-    p2Body.facing = p1Body.x >= p2Body.x ? 1 : -1;
+    const attackPressed = input.attack && !prevAttack;
+    prevAttack = input.attack;
 
-    const moveX1 = (input.left ? -1 : 0) + (input.right ? 1 : 0);
-    Physics.step(p1Body, dt, moveX1, 60, W - 60);
-    Physics.step(p2Body, dt, 0, 60, W - 60); // CPU stands idle in this phase -- Combat (Phase 2) is what gives it something to do
+    if (introT > 0) introT = Math.max(0, introT - dt);
 
+    if (!match.over) {
+      // Both fighters always face each other, independent of movement direction -- standard fighting-game convention, and it removes an entire class of "attacked while facing the wrong way" bug.
+      p1Body.facing = p2Body.x >= p1Body.x ? 1 : -1;
+      p2Body.facing = p1Body.x >= p2Body.x ? 1 : -1;
+
+      const moveX1 = (input.left ? -1 : 0) + (input.right ? 1 : 0);
+      Physics.step(p1Body, dt, moveX1, 60, W - 60);
+      Combat.update(f1, dt);
+      if (attackPressed && introT <= 0) Combat.startKick(f1, Audio.playWhoosh);
+
+      cpuCooldown -= dt;
+      const gap = p1Body.x - p2Body.x;
+      const dist = Math.abs(gap);
+      const moveX2 = dist > 90 ? Math.sign(gap) : 0;
+      Physics.step(p2Body, dt, moveX2, 60, W - 60);
+      Combat.update(f2, dt);
+      if (dist < 100 && cpuCooldown <= 0 && f2.phase === 'idle' && introT <= 0) {
+        if (Combat.startKick(f2, Audio.playWhoosh)) cpuCooldown = 0.9 + Math.random() * 0.8;
+      }
+
+      // Fighters don't collide against each other's rigs (no per-limb
+      // collision in this demo scope), but standing on top of each other
+      // reads as broken, not "close range" -- a flat minimum body-to-body
+      // separation is enough to prevent that at this scope.
+      const MIN_SEPARATION = 70;
+      const curGap = p2Body.x - p1Body.x;
+      if (Math.abs(curGap) < MIN_SEPARATION) {
+        const push = (MIN_SEPARATION - Math.abs(curGap)) / 2;
+        const sign = curGap >= 0 ? 1 : -1;
+        p1Body.x -= sign * push;
+        p2Body.x += sign * push;
+        Physics.resolvePose(p1Body);
+        Physics.resolvePose(p2Body);
+      }
+
+      Combat.checkHit(f1, f2, onHit);
+      Combat.checkHit(f2, f1, onHit);
+      MatchState.update(match, f1, f2);
+      if (match.over) { Audio.playKO(); matchOverAt = performance.now(); }
+    }
+
+    VFX.update(dt);
+
+    const [sx, sy] = VFX.shakeOffset();
+    ctx.save();
+    ctx.translate(sx, sy);
     Renderer.drawBackground(ctx, W, H, groundY);
     Renderer.drawRig(ctx, p1Body, P1_COLORS);
     Renderer.drawRig(ctx, p2Body, P2_COLORS);
+    Renderer.drawParticles(ctx);
+    ctx.restore();
+
+    if (VFX.flash > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${VFX.flash * 0.5})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    Renderer.drawHUD(ctx, W, f1, f2, ['P1', 'CPU']);
+    if (introT > 0) Renderer.drawIntro(ctx, W, H, introT, INTRO_DURATION);
+    if (match.over) Renderer.drawWinScreen(ctx, W, H, match);
   }
   requestAnimationFrame(frame);
 })();
