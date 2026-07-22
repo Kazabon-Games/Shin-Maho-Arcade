@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Apeiron — Shin Mahou Arcade</title>
+
+<!--
+  APEIRON — CHANGE LOG
+  (one line per change, most recent on top)
+
+  v0.1.0 — 2026-07-22 — Phase 0: scaffold only. Version marker, changelog,
+                         shared studio color tokens, arcade-nav link, and an
+                         empty module skeleton (Rig/Physics/Combat/Audio/VFX/
+                         Input/Threading/Ledger/MatchState) with no logic
+                         yet. See APEIRON_FLAGSHIP_DESIGN.md for the locked
+                         design intent. Phase 1 (skeleton + mass/constraint
+                         schema, written before any rendering code) is the
+                         next real commit, not this one.
+-->
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0620'/%3E%3Cpath d='M8 16c0-3 3-5 5.5-2.6L16 16l2.5-2.6C21 10 24 12 24 16s-3 5-5.5 2.6L16 16l-2.5 2.6C11 21 8 19 8 16z' fill='none' stroke='%23b98aff' stroke-width='1.6'/%3E%3C/svg%3E">
+<meta name="description" content="A physics-reactive arena fighter where every move is one of four First Principles made playable. A Kazabon Game Studio flagship build.">
+<meta property="og:title" content="Apeiron">
+<meta property="og:description" content="A physics-reactive arena fighter where every move is one of four First Principles made playable.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+/* Shared studio token set — reused verbatim per STUDIO_BIBLE.md §11.
+   Same names, same values as every other game; do not hand-type a hex
+   here that duplicates one of these under a different name. */
+:root{
+  --bg:#140b30;
+  --bg-deep:#0a0620;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --danger:#ff4d70;
+  --ok:#5eff9c;
+  --border:rgba(255,203,92,0.25);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:var(--body-font);user-select:none;-webkit-user-select:none;}
+
+.version-marker{
+  position:fixed;top:8px;right:10px;font-size:10px;color:var(--ink-soft);
+  opacity:0.5;letter-spacing:0.02em;font-family:var(--mono);z-index:50;
+  pointer-events:none;
+}
+
+.scaffold-notice{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;gap:14px;text-align:center;padding:24px;
+}
+.scaffold-notice h1{font-family:var(--display);font-size:2.4rem;color:var(--ink);}
+.scaffold-notice p{color:var(--ink-mid);max-width:36em;line-height:1.5;}
+.scaffold-notice code{font-family:var(--mono);color:var(--neon2);}
+.btn{
+  display:inline-block;padding:10px 20px;border-radius:8px;
+  border:1px solid var(--border);color:var(--ink);text-decoration:none;
+  font-family:var(--body-font);font-weight:600;background:var(--panel2);
+}
+.btn:hover{background:var(--panel);}
+</style>
+</head>
+<body>
+
+<div class="version-marker" id="versionMarker">Apeiron — v0.1.0</div>
+
+<div class="scaffold-notice">
+  <h1>Apeiron</h1>
+  <p>Phase 0 scaffold — no playable build yet. This commit establishes the
+     version marker, changelog, shared studio color tokens, and the empty
+     module skeleton the real build hangs on, so every commit after this
+     one has structure to grow into rather than retrofitting it later.
+     See <code>APEIRON_FLAGSHIP_DESIGN.md</code> for the locked design intent.</p>
+  <a class="btn" href="index.html">✦&nbsp; Back to the Arcade</a>
+</div>
+
+<script>
+'use strict';
+// @ts-check
+
+/*
+  APEIRON — MODULE MAP (table of contents)
+  ------------------------------------------------------------------------
+  Each module below is an empty IIFE namespace — a boundary, not a
+  build-out. Keep this map's phase column and (once real code exists)
+  line-range column accurate as each module grows past its stub; a stale
+  TOC on a 30-40k line file is worse than no TOC.
+
+    Rig        Skeleton/joint mass+constraint schema, IK, impulse
+               response. Structure-of-Arrays over Float32Array, not an
+               array of joint objects — cache-coherent by design.       (Phase 1)
+    Physics    Spatial-hash broad-phase, constraint resolution.         (Phase 1-2)
+    Combat     First Principles verb-classes, hit resolution.           (Phase 2)
+    MatchState Round flow, win/loss, the shared intensity signal that
+               Audio/VFX both read from — one source, not three
+               independently-tuned approximations of it.                (Phase 2)
+    Audio      Adaptive score, mixing, synthesized-IR reverb.           (Phase 3)
+    VFX        WebGL2 shader layer, composited over the Canvas2D
+               rig/arena layer via stacked canvases.                    (Phase 3)
+    Threading  Worker/OffscreenCanvas message protocol; owns the
+               transferable-ArrayBuffer contract, not structured-clone
+               of plain objects. transferControlToOffscreen() is
+               one-way, so the ownership boundary is decided here in
+               Phase 1, even though the worker itself stays a no-op
+               passthrough until Phase 3.5.                             (Phase 1 boundary / 3.5 wired)
+    Input      Keyboard/touch/Gamepad API, unified into one input
+               state (Gamepad support already proven elsewhere in the
+               studio — reuse that pattern, don't reinvent it).         (Phase 4)
+    Ledger     Cross-game Essence ledger (IndexedDB) read/write and
+               schema validation — fails loudly on a missing or
+               malformed record, never silently defaults to zero.       (Phase 4)
+  ------------------------------------------------------------------------
+*/
+
+/** Skeleton, joint mass/constraint data, IK solve, impulse-driven hit response. */
+const Rig = (() => {
+  return {};
+})();
+
+/** Broad-phase spatial-hash collision, constraint resolution. */
+const Physics = (() => {
+  return {};
+})();
+
+/** First Principles verb-classes (Distinction/Relation/Transformation/Persistence) and hit resolution. */
+const Combat = (() => {
+  return {};
+})();
+
+/** Round flow, win/loss state, and the single shared intensity signal. */
+const MatchState = (() => {
+  return {};
+})();
+
+/** Adaptive score, mixing, synthesized-IR reverb. */
+const Audio = (() => {
+  return {};
+})();
+
+/** WebGL2 shader-driven VFX layer, composited over the Canvas2D rig layer. */
+const VFX = (() => {
+  return {};
+})();
+
+/** Worker/OffscreenCanvas message protocol; owns the transferable-buffer contract. */
+const Threading = (() => {
+  return {};
+})();
+
+/** Keyboard/touch/Gamepad API input, unified into one input state. */
+const Input = (() => {
+  return {};
+})();
+
+/** Cross-game Essence ledger (IndexedDB) read/write and schema validation. */
+const Ledger = (() => {
+  return {};
+})();
+</script>
+
+</body>
+</html>
