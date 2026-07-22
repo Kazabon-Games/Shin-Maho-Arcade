@@ -9,6 +9,17 @@
   APEIRON — CHANGE LOG
   (one line per change, most recent on top)
 
+  v0.1.1 — 2026-07-22 — Phase 1: lock the skeleton/mass/constraint schema
+                         in the Rig module (JOINT enum, dynamic-vs-fixed-
+                         offset split, Float32Array SoA state, default
+                         lengths/masses/angle-limits/rest-angles). Still
+                         no solver, no IK, no rendering -- createRigState()
+                         only builds the data, it doesn't step or draw it.
+                         See APEIRON_RIG_SCHEMA.md for the full rationale;
+                         this is that document made real. Phase 1.5 (gait
+                         solver, verified moving on an actual device) is
+                         the next real commit, not this one.
+
   v0.1.0 — 2026-07-22 — Phase 0: scaffold only. Version marker, changelog,
                          shared studio color tokens, arcade-nav link, and an
                          empty module skeleton (Rig/Physics/Combat/Audio/VFX/
@@ -78,15 +89,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 </head>
 <body>
 
-<div class="version-marker" id="versionMarker">Apeiron — v0.1.0</div>
+<div class="version-marker" id="versionMarker">Apeiron — v0.1.1</div>
 
 <div class="scaffold-notice">
   <h1>Apeiron</h1>
-  <p>Phase 0 scaffold — no playable build yet. This commit establishes the
-     version marker, changelog, shared studio color tokens, and the empty
-     module skeleton the real build hangs on, so every commit after this
-     one has structure to grow into rather than retrofitting it later.
-     See <code>APEIRON_FLAGSHIP_DESIGN.md</code> for the locked design intent.</p>
+  <p>Phase 1 — the rig's skeleton, mass, and constraint schema is now locked
+     in code (see <code>Rig.createState()</code> below), but there is still
+     no solver, no IK, and no rendering. See
+     <code>APEIRON_RIG_SCHEMA.md</code> for the full rationale behind every
+     number in that data.</p>
   <a class="btn" href="index.html">✦&nbsp; Back to the Arcade</a>
 </div>
 
@@ -128,9 +139,124 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
   ------------------------------------------------------------------------
 */
 
-/** Skeleton, joint mass/constraint data, IK solve, impulse-driven hit response. */
+/**
+ * Skeleton, joint mass/constraint data, IK solve, impulse-driven hit response.
+ * Phase 1 scope: the schema and its default data only (this IIFE below).
+ * No solver, no IK, no draw call exists yet -- see APEIRON_RIG_SCHEMA.md
+ * for the full rationale behind every number here, and Phase 1.5/2 in
+ * APEIRON_FLAGSHIP_DESIGN.md §10 for what gets built on top of it next.
+ */
 const Rig = (() => {
-  return {};
+  const JOINT_COUNT = 15;
+
+  /** @type {Readonly<Record<string, number>>} */
+  const JOINT = Object.freeze({
+    PELVIS: 0, CHEST: 1, HEAD: 2,
+    HIP_L: 3, KNEE_L: 4, FOOT_L: 5,
+    HIP_R: 6, KNEE_R: 7, FOOT_R: 8,
+    SHOULDER_L: 9, ELBOW_L: 10, HAND_L: 11,
+    SHOULDER_R: 12, ELBOW_R: 13, HAND_R: 14,
+  });
+
+  /** Joints solved as real Verlet point masses every physics step. */
+  const DYNAMIC_JOINTS = Object.freeze([
+    JOINT.PELVIS, JOINT.CHEST,
+    JOINT.KNEE_L, JOINT.FOOT_L, JOINT.KNEE_R, JOINT.FOOT_R,
+    JOINT.ELBOW_L, JOINT.HAND_L, JOINT.ELBOW_R, JOINT.HAND_R,
+  ]);
+
+  /** Joints recomputed each step as a rigid offset from their parent -- never integrated, no mass of their own. */
+  const FIXED_OFFSET_JOINTS = Object.freeze([
+    JOINT.HEAD, JOINT.HIP_L, JOINT.HIP_R, JOINT.SHOULDER_L, JOINT.SHOULDER_R,
+  ]);
+
+  /**
+   * One row per joint, indexed by JOINT.*, per APEIRON_RIG_SCHEMA.md §1-4.
+   * `massFraction` is 0 for fixed-offset joints (they carry no independent
+   * mass); `parent` is -1 only for PELVIS, the root. Angle fields are
+   * relative to the parent bone's own direction, not an absolute frame --
+   * see the schema doc §4 for why that convention was chosen over
+   * Rykndu's absolute-frame one.
+   * @type {Array<{parent:number, length:number, massFraction:number, angleMin:number, angleMax:number, restAngle:number}>}
+   */
+  const JOINT_DEFS = [
+    /* PELVIS      */ { parent: -1, length: 0,   massFraction: 0.20,  angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* CHEST       */ { parent: 0,  length: 62,  massFraction: 0.38,  angleMin: -0.35, angleMax: 0.35, restAngle: 0.05 },
+    /* HEAD        */ { parent: 1,  length: 21,  massFraction: 0,     angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* HIP_L       */ { parent: 0,  length: 2,   massFraction: 0,     angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* KNEE_L      */ { parent: 3,  length: 50,  massFraction: 0.10,  angleMin: -1.2,  angleMax: 1.0,  restAngle: 0.15 },
+    /* FOOT_L      */ { parent: 4,  length: 48,  massFraction: 0.055, angleMin: 0,     angleMax: 2.4,  restAngle: 0.25 },
+    /* HIP_R       */ { parent: 0,  length: 2,   massFraction: 0,     angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* KNEE_R      */ { parent: 6,  length: 50,  massFraction: 0.10,  angleMin: -1.2,  angleMax: 1.0,  restAngle: 0.15 },
+    /* FOOT_R      */ { parent: 7,  length: 48,  massFraction: 0.055, angleMin: 0,     angleMax: 2.4,  restAngle: 0.25 },
+    /* SHOULDER_L  */ { parent: 1,  length: 4.5, massFraction: 0,     angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* ELBOW_L     */ { parent: 9,  length: 37,  massFraction: 0.03,  angleMin: -0.5,  angleMax: 3.0,  restAngle: 0.30 },
+    /* HAND_L      */ { parent: 10, length: 37,  massFraction: 0.025, angleMin: 0,     angleMax: 2.6,  restAngle: 0.90 },
+    /* SHOULDER_R  */ { parent: 1,  length: 4.5, massFraction: 0,     angleMin: 0,     angleMax: 0,    restAngle: 0 },
+    /* ELBOW_R     */ { parent: 12, length: 37,  massFraction: 0.03,  angleMin: -0.5,  angleMax: 3.0,  restAngle: 0.30 },
+    /* HAND_R      */ { parent: 13, length: 37,  massFraction: 0.025, angleMin: 0,     angleMax: 2.6,  restAngle: 0.90 },
+  ];
+
+  // Dev-time consistency check: every joint is exactly one of dynamic/fixed,
+  // and the two lists partition JOINT_COUNT with no gap or overlap. Cheap,
+  // and it's exactly the kind of drift ("a joint added to JOINT but never
+  // classified") that would otherwise surface as a silent NaN deep in a
+  // future solver instead of here, at data-definition time.
+  (() => {
+    const seen = new Uint8Array(JOINT_COUNT);
+    for (const j of DYNAMIC_JOINTS) seen[j] = 1;
+    for (const j of FIXED_OFFSET_JOINTS) seen[j] = 1;
+    if (seen.reduce((a, b) => a + b, 0) !== JOINT_COUNT) {
+      throw new Error('Rig: DYNAMIC_JOINTS + FIXED_OFFSET_JOINTS must partition every JOINT index exactly once.');
+    }
+  })();
+
+  /**
+   * @typedef {Object} RigState
+   * @property {Float32Array} posX       - current world-space x, length JOINT_COUNT
+   * @property {Float32Array} posY       - current world-space y
+   * @property {Float32Array} prevX      - previous-step x (Verlet velocity is implicit: posX - prevX)
+   * @property {Float32Array} prevY      - previous-step y
+   * @property {Float32Array} invMass    - 1/mass; 0 for FIXED_OFFSET_JOINTS
+   * @property {Int8Array}    parent     - parent JOINT index per joint, -1 for PELVIS
+   * @property {Float32Array} boneLength - rest distance to parent, per joint
+   * @property {Float32Array} angleMin   - radians, relative to parent bone direction
+   * @property {Float32Array} angleMax   - radians, relative to parent bone direction
+   * @property {Float32Array} restAngle  - recovery-torque spring target, radians
+   */
+
+  /**
+   * Builds a fresh RigState from JOINT_DEFS. Pure data -- no positions are
+   * solved into a real stance here (that's the gait solver, Phase 1.5);
+   * posX/posY/prevX/prevY all start at 0 and are populated by whatever
+   * first calls this, not by this function itself.
+   * @returns {RigState}
+   */
+  function createState() {
+    const posX = new Float32Array(JOINT_COUNT);
+    const posY = new Float32Array(JOINT_COUNT);
+    const prevX = new Float32Array(JOINT_COUNT);
+    const prevY = new Float32Array(JOINT_COUNT);
+    const invMass = new Float32Array(JOINT_COUNT);
+    const parent = new Int8Array(JOINT_COUNT);
+    const boneLength = new Float32Array(JOINT_COUNT);
+    const angleMin = new Float32Array(JOINT_COUNT);
+    const angleMax = new Float32Array(JOINT_COUNT);
+    const restAngle = new Float32Array(JOINT_COUNT);
+
+    JOINT_DEFS.forEach((def, i) => {
+      parent[i] = def.parent;
+      boneLength[i] = def.length;
+      invMass[i] = def.massFraction > 0 ? 1 / def.massFraction : 0;
+      angleMin[i] = def.angleMin;
+      angleMax[i] = def.angleMax;
+      restAngle[i] = def.restAngle;
+    });
+
+    return { posX, posY, prevX, prevY, invMass, parent, boneLength, angleMin, angleMax, restAngle };
+  }
+
+  return { JOINT_COUNT, JOINT, DYNAMIC_JOINTS, FIXED_OFFSET_JOINTS, createState };
 })();
 
 /** Broad-phase spatial-hash collision, constraint resolution. */
