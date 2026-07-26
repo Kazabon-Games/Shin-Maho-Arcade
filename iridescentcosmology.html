@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.10.0</title>
+<title>IRIDESCENT COSMOLOGY v2.11.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,55 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.11.0 — 2026-07-26 — CRITICAL FIX found by this session's own combined
+                          real-browser playtest (qa-playtest, not
+                          simulation) — the first one this game has ever
+                          had, and it caught something math-only
+                          verification structurally could not: simply
+                          touching either boss (Ramiel or the Fracture)
+                          hard-froze the entire game, 100% reproducible.
+                          Root cause: boss/boss2 are deliberately members of
+                          the same spatial Grid as regular enemies (so AoE
+                          spells can target them), but the player-contact-
+                          damage query never excluded them — so a player's
+                          body touching a boss's body handed the boss
+                          object to that query's callback as a regular
+                          enemy. Boss objects have no .dmg (pre-existing,
+                          latent: player.hp -= NaN, silently unkillable with
+                          a broken HP bar, NaN then flooding into the mood
+                          engine's live AudioParams) and, since this
+                          session's v2.9.0 enemy-reaction pass, no .color
+                          either — shadeHex(undefined) threw INSIDE
+                          update()'s call stack, before loop()'s own
+                          requestAnimationFrame call, which meant the throw
+                          killed the entire sim/render loop rather than
+                          just one frame. Recoverable only by force-quitting
+                          to the menu; the run itself was unsalvageable.
+                          Fixed at the actual root (excluded boss/boss2 from
+                          the player-contact query, the same way Banish
+                          already excludes both from its own query) rather
+                          than guarding the two symptom sites individually
+                          — bosses already have their own dedicated,
+                          intentional attack mechanisms (beam/gather/shard-
+                          burst; the Fracture's own phases), so generic
+                          bump-contact damage was never a designed
+                          mechanic, just an unintended side effect of
+                          sharing the grid. Verified against the playtest's
+                          own repro (both bosses, direct player-boss
+                          overlap, real elapsed wall-clock time) plus the
+                          full regression suite and every prior fix in this
+                          version line. Also fixed the on-screen version
+                          footer (`#versionMarker`), which had drifted two
+                          releases behind the <title> tag's own version —
+                          the same playtest's screenshots caught it. Honest
+                          gap the playtest also surfaced and this fix does
+                          NOT close: this is still the first time Ramiel's
+                          fight has ever been played by anything other than
+                          a forced-defeat skip, now that contact with him
+                          no longer crashes the game — a real playtest of
+                          that specific fight is the actual next step, not
+                          this fix.
 
   v2.10.0 — 2026-07-26 — Late-run power curve, plus a critical bug fix found
                           while auditing it. THE BUG: Banish's target-scoring
@@ -1639,7 +1688,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.8.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.11.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -3652,9 +3701,27 @@ const Game = (function(){
     }
 
     // player contact damage via grid (only checks nearby cells)
+    // CRITICAL BUG FIX (found by real-browser playtest, not simulation):
+    // boss/boss2 are deliberately in this same Grid (gridExtra above, so
+    // AoE spells can target them) but were never excluded from THIS query
+    // — so a player simply touching a boss's body handed the boss object
+    // to this callback as `e`. Boss objects have no `.dmg` (pre-existing:
+    // player.hp -= NaN, a permanently-unkillable player with a broken HP
+    // bar that then fed NaN into the mood engine's AudioParams) and no
+    // `.color` (this session's addition: shadeHex(undefined) threw INSIDE
+    // update()'s call stack, before loop()'s own requestAnimationFrame
+    // call, permanently freezing the whole sim/render loop — a genuine
+    // 100%-reproducible run-ending bug on ordinary boss contact). Ramiel
+    // and the Fracture already have their own dedicated, intentional
+    // attack mechanisms (beam/gather/shard-burst; the Fracture's own
+    // phases) — generic bump-contact damage was never a designed
+    // mechanic for a boss, just an unintended side effect of sharing the
+    // grid. Excluded here the same way Banish already excludes both
+    // bosses from its own query, at the actual root cause rather than
+    // guarding shadeHex/hitEnemy individually.
     if(player.iframes <= 0){
       Grid.queryCircle(player.x, player.y, player.r + 32, (e) => {
-        if(e._dead) return false;
+        if(e._dead || e === boss || e === boss2) return false;
         const rr = e.r + player.r;
         if(dist2(e.x,e.y,player.x,player.y) < rr*rr){
           const dmg = e.dmg * weakMultOf(e) * fortifyMult();
