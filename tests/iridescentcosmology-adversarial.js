@@ -97,6 +97,64 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
   await page.waitForTimeout(3000);
   await checkOverflow('after dense wave');
 
+  console.log('--- direct boss contact: player body overlapping Ramiel, then the Fracture (regression for a hard freeze found by the v2.11.0 real-browser playtest) ---');
+  // v2.11.0: boss/boss2 are deliberately in the same spatial Grid as regular
+  // enemies (so AoE spells can target them), and the player-contact-damage
+  // query previously never excluded them — simply touching a boss's body
+  // handed the boss object to that query as if it were a regular enemy.
+  // Boss objects have no .dmg/.color, which threw inside update()'s call
+  // stack BEFORE loop()'s own requestAnimationFrame call — a 100%-
+  // reproducible permanent freeze, not just a bad frame. Nothing above this
+  // point in the suite ever put the player's body on top of a boss, which
+  // is exactly why this shipped undetected through every prior check here.
+  // drain any level-up the preceding dense-wave kills queued up first — by
+  // design (see update()'s own `if(...levelChoosing...) return;` gate),
+  // elapsed correctly does NOT advance while one is pending, which would
+  // otherwise be indistinguishable from the exact freeze this section
+  // exists to catch.
+  async function drainPendingLevelUp() {
+    for (let i = 0; i < 20; i++) {
+      const choosing = await page.evaluate(() => Game._test.state().levelChoosing);
+      if (!choosing) break;
+      const card = await page.$('.pick-card');
+      if (card) await card.click({ timeout: 1000 }).catch(()=>{});
+      await page.waitForTimeout(60);
+    }
+  }
+  await drainPendingLevelUp();
+  {
+    const elapsedBefore = await page.evaluate(() => {
+      Game._test.forceSpawnBossNow(0, 0); // Ramiel directly on the player
+      Game._test.clearIframes();
+      return Game._test.state().elapsed;
+    });
+    await page.waitForTimeout(1500); // real wall-clock time -- a frozen loop will not advance `elapsed` at all
+    await drainPendingLevelUp(); // real kills from equipped weapons during the wait above can legitimately queue one
+    const afterRamiel = await page.evaluate(() => Game._test.state());
+    const ramielLoopAlive = (afterRamiel.elapsed - elapsedBefore) > 0.8;
+    console.log('Ramiel contact: elapsed advanced', (afterRamiel.elapsed - elapsedBefore).toFixed(2) + 's, hp =', afterRamiel.hp, '(loop alive:', ramielLoopAlive + ')');
+    await page.evaluate(() => { Game._test.damageBoss(999999); });
+    await page.waitForTimeout(300);
+    await drainPendingLevelUp();
+  }
+  {
+    const before2 = await page.evaluate(() => {
+      if (Game._test.state().stage !== 2) Game._test.forceEnterStage2();
+      Game._test.forceSpawnBoss2Now(0, 0); // the Fracture directly on the player
+      Game._test.clearIframes();
+      return Game._test.state().elapsed;
+    });
+    await page.waitForTimeout(1500);
+    await drainPendingLevelUp();
+    const afterFracture = await page.evaluate(() => Game._test.state());
+    const fractureLoopAlive = (afterFracture.elapsed - before2) > 0.8;
+    console.log('Fracture contact: elapsed advanced', (afterFracture.elapsed - before2).toFixed(2) + 's, hp =', afterFracture.hp, '(loop alive:', fractureLoopAlive + ')');
+    await page.evaluate(() => { if (Game._test.state().boss2) Game._test.damageBoss2(999999); });
+    await page.waitForTimeout(300);
+    await drainPendingLevelUp();
+  }
+  await checkOverflow('after direct boss contact');
+
   console.log('--- compressed boss fight, then Share on stage-clear ---');
   // defensive: ongoing gameplay (equipped weapons still killing enemies)
   // can legitimately queue another level-up between here and the last
