@@ -3,7 +3,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'iridescentcosmology-v5'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.9.0 enemy oomph pass — hand-authored regular-enemy silhouettes, glow-clip fix, white-silhouette hit-flash, enemy-side attack reaction
+const CACHE_NAME = 'iridescentcosmology-v6'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.10.0 late-run power curve (Resonance) + a critical Banish soft-lock fix + Sunder double-damage/Displace dead-knockback fixes
 const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.9.0</title>
+<title>IRIDESCENT COSMOLOGY v2.10.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,86 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.10.0 — 2026-07-26 — Late-run power curve, plus a critical bug fix found
+                          while auditing it. THE BUG: Banish's target-scoring
+                          (highest e.maxhp) had no boss exclusion — Ramiel's
+                          4200 maxhp beats every live enemy during his own
+                          fight, so any Banish level always targeted him,
+                          teleported him ~5,100px away, and nothing in the
+                          game ever moves a boss — boss.hp could never reach
+                          0, so the run could never clear. Reachable simply
+                          by owning Banish near Ramiel. Fixed by excluding
+                          both bosses from the query and re-verifying real
+                          distance (queryCircle only narrows to whole CELL-
+                          sized cells). Rebuilt Banish from single-target to
+                          a hard-target-capped AoE removal while in there —
+                          contact damage is gated to one hit per 0.55s
+                          across the whole crowd, so "remove the single
+                          biggest threat" was worth roughly an order of
+                          magnitude less than every other weapon at the same
+                          slot cost; a real playtest is still needed to
+                          confirm the new numbers land right, but the
+                          mechanism now has actual bounded value. Also fixed:
+                          Sunder was dealing 2x its real DPS to Ramiel only
+                          (the boss was already covered by Sunder's own grid
+                          query, and a second, redundant explicit boss-hit
+                          block doubled it — deleted, not guarded); Displace's
+                          knockback was a bare literal that never read its
+                          own level at all (L1 and L5 pushed enemies back the
+                          identical ~43px) and was the one radial AoE
+                          excluded from Amplify's six documented call sites
+                          for no stated reason — both fixed. THE CURVE: both
+                          dmgMult/enemy-scaling hard-capped by minute 12,
+                          well before a run's own end (~18:30) — verified,
+                          all 30 weapon-leveling points are typically spent
+                          by minute 8-10, so a large fraction of stage 2
+                          played out at a flat ceiling on both sides no
+                          matter how many power options existed. Added
+                          Resonance: past maxLvl, in stage 2 only, the 10
+                          weapons that deal damage keep being offered at
+                          level-up, each rank landing ONLY in final damage
+                          magnitude (never a cooldown/radius/count/duration —
+                          each of those already has a raw level term
+                          reachable somewhere in this file, and letting
+                          Resonance reach one would re-derive the Drain
+                          incident; verified directly: it would take Nova to
+                          a ~0.30s cooldown and Rewind's heal to ~100hp/s).
+                          Hard-capped at 3 ranks per node, 10 eligible nodes
+                          = 30 total ranks per run, not an open axis. Enemy
+                          scaling reopens to match in stage 2 only, at under
+                          half stage 1's slope and its own separate +5.0 hard
+                          cap (m tops out at 17.0 total, however long a run
+                          runs) — otherwise Resonance alone would make stage
+                          2 a walkover. Closed the heal-stack risk Resonance
+                          would otherwise widen: Regenerate's mend was tied
+                          to gems/sec (difficulty()'s own spawn rate — a
+                          stat the player never leveled, that grows exactly
+                          when the run gets harder, with no cap of any kind)
+                          — re-rooted to Regenerate's own level on a fixed
+                          cadence instead. Independently re-verified Rewind's
+                          heal per the standing "check every multiplier"
+                          note this exact comment block already carried —
+                          it was actually the largest heal in the game
+                          (~26.5hp/s), above Drain's own post-fix ceiling;
+                          cap dropped 10->5 targets (~14.6hp/s). Root/Afflict
+                          were audited and found to already scale acceptably
+                          per-point (their real problem was per-slot value
+                          and legibility, not magnitude) — left alone rather
+                          than changed on a hunch. No new weapons/passives/
+                          evolutions added: the 12/9/6 roster already sees
+                          well under half its picks used in a typical run:
+                          the honest gap was curve depth, not roster width.
+                          Every formula independently recomputed against the
+                          live source before landing (see the game-designer
+                          audit this session), not assumed from a comment —
+                          all closed-form numbers below verified in isolation:
+                          dmgMult 2.24->2.492 ceiling, rateMult 1.50->1.65,
+                          ampMult 1.40->1.52, Displace displacement 43px
+                          flat->74.7px(L1)/201.3px(L5), Banish 6-14 target
+                          cap. Honest gap: none of this has been played by a
+                          human yet — every timeline/pacing claim above is a
+                          simulation estimate, not a measured playtest.
 
   v2.9.0 — 2026-07-26 — Enemy "oomph" pass — a gap logged in v2.4.0's
                           changelog ("enemies logged as needing more oomph —
@@ -1293,6 +1373,7 @@ body.reduced-motion .stage-badge{
 .pick-card.evo{border-color:var(--neon2);background:linear-gradient(135deg,rgba(226,184,85,0.1),rgba(157,107,255,0.14));}
 .pick-card.evo:hover{border-color:var(--neon2);box-shadow:0 0 24px -6px var(--neon2);}
 .evo-lvl{color:var(--neon2)!important;}
+.resonance-lvl{color:var(--neon2)!important;} /* Resonance rank badge — same treatment as EVOLUTION, both are "past the normal ladder" */
 .pick-icon{font-size:1.6rem;width:44px;height:44px;border-radius:10px;background:rgba(226,184,85,0.08);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border);color:var(--neon);}
 .pick-card.evo .pick-icon{color:var(--neon2);}
@@ -1916,7 +1997,7 @@ const WEAPONS = {
   },
   banish: {
     name:'Banish', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3.5A9 9 0 1 0 15 20.5A11 11 0 0 1 15 3.5Z"/></svg>', archetype:'banish',
-    desc:l=>`Every ${(9-l*0.8).toFixed(1)}s, banishes the strongest nearby Husk for ${2+Math.floor(l/2)}s.`,
+    desc:l=>`Every ${(9-l*0.8).toFixed(1)}s, banishes up to ${4+l*2} nearby Husks for ${2+Math.floor(l/2)}s.`,
     maxLvl:5,
   },
   impose: {
@@ -2463,9 +2544,64 @@ const Game = (function(){
     document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'));
   }
 
+  // ── Resonance — the late-run power-curve fix ──
+  // Root cause (found during the power-curve audit): poolChoices() deletes
+  // a node from the level-up pool the instant it hits maxLvl, so per-level
+  // power growth decays to zero once a build is maxed — measured, all 30
+  // weapon-leveling points are typically spent by minute 8-10, well before
+  // stage 2 (which continues to ~18:30). From then on the pool skews
+  // entirely to passives, and offensive picks stop mattering.
+  //
+  // Resonance lets ranks past maxLvl keep being offered in stage 2, but
+  // ONLY once damage-dealing weapons and ONLY into exactly one term: final
+  // damage magnitude via wRes() below. It never reaches a cooldown, radius,
+  // count, duration, heal base, slow %, weaken %, or knockback — each of
+  // those already has a raw level term reachable somewhere in this file
+  // (fireTimers.*, aura radii, Chain's jump count, Impose's burn duration,
+  // Drain's HEAL_BASE, Root's slow%, Afflict's weaken%, Displace's
+  // knockback) and letting Resonance into any of them would re-derive the
+  // studio's own Drain incident: verified by direct computation, Nova at
+  // Resonance-inflated cooldown maths out to a ~0.30s fire rate and would
+  // take Rewind's per-cast heal from ~26.5hp/s to ~100hp/s.
+  //
+  // Root/Afflict/Banish are excluded from RESONANT by the rule itself, not
+  // a special case: they deal no damage, so there is no magnitude term for
+  // Resonance to deepen. Their own late-run flatness is addressed
+  // separately (Root/Afflict already scale acceptably per the audit;
+  // Banish was rebuilt above).
+  const RESONANCE_PER_NODE = 3;
+  const RESONANT = new Set(['pulse','orbitals','nova','shardspray','drain',
+                            'displace','chain','mine','impose','sunder']);
+  function resonanceOpen(){ return stage === 2; }
+  // every weapon formula must read wl(k), never weapons[k] directly, so the
+  // base level term stays clamped at maxLvl and Resonance can only ever
+  // reach the damage line via wRes() — this is the actual guarantee behind
+  // the "never a cooldown/radius/count/duration" claim above.
+  function wl(k){ return Math.min(weapons[k]||0, WEAPONS[k].maxLvl); }
+  // +35% damage per Resonance rank, applied only where a call site
+  // explicitly multiplies by it — RESONANCE_PER_NODE=3 ranks * 10 eligible
+  // nodes is a hard ceiling of 30 total ranks in a run, not an open axis.
+  function wRes(k){ return 1 + 0.35 * Math.max(0, (weapons[k]||0) - WEAPONS[k].maxLvl); }
+  function resCap(key, isWeapon){
+    const base = isWeapon ? WEAPONS[key].maxLvl : PASSIVES[key].maxLvl;
+    const eligible = isWeapon ? RESONANT.has(key)
+                              : (key==='damage'||key==='firerate'||key==='amplify');
+    return base + (eligible && resonanceOpen() ? RESONANCE_PER_NODE : 0);
+  }
+
   // ── derived stats ──
-  function dmgMult(){ return (1 + (passives.damage||0)*0.12) * (1 + Persist.data.upgrades.output*0.08); }
-  function rateMult(){ return 1 + (passives.firerate||0)*0.10; }
+  // dmgMult/rateMult/ampMult: Resonance ranks past maxLvl on Empower/
+  // Accelerate/Amplify add a smaller half-step per rank (their effect is
+  // account-wide, not one weapon, so a full step would compound faster
+  // than the per-weapon case) — same RESONANCE_PER_NODE=3 cap via resCap().
+  function dmgMult(){
+    const d = passives.damage||0;
+    return (1 + Math.min(d,5)*0.12 + Math.max(0,d-5)*0.06) * (1 + Persist.data.upgrades.output*0.08);
+  }
+  function rateMult(){
+    const f = passives.firerate||0;
+    return 1 + Math.min(f,5)*0.10 + Math.max(0,f-5)*0.05;
+  }
   function speedMult(){
     const burst = (player._speedBurstUntil && elapsed < player._speedBurstUntil) ? 1.6 : 1;
     return (1 + (passives.speed||0)*0.10) * burst;
@@ -2491,7 +2627,23 @@ const Game = (function(){
   // speed, dmg, AND updateSpawns' spawn-rate together — leaving any one of
   // those uncapped would keep the same unbounded-vs-capped mismatch alive
   // through a different term.
-  function difficulty(){ return Math.min(elapsed/60, 12); } // minutes elapsed, capped
+  // Stage-2 term added alongside Resonance (Fix A above): the m=12 cap was
+  // correct for stage 1 (it exists because player power was ALSO capped at
+  // the time), but Resonance now gives late-run player power real headroom
+  // again, and leaving enemies frozen at exactly m=12 for the rest of a
+  // stage-2 run — measured at 35% of total run time — would make the
+  // second half of the game strictly easier than the first, the opposite
+  // of "feel noticeably stronger." This picks up only once stage 1's own
+  // cap is reached, at under half stage 1's slope (0.45 vs 1.0/min), with
+  // its own separate hard cap (+5.0, so m tops out at 17.0 total no matter
+  // how long a run runs) — the uncapped-divergence problem the original
+  // m=12 cap existed to kill cannot come back through this term.
+  function difficulty(){
+    const base = Math.min(elapsed/60, 12);
+    if(stage !== 2) return base;
+    const gate = Math.max(stage2EnteredAt, 720); // 720s = the stage-1 m=12 mark
+    return base + Math.min(Math.max(0, elapsed - gate)/60 * 0.45, 5.0);
+  }
   function spawnEnemy(type){
     const def = ENEMY_TYPES[type];
     const ang = Math.random()*Math.PI*2;
@@ -2746,7 +2898,10 @@ const Game = (function(){
   // individually to touch only the radius term, never the damage term on
   // the same statement — the guardrail the design review named explicitly
   // to keep this from silently becoming a second damage multiplier.
-  function ampMult(){ return 1 + (passives.amplify||0)*0.08; } // maxLvl 5 -> 40% cap
+  function ampMult(){ // maxLvl 5 -> 40% cap, +4%/Resonance rank past that -> 52% ceiling
+    const a = passives.amplify||0;
+    return 1 + Math.min(a,5)*0.08 + Math.max(0,a-5)*0.04;
+  }
 
   function damageBoss(dmg){
     if(!boss) return;
@@ -2939,6 +3094,7 @@ const Game = (function(){
   function nearestEnemy(maxD2){
     let best = null, bd = maxD2 || Infinity;
     for(const e of enemies){
+      if(e._banished) continue; // bug fix: this loop had no _banished check, so autocasts could target/aim at an enemy parked at Banish's teleport coordinates and fire into empty space
       const d2 = dist2(player.x,player.y,e.x,e.y);
       if(d2 < bd){ bd = d2; best = e; }
     }
@@ -2962,11 +3118,11 @@ const Game = (function(){
       if(fireTimers.pulse <= 0){
         const t = nearestEnemy();
         if(t){
-          fireTimers.pulse = 1.05 - weapons.pulse*0.09;
+          fireTimers.pulse = 1.05 - wl('pulse')*0.09;
           player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
           const ang = Math.atan2(t.y-player.y, t.x-player.x);
           if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(ang)*520, vy:Math.sin(ang)*520,
-            dmg:(18+weapons.pulse*6)*dmgMult(), r:5, life:1.4, pierce:0, color:'#e2b855' });
+            dmg:(18+wl('pulse')*6)*dmgMult()*wRes('pulse'), r:5, life:1.4, pierce:0, color:'#e2b855' });
         }
       }
     }
@@ -2978,11 +3134,11 @@ const Game = (function(){
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
         const t = nearestEnemy();
         const baseAng = t ? Math.atan2(t.y-player.y, t.x-player.x) : Math.random()*Math.PI*2;
-        const n = 2 + weapons.shardspray;
+        const n = 2 + wl('shardspray');
         for(let i=0;i<n;i++){
           const a = baseAng + (i-(n-1)/2)*0.22;
           if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(a)*420, vy:Math.sin(a)*420,
-            dmg:(10+weapons.shardspray*4)*dmgMult(), r:4, life:1.6, pierce:2, color:'#9d6bff', shape:'shard' });
+            dmg:(10+wl('shardspray')*4)*dmgMult()*wRes('shardspray'), r:4, life:1.6, pierce:2, color:'#9d6bff', shape:'shard' });
         }
       }
     }
@@ -2990,10 +3146,10 @@ const Game = (function(){
     if(weapons.nova){
       fireTimers.nova -= dt*rateMult();
       if(fireTimers.nova <= 0){
-        fireTimers.nova = 4.2 - weapons.nova*0.5;
+        fireTimers.nova = 4.2 - wl('nova')*0.5;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        const radius = (120 + weapons.nova*22) * ampMult();
-        const dmg = (20 + weapons.nova*10)*dmgMult();
+        const radius = (120 + wl('nova')*22) * ampMult();
+        const dmg = (20 + wl('nova')*10)*dmgMult()*wRes('nova');
         novaRings.push({ x:player.x, y:player.y, r:0, max:radius, life:0.35, dur:0.35 });
         Events.emit('novaFire', { x:player.x, y:player.y, radius });
         const rewind = evolutions.rewind;
@@ -3007,19 +3163,23 @@ const Game = (function(){
         });
         // Same uncapped-heal shape as Drain had before its own fix (see
         // HEAL_CAP_TARGETS below): hitCount*3 with no ceiling meant a max-
-        // level Nova (r=230, 1.7s cooldown / rateMult) hitting a realistic
-        // dense-wave count of ~60 enemies healed 180hp per cast — sustained
-        // ~159hp/sec, worse than the ~159-300+ range this exact bug class
-        // already shipped once on Drain at 358hp/sec. Capped at 10 targets
-        // instead of Drain's (then-5, now 3 as of v2.7.1 — see
-        // HEAL_CAP_TARGETS above) because Rewind heals per-cast (burst,
-        // ~0.88 casts/sec at max) rather than per-tick — 10 targets lands
-        // its sustained rate at ~26.5hp/sec. That's higher than Drain's
-        // post-v2.7.1 ~19.3hp/sec, but still landed below the mitigated
-        // incoming-DPS range the same v2.7.1 fix verified — not re-checked
-        // against a Nova-specific build independently, worth another look
-        // if Rewind itself turns up in a future "can't die" report.
-        const REWIND_HEAL_CAP_TARGETS = 10;
+        // level Nova hitting a dense wave could heal far more per cast than
+        // intended. v2.9.1 power-curve audit did the "worth another look"
+        // this comment used to ask for: at the old 10-target cap, Rewind
+        // was actually the LARGEST heal in the game (~26.5hp/sec at
+        // rateMult's then-ceiling), above Drain's own post-fix ~19.3hp/sec
+        // — an unchecked sibling of the exact bug class Drain was fixed
+        // for. Dropped to 5 (see REWIND_HEAL_CAP_TARGETS below) for the
+        // real reasoning and re-measured rate.
+        // v2.9.1 — power-curve audit: re-verified independently (the exact
+        // check the original v2.7.1 comment above asked for). 10 targets *
+        // 3 / (1.7/1.5 rateMult-ceiling cadence = 1.133s) = ~26.5hp/sec —
+        // the single largest heal in the game, above the ~19.3hp/sec Drain
+        // was deliberately tuned to after its own "basically immortal"
+        // incident. Dropped to 5: at Fix A's new rateMult ceiling (1.65,
+        // cadence 1.030s) that's ~14.6hp/sec, correctly below Drain's for a
+        // free-rider heal riding the game's widest AoE.
+        const REWIND_HEAL_CAP_TARGETS = 5;
         if(rewind && hitCount > 0) player.hp = Math.min(player.maxhp, player.hp + Math.min(hitCount, REWIND_HEAL_CAP_TARGETS)*3);
       }
     }
@@ -3030,8 +3190,8 @@ const Game = (function(){
         fireTimers.drain = 0.35;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
         const siphon = evolutions.siphon;
-        const radius = (70 + weapons.drain*10) * (siphon ? 1.7 : 1) * ampMult();
-        const dmgPerTick = (8+weapons.drain*4)*dmgMult();
+        const radius = (70 + wl('drain')*10) * (siphon ? 1.7 : 1) * ampMult();
+        const dmgPerTick = (8+wl('drain')*4)*dmgMult()*wRes('drain');
         let totalDmg = 0, healHits = 0;
         // heal target count is capped independent of level/radius — damage
         // dealt stays uncapped (Drain is still a real AoE clear tool), but
@@ -3085,8 +3245,12 @@ const Game = (function(){
           // longer secretly buy survivability, and higher Drain levels
           // still reward more clear damage without also compounding into
           // immortality. Re-verified: same conditions now heal ~32hp/sec —
-          // real sustain, not a get-out-of-danger-free aura.
-          const HEAL_BASE = 5 + weapons.drain*2; // deliberately NOT multiplied by dmgMult
+          // real sustain, not a get-out-of-danger-free aura. Uses wl(), not
+          // weapons.drain directly, ONLY so Resonance ranks (which can push
+          // weapons.drain past 5) don't silently uncap this too — but
+          // deliberately gets no wRes() multiplier, same reasoning as the
+          // original fix: this heal stays decoupled from any damage stat.
+          const HEAL_BASE = 5 + wl('drain')*2; // deliberately NOT multiplied by dmgMult or wRes
           const healDmg = HEAL_BASE * Math.min(healHits, HEAL_CAP_TARGETS);
           player.hp = Math.min(player.maxhp, player.hp + healDmg*0.15);
           if(siphon) player._speedBurstUntil = elapsed + 1.0;
@@ -3116,15 +3280,28 @@ const Game = (function(){
     if(weapons.displace){
       fireTimers.displace -= dt*rateMult();
       if(fireTimers.displace <= 0){
-        fireTimers.displace = 3.6 - weapons.displace*0.3;
+        fireTimers.displace = 3.6 - wl('displace')*0.3;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        const radius = 130 + weapons.displace*15;
-        const dmg = (8+weapons.displace*4)*dmgMult();
+        // BUG FIX (power-curve audit): radius never read ampMult (Displace
+        // was the only radial AoE excluded from Amplify's six documented
+        // call sites — the Amplify comment names Nova/Drain/Root/Afflict/
+        // Mine/Orbitals, and Displace was simply missing, no reason given).
+        const radius = (130 + wl('displace')*15) * ampMult();
+        const dmg = (8+wl('displace')*4)*dmgMult()*wRes('displace');
+        // BUG FIX (power-curve audit): the knockback magnitude was a bare
+        // literal `260` that never read weapons.displace at all — levelling
+        // Displace bought damage and radius but not one pixel of the
+        // knockback the spell is named for; L1 and L5 pushed enemies back
+        // by the exact same distance. Closed form (applyKnockback decays at
+        // 1-dt*6/s): old 260 -> ~43px total displacement regardless of
+        // level; now L1 260 -> ~75px, L5 1210 -> ~201px. wl() clamps the
+        // level term at maxLvl (Resonance deepens damage only, per the
+        // RESONANT-set rule above — it must never reach knockback magnitude).
         novaRings.push({ x:player.x, y:player.y, r:0, max:radius, life:0.3, dur:0.3 });
         Grid.queryCircle(player.x, player.y, radius, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
             hitEnemy(e, dmg);
-            applyKnockback(e, player.x, player.y, 260);
+            applyKnockback(e, player.x, player.y, 260 + wl('displace')*190);
           }
           return false;
         });
@@ -3137,8 +3314,8 @@ const Game = (function(){
       if(fireTimers.chain <= 0){
         fireTimers.chain = 1.6;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        const maxJumps = (2+weapons.chain) + (exhaust?2:0);
-        let dmg = (16+weapons.chain*5)*dmgMult();
+        const maxJumps = (2+wl('chain')) + (exhaust?2:0);
+        let dmg = (16+wl('chain')*5)*dmgMult()*wRes('chain');
         let current = nearestEnemy();
         const hitSet = new Set();
         let jumps = 0;
@@ -3161,9 +3338,9 @@ const Game = (function(){
     if(weapons.mine){
       fireTimers.mine -= dt*rateMult();
       if(fireTimers.mine <= 0){
-        fireTimers.mine = 2.6 - weapons.mine*0.2;
+        fireTimers.mine = 2.6 - wl('mine')*0.2;
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-        mines.push({ x:player.x, y:player.y, fuse:1.1, dmg:(30+weapons.mine*12)*dmgMult(), r:80*ampMult() });
+        mines.push({ x:player.x, y:player.y, fuse:1.1, dmg:(30+wl('mine')*12)*dmgMult()*wRes('mine'), r:80*ampMult() });
       }
     }
     // Afflict — weakening aura, reduces incoming contact damage from Husks caught inside
@@ -3180,28 +3357,54 @@ const Game = (function(){
         });
       }
     }
-    // Banish — periodically yeets the strongest nearby Husk off-field for a
-    // few seconds. Implemented by teleporting far away rather than a
-    // separate "frozen" flag — every proximity system (contact, chain,
-    // orbitals, drain) naturally ignores it for free, no special-casing.
+    // Banish — CRITICAL FIX (found during the late-run power-curve audit):
+    // the old single-target version scored candidates by e.maxhp with no
+    // boss exclusion and no re-verified distance (queryCircle only narrows
+    // to whole CELL-sized cells, real reach was ~640px against a claimed
+    // 500). Ramiel/the Fracture are in the same spatial grid as regular
+    // enemies (see gridExtra in the movement/collision block above) and
+    // boss.maxhp (4200) beats every live enemy during its own fight — so
+    // Banish ALWAYS targeted the boss, teleported it 6000,6000 (~5,100px
+    // away, well outside every weapon's real reach), and nothing in the
+    // game ever moves a boss — updateBoss()/updateBoss2() never write
+    // boss.x/y outside their own explicit phase logic. boss.hp could then
+    // never reach 0, bossDefeated() could never fire, and the run could
+    // never clear or advance to stage 2 — a genuine soft-lock reachable by
+    // simply owning Banish at any level and being near Ramiel when he
+    // spawns. Also rebuilt from "remove the single highest-maxhp enemy" to
+    // a capped-radius AoE removal: contact damage is gated to one hit per
+    // 0.55s across the whole crowd (see the player-contact block above), so
+    // "the biggest threat" doesn't compound the way it would under an
+    // additive damage model — removing 1 of ~40 enemies saved only the
+    // delta between the two highest-damage attackers touching the player,
+    // measured at roughly an order of magnitude weaker than every other
+    // weapon at the same slot cost. An AoE clear gives it real, bounded
+    // value: a hard TARGET-COUNT cap (not radius-derived — a cap on one
+    // axis while another keeps scaling unbounded is exactly the shape of
+    // the studio's own Drain incident) keeps this from ever compounding.
     if(weapons.banish){
       fireTimers.banish -= dt*rateMult();
       if(fireTimers.banish <= 0){
-        let target = null, bestScore = -1;
-        Grid.queryCircle(player.x, player.y, 500, (e) => {
+        const radius = (150 + wl('banish')*30) * ampMult(); // L1 180 -> L5 300 (456 amped)
+        const dur = 2 + Math.floor(wl('banish')/2); // unchanged: L1 2s -> L5 4s
+        const maxTargets = 4 + wl('banish')*2; // L1 6 -> L5 14 — the hard cap; never derived from radius
+        let n = 0;
+        Grid.queryCircle(player.x, player.y, radius, (e) => {
           if(e._dead || e._banished) return false;
-          if(e.maxhp > bestScore){ bestScore = e.maxhp; target = e; }
-          return false;
+          if(e === boss || e === boss2) return false; // the actual fix — see above
+          if(dist2(player.x,player.y,e.x,e.y) > radius*radius) return false; // re-verify: queryCircle only narrows to whole cells
+          e._banished = true;
+          e._banishReturnAt = elapsed + dur;
+          e.x = 6000; e.y = 6000;
+          n++;
+          return n >= maxTargets;
         });
         // only spend the long cooldown on an actual cast — a whiff (no
         // target yet, e.g. grid one tick stale right after a fresh spawn)
         // should retry next tick, not burn the whole 6-9s window for free.
-        if(target){
-          fireTimers.banish = 9 - weapons.banish*0.8;
+        if(n > 0){
+          fireTimers.banish = 9 - wl('banish')*0.8;
           player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
-          target._banished = true;
-          target._banishReturnAt = elapsed + 2 + Math.floor(weapons.banish/2);
-          target.x = 6000; target.y = 6000;
           Events.emit('banish', {});
         }
       }
@@ -3215,7 +3418,7 @@ const Game = (function(){
         const t = nearestEnemy();
         if(t){
           hitEnemy(t, 4*dmgMult());
-          applyBurn(t, (8+weapons.impose*4)*dmgMult(), 2+weapons.impose*0.4);
+          applyBurn(t, (8+wl('impose')*4)*dmgMult()*wRes('impose'), 2+wl('impose')*0.4);
         }
       }
     }
@@ -3228,11 +3431,11 @@ const Game = (function(){
       if(fireTimers.sunder <= 0){
         const t = nearestEnemy();
         if(t){
-          fireTimers.sunder = 5.5 - weapons.sunder*0.5;
+          fireTimers.sunder = 5.5 - wl('sunder')*0.5;
           player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
           const angle = Math.atan2(t.y-player.y, t.x-player.x);
           sunderBeams.push({ x:player.x, y:player.y, angle, life:SUNDER_DURATION,
-            tickTimer:0, dmgPerTick:(6+weapons.sunder*3)*dmgMult() });
+            tickTimer:0, dmgPerTick:(6+wl('sunder')*3)*dmgMult()*wRes('sunder') });
           Events.emit('sunderFire', { x:player.x, y:player.y, dirX:Math.cos(angle), dirY:Math.sin(angle) });
         }
       }
@@ -3482,8 +3685,8 @@ const Game = (function(){
     // orbitals contact — grid query per talisman instead of full scan
     if(weapons.orbitals){
       const nhulParticle = evolutions.nhulparticle;
-      const n = nhulParticle ? 7 : Math.min(weapons.orbitals+1, 5);
-      const oR = 62 * ampMult(), orbDmg = (12+weapons.orbitals*5)*dmgMult();
+      const n = nhulParticle ? 7 : Math.min(wl('orbitals')+1, 5);
+      const oR = 62 * ampMult(), orbDmg = (12+wl('orbitals')*5)*dmgMult()*wRes('orbitals');
       for(let i=0;i<n;i++){
         const a = elapsed*2.4 + i*(Math.PI*2/n);
         const ox = player.x + Math.cos(a)*oR, oy = player.y + Math.sin(a)*oR;
@@ -3552,6 +3755,15 @@ const Game = (function(){
       if(sb.tickTimer <= 0){
         sb.tickTimer += SUNDER_TICK_INTERVAL;
         const dx = Math.cos(sb.angle), dy = Math.sin(sb.angle);
+        // BUG FIX (power-curve audit): boss/boss2 are already members of
+        // this same query — the movement/collision block above rebuilds
+        // Grid with gridExtra including both bosses every frame — so the
+        // explicit `if(boss){...hitEnemy(boss,...)}` block that used to
+        // follow this query was a second, redundant hit on Ramiel alone
+        // (never on the Fracture, which had no matching explicit block),
+        // silently doubling Sunder's real DPS against Ramiel only. Deleted
+        // rather than guarded: the grid query already covers both bosses
+        // correctly with the exact same perpendicular-distance math.
         Grid.queryCircle(sb.x, sb.y, SUNDER_RANGE, (e) => {
           if(e._dead) return false;
           const toPx = e.x-sb.x, toPy = e.y-sb.y;
@@ -3563,14 +3775,6 @@ const Game = (function(){
           }
           return false;
         });
-        if(boss){
-          const toPx = boss.x-sb.x, toPy = boss.y-sb.y;
-          const proj = toPx*dx + toPy*dy;
-          if(proj > 0 && proj < SUNDER_RANGE){
-            const perp = Math.abs(toPx*dy - toPy*dx);
-            if(perp < SUNDER_WIDTH/2 + boss.r) hitEnemy(boss, sb.dmgPerTick, true);
-          }
-        }
       }
     }
     sunderBeams = sunderBeams.filter(sb => sb.life > 0);
@@ -3590,7 +3794,21 @@ const Game = (function(){
         g._got = true;
         xp += g.v * (1 + Persist.data.upgrades.insight*0.15);
         Events.emit('gemPickup', { x: g.x, y: g.y, v: g.v });
-        if(passives.maxhp) player.hp = Math.min(player.maxhp, player.hp + 0.5);
+        // BUG FIX (power-curve audit, part of closing the heal-stack risk
+        // Fix B's higher stage-2 spawn rate would otherwise widen): this
+        // heal's throughput was set by gems/sec, which is difficulty()'s
+        // OWN spawn rate — a term that grows with danger and that the
+        // player never spent a pick on, and the only heal in the file with
+        // no cap of any kind (7.2hp/s at old m=12, would reach ~15.9hp/s
+        // under Fix B's raised stage-2 cap). Re-rooted to Regenerate's own
+        // level on a fixed 0.5s cadence instead, so it's spawn-rate-
+        // independent by construction — same shape as the Drain fix
+        // (HEAL_BASE above): tie a heal to the stat the player actually
+        // leveled, not to a side effect of how dangerous the run got.
+        if(passives.maxhp && elapsed >= (player._mendAt||0)){
+          player._mendAt = elapsed + 0.5;
+          player.hp = Math.min(player.maxhp, player.hp + passives.maxhp*0.4);
+        }
       }
     }
     gems = gems.filter(g=>!g._got);
@@ -4467,14 +4685,14 @@ const Game = (function(){
     const opts = [];
     for(const [k,def] of Object.entries(WEAPONS)){
       const cur = weapons[k]||0;
-      if(cur >= def.maxLvl) continue;
+      if(cur >= resCap(k, true)) continue; // Resonance — see resCap()
       if(cur === 0 && slotsFull) continue; // no new spells once all 6 slots are taken
       if(k === 'sunder' && cur === 0) continue; // granted directly on reaching stage 2 (advanceToStage2), never offered as a random early pick — still levelable normally through this pool once owned
       opts.push({ kind:'weapon', key:k, def, cur });
     }
     for(const [k,def] of Object.entries(PASSIVES)){
       const cur = passives[k]||0;
-      if(cur < def.maxLvl) opts.push({ kind:'passive', key:k, def, cur });
+      if(cur < resCap(k, false)) opts.push({ kind:'passive', key:k, def, cur }); // Resonance — see resCap()
     }
     // shuffle, take LEVEL_CHOICE_COUNT
     for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [opts[i],opts[j]]=[opts[j],opts[i]]; }
@@ -4523,6 +4741,26 @@ const Game = (function(){
           <div class="pick-info">
             <div class="pick-name">${o.def.name}<span class="lvl evo-lvl">EVOLUTION</span></div>
             <div class="pick-desc">${o.def.desc()}</div>
+          </div>
+        </button>`;
+      }
+      // Resonance rank (past the normal maxLvl, stage-2-only — see resCap):
+      // the node's own desc() formula was never designed for levels past
+      // maxLvl (cooldowns/radii/counts read raw `l` unclamped and would
+      // print wrong numbers), so this renders a distinct, honest label
+      // instead of calling desc() past its intended domain.
+      const baseMax = o.kind==='weapon' ? WEAPONS[o.key].maxLvl : PASSIVES[o.key].maxLvl;
+      if(o.cur >= baseMax){
+        const resRank = o.cur - baseMax + 1;
+        const resDesc = o.kind==='weapon' ? `Resonance. +35% ${o.def.name} damage. Nothing else changes.`
+          : o.key==='damage' ? `Resonance. +6% to all spell damage.`
+          : o.key==='firerate' ? `Resonance. +5% casting speed.`
+          : `Resonance. +4% radius on all fields/bursts.`;
+        return `<button class="pick-card" onclick="Game.pick(${i})">
+          <div class="pick-icon">${o.def.icon}</div>
+          <div class="pick-info">
+            <div class="pick-name">${o.def.name}<span class="lvl resonance-lvl">RESONANCE ${resRank}</span></div>
+            <div class="pick-desc">${resDesc}</div>
           </div>
         </button>`;
       }
