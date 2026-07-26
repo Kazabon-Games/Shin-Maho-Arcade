@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.7.0</title>
+<title>IRIDESCENT COSMOLOGY v2.8.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,153 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.8.0 — 2026-07-26 — Rebuilt the score as ONE continuous graph with a mood
+                          engine, replacing the menu/gameplay voice-set swap.
+                          The producer ask was "more atmospheric and epic, and
+                          menus etc should branch from the main track so it's
+                          dynamic"; STUDIO_BIBLE.md §14 independently requires
+                          mood/tone to be a live input to generation rather
+                          than a switch between pre-authored cues. Both point
+                          at the same structural change, so this is one pass,
+                          not two.
+                          • THE STRUCTURAL CHANGE. Before: `startMenuAmbience()`
+                            (2 raw sine oscillators + a setTimeout motif) and
+                            `start()` (drone + boss pad + a 16th-note scheduler)
+                            were mutually exclusive code paths gated by
+                            `if(menuActive || started) return;`. Every screen
+                            transition hard-cut between two separate voice
+                            sets, and Shop/Achievements/Settings/Pause made
+                            ZERO Music calls at all — they just sat on top of
+                            whatever happened to be playing. Now there is one
+                            graph (drone + atmos pad + motif core + boss pad)
+                            built once at the first user gesture and never torn
+                            down, and one 16th-note clock that never stops.
+                            Screens do not start or stop voices; they set a
+                            target point in a seven-dimensional musical space
+                            (drive / tension / density / brightness / space /
+                            weight / tempo, plus an omen dimension for boss
+                            material) that the existing per-frame smoother
+                            walks the live mix toward. Menu, shop, archive, a
+                            run, a boss fight, pause and death are the same
+                            track at different coordinates.
+                          • Verified live, by reading real AudioParam values
+                            (no speakers in this environment): menu→run now
+                            moves the drone gain 0.1138 → 0.1142 with the
+                            musical clock stepping straight through the
+                            transition (absStep 435 → 482 across a whole
+                            death→menu→run session, never reset). Previously
+                            this was a fade-to-0 on one oscillator pair and a
+                            fresh buildDrone() on another. Tempo genuinely
+                            moves: 93bpm at the menu, 83 in the shop, 139–150
+                            in a run, +3% near death.
+                          • MOOD AS A LIVE INPUT, not a preset lookup. The run
+                            branch has no preset — it's generated each frame
+                            from elapsed time, section, boss phase and HP.
+                            Near-death is a first-class musical input: at 8% HP
+                            the pad's dissonant b2/b6 colour pair crossfades in
+                            (tension gain 0.000 → 0.140), the filter closes
+                            (1267Hz → 452Hz) and tempo pushes (137 → 145bpm).
+                            The chord itself changes; it does not just get
+                            louder.
+                          • Pause is a deliberate design decision, stated so it
+                            isn't read as an oversight: it keeps the run's own
+                            live tension and boss material exactly where the
+                            run left them, drops percussion, slams the filter
+                            shut (1268 → 599Hz) and opens the room to maximum
+                            (send 0.52 → 0.71). A paused boss fight still
+                            sounds like a boss fight. Silence would break the
+                            one-continuous-track structure; a generic calm hold
+                            would throw away the only information the music is
+                            carrying. Pause is DERIVED from Game's `paused`
+                            flag inside the engine rather than pushed from
+                            togglePause(), so every path that pauses (button,
+                            Escape/P, visibilitychange, blur, Settings.open,
+                            Bugrep.open) gets it without needing to remember.
+                          • A REAL TITLE THEME, closing the gap the v2.5.0
+                            entry below admits ("no true title-theme melody
+                            distinct from the in-run lead"). The five-note
+                            signature motif now gets a descending answer and an
+                            actual cadence — bII → i, the Phrygian cadence,
+                            the mode's own signature move. Verified by
+                            recording real oscillator start() calls at the
+                            menu: r p4 p5 b6 oct / b7 b6 p5 / [b2 p4 b6] /
+                            [r b3 p5 oct]. It is NOT a separate composition:
+                            same five notes, same root, same voice bank, same
+                            clock. The title is simply the calmest branch of
+                            the one track, which is what the "branch from the
+                            main track" ask requires.
+                          • ATMOSPHERIC/EPIC pass: reverb IR lengthened 1.1s →
+                            2.6s (decay exponent 2.2 → 1.8) and its music send
+                            is now driven per-frame by `space`, so the menu
+                            (0.73) is audibly a bigger room than combat (0.52)
+                            and the boss (0.59) bigger again. New always-on
+                            5-voice atmos pad with a slow detune LFO and the
+                            tension crossfade. Drone gained a sub-octave (it
+                            was root+fifth only — there was nothing below D2,
+                            which is where "not epic enough" actually lived).
+                            Boss pad went from 2 bare saws to detuned stereo
+                            pairs + a sub, and gained a reverb send (it was
+                            fully dry, which is why the boss read as loud
+                            rather than large). The riser gained a sustained
+                            swell pad under it.
+                          • BUS FIX found while restructuring: the single
+                            shared reverb was wired to `master`, so the music
+                            volume slider did not attenuate music voices'
+                            reverb tails — tolerable at a fixed 0.4 send on a
+                            1.1s room, a real "one voice immune to the slider"
+                            bug at a live send on a 2.6s hall. Split into two
+                            convolvers sharing one generated buffer: music
+                            tail → musicGain, stinger tail → sfxGain. Verified
+                            by walking every recorded connect() edge in the
+                            live graph — only musicGain and sfxGain now feed
+                            master, and only the compressor reaches
+                            ctx.destination.
+                          • Two bugs this pass found by measuring rather than
+                            reading, both silent (neither throws): (1) the
+                            menu preset's drive of 0.10 sat ABOVE the 0.08
+                            percussion gate, so a quiet four-on-the-floor was
+                            running under the title screen — caught by counting
+                            real oscillator start() calls, not by ear or by
+                            reading the branch table. Gate raised to 0.12 and
+                            every "no percussion" branch put strictly below it.
+                            (2) The first motif statement is queued on the
+                            scheduler's first tick, ~25ms after the graph is
+                            built, when `density` has had one frame to smooth
+                            up from silence — so it was skipped and deferred a
+                            full 10-bar cycle, leaving the title screen with no
+                            theme for ~26 seconds. A skipped statement now
+                            retries at the next bar.
+                          • Automation discipline held throughout (the rule the
+                            "dying sticks the music" incident exists for):
+                            every mood-driven param is SET DIRECTLY each frame
+                            in applyMood() and nothing else schedules
+                            automation on it. stopForRun()'s old rampGain calls
+                            on drone/bossPad are gone precisely because those
+                            params are now written per-frame — the boss pad
+                            fades on death via mood.omen instead (verified
+                            0.0682 → 0.0016). One-shot ramps remain one-shot:
+                            the riser, duckPump, the outgoing boss pad's
+                            teardown, the atmos harmony glide, master mute.
+                          • WHAT THIS IS NOT. This is not an orchestral
+                            rebuild. The instrument bank is unchanged — the
+                            same oscillators, filtered noise and two-sine bells
+                            this file has always used; what changed is
+                            structure, routing and how much of it is driven by
+                            game state. There has been no playtest of the new
+                            score by a human with speakers; every claim above
+                            is a read AudioParam value, which proves the score
+                            responds as designed but not that the design sounds
+                            good. And the §14 apex test ("could a player
+                            describe what's happening from the music alone")
+                            is met for the big states — calm menu vs. shop vs.
+                            run vs. boss vs. near-death vs. paused are all
+                            distinguishable by parameter — but NOT at
+                            fine grain: a player could not tell an elite spawn
+                            from a normal wave, or a full-HP run from a
+                            two-thirds-HP one, from the music. Those are
+                            continuous inputs the engine has room for and
+                            doesn't use yet.
 
   v2.7.0 — 2026-07-11 — Renamed WONDERLAND → IRIDESCENT COSMOLOGY studio-wide,
                           resolving a naming collision with a separate Kazabon
@@ -1371,7 +1518,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.7.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.8.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -4354,6 +4501,14 @@ const Game = (function(){
     lastRunStats = { elapsed, kills, level, total, cleared: false };
   }
 
+  // Music note (v2.8.0): pause deliberately makes NO Music.setBranch call.
+  // The pause mood is derived from `paused` in Music's own computeMoodTarget
+  // on the very next frame, as a modifier layered over the run's live mood
+  // (percussion out, filter shut, room wide, tension and boss-material held
+  // where the run left them). Deriving it from state rather than pushing it
+  // from here means it cannot desync: every path that pauses — this button,
+  // Escape/P, visibilitychange, blur, Settings.open, Bugrep.open — gets the
+  // same musical result without each one needing to remember to call.
   function togglePause(){
     if(!running || levelChoosing) return;
     paused = !paused;
@@ -4860,6 +5015,7 @@ const Music = (function(){
   // repoints those connections, it does not change the mix chain itself.
   let musicGain = null, sfxGain = null;
   let drone = null; // quiet background bed, same idea as before, much lower presence now
+  let atmos = null; // sustained pad — the always-on "epic"/atmospheric bed (v2.8.0)
   let intensity = 0;
   let debugTickCount = 0;
   let resolving = false;
@@ -4867,8 +5023,94 @@ const Music = (function(){
 
   const ROOT = 73.42; // D2
   const BPM = 150;
-  const STEP_SEC = () => (60/BPM)/4; // 16th notes
-  let nextStepTime = 0, step = 0, schedulerHandle = null;
+  // tempo is now a live musical parameter (mood.tempo scales BPM), not a
+  // constant — the menu/shop branches genuinely run slower than a run does,
+  // and the boss/near-death states genuinely push. mood.tempo is smoothed
+  // very slowly (see MOOD_SMOOTH) so a branch change reads as a ritardando/
+  // accelerando rather than a jump cut.
+  const STEP_SEC = () => (60/(BPM*Math.max(0.25, mood.tempo)))/4; // 16th notes
+  let nextStepTime = 0, step = 0, absStep = 0, schedulerHandle = null;
+
+  /* ===================================================================
+     MOOD ENGINE (v2.8.0) — the structural change this version exists for.
+
+     Before this version the score was two mutually exclusive voice sets:
+     `startMenuAmbience()` (2 sine oscillators + a setTimeout motif) and
+     `start()` (drone + bossPad + a 16th-note scheduler), gated by
+     `if(menuActive || started) return;`. Switching screens hard-cut
+     between them, and Shop/Achievements/Settings/Pause made no Music call
+     at all — they just sat on top of whatever happened to be playing.
+
+     Now there is ONE graph and ONE clock that are built at first user
+     gesture and never torn down. Screens and game states don't start or
+     stop voices; they set a target point in a seven-dimensional musical
+     space, and the engine walks the live mix toward it every frame. The
+     menu, the shop, the archive screens, a run, a boss fight and death are
+     all the same track at different coordinates.
+
+       drive      rhythmic energy   -> kick/bass/hat/clap presence and gain
+       tension    harmonic tension  -> the b2/b6 colour pair in the pad,
+                                       plus master distortion drive
+       density    instrumentation   -> lead presence, motif rate/level, fills
+       brightness filter cutoff     -> pad cutoff + per-note lowpass bias
+       space      reverb send       -> how big the room is
+       weight     sustained mass    -> drone + atmos pad gain (the "epic" knob)
+       tempo      tempo scalar      -> multiplies BPM in STEP_SEC()
+       omen       boss-material     -> the boss pad's own dissonant interval
+
+     DISCIPLINE (see rampGain's header and the v1.x "dying sticks the music"
+     incident): every value in `mood` is smoothed in JS every frame, so the
+     AudioParams they drive are SET DIRECTLY in applyMood(), never ramped.
+     Nothing else in this module is allowed to schedule automation on those
+     same params — one-shot ramps belong to one-shot events only (the
+     riser, the outgoing boss pad's teardown, master mute).
+  =================================================================== */
+  const mood   = { drive:0, tension:0, density:0, brightness:0.10, space:0.80, weight:0, tempo:0.62, omen:0 };
+  const target = { drive:0, tension:0, density:0, brightness:0.10, space:0.80, weight:0, tempo:0.62, omen:0 };
+  // per-dimension smoothing rates (fraction of the remaining gap closed per
+  // frame at 60fps). Deliberately not uniform: rhythm should drop out of a
+  // pause quickly, harmony should move slowly enough to read as a modulation
+  // rather than a switch, and tempo slowest of all so it's felt not heard.
+  const MOOD_SMOOTH = { drive:0.045, tension:0.020, density:0.032, brightness:0.050, space:0.028, weight:0.026, tempo:0.010, omen:0.018 };
+
+  // Branch presets. `run` is deliberately absent — it's computed live from
+  // game state every frame (see computeMoodTarget) rather than being a
+  // preset, because that's the whole point of the mandate: the run's mood
+  // is generated, not selected.
+  const BRANCHES = {
+    // the title branch: the calmest, widest point of the same track. Slow
+    // (93bpm), no percussion at all, maximum room, the full theme statement.
+    menu:    { drive:0.00, tension:0.06, density:0.36, brightness:0.34, space:1.00, weight:0.66, tempo:0.62, omen:0 },
+    // shop — calmer and lower than the menu on purpose: the player is
+    // reading numbers, not being sold a fantasy. Drops an octave, loses the
+    // top of the pad, slows further.
+    shop:    { drive:0.00, tension:0.02, density:0.18, brightness:0.20, space:1.00, weight:0.54, tempo:0.52, omen:0 },
+    // achievements / evolution library / settings — the "archive" branch.
+    // Same stillness as the shop but bright and high rather than low and
+    // warm, so the two menu-adjacent screens are tellable apart by ear.
+    archive: { drive:0.00, tension:0.04, density:0.24, brightness:0.50, space:0.94, weight:0.40, tempo:0.56, omen:0 },
+    // death — the track collapses inward rather than stopping: heavy, dark,
+    // closed filter, and the one branch that keeps real harmonic tension
+    // with no rhythm under it at all.
+    death:   { drive:0.00, tension:0.34, density:0.10, brightness:0.07, space:1.00, weight:0.72, tempo:0.46, omen:0 },
+    // victory — the resolved answer to the death branch: no tension left,
+    // wide open, bright. playVictoryPhrase() carries the melodic content.
+    victory: { drive:0.00, tension:0.00, density:0.42, brightness:0.74, space:1.00, weight:0.80, tempo:0.60, omen:0 },
+  };
+  let branch = 'menu';
+
+  // Motif behaviour per branch — how the signature theme is stated on each
+  // screen. Same five notes and the same voice everywhere; only form,
+  // register, rate and level change. This is what makes the branches read as
+  // one piece of music rather than several.
+  const BRANCH_MOTIF = {
+    menu:    { form:'title',    bars:10, vol:0.105, oct:1 },
+    shop:    { form:'fragment', bars:8,  vol:0.085, oct:0.5 },
+    archive: { form:'fragment', bars:8,  vol:0.075, oct:2 },
+    death:   { form:'fall',     bars:14, vol:0.095, oct:0.5 },
+    victory: { form:'none',     bars:8,  vol:0,     oct:1 },
+    run:     { form:'phrase',   bars:16, vol:0.055, oct:1 },
+  };
 
   // D Phrygian bass line — the "deh-neh-net" pattern: root, flat-2 (the
   // Phrygian's dark color tone), fourth, root-up-an-octave. Bass now moves
@@ -5036,7 +5278,17 @@ const Music = (function(){
     return 0;
   }
 
+  // Two convolvers sharing ONE generated impulse buffer, not one shared
+  // convolver on the master fader. The old single `reverb` node was wired
+  // reverb -> reverbSend -> master, which meant the music volume slider did
+  // not attenuate the reverb tails of music voices — tolerable when the send
+  // was a fixed 0.4 on a 1.1s room, a real "one voice immune to the slider"
+  // bug now that `space` is a live mood parameter feeding a 2.6s hall.
+  // Enumerated every prior `.connect(reverb)` before splitting: bell()'s wet
+  // send, playLead()'s lead wet + shimmer wet. Music voices now go to
+  // reverbMusic (-> musicGain), stingers stay on reverb (-> sfxGain).
   let compressor = null, duckBus = null, reverb = null, reverbSend = null;
+  let reverbMusic = null, reverbMusicSend = null;
   let phraseBar = 0; // 0-3, cycles the 4-bar bass/lead phrase; bar 3 is the fill
   let section = 0;
   let musicStage = 1; // 1 | 2 — tracks Game's own `stage`, separately from `section`, so entering stage 2 is a detectable edge
@@ -5044,7 +5296,7 @@ const Music = (function(){
   let activeBossKind = null; // 'ramiel' | 'fracture' | null — which boss's pad/lead/bass material is live
   let bossPad = null; // sustained dissonant tone that fades in for the boss section only
   let riserNodes = null, riserActive = false;
-  let menuCtxNodes = null, menuScheduleHandle = null, menuActive = false;
+  let coreBuilt = false; // the persistent graph (drone + atmos pad + clock) is built exactly once
   let nextLowHpPulseTime = 0; // ctx.currentTime-based, same idiom as nextStepTime — near-death tension pulse
 
   function ensureCtx(){
@@ -5082,31 +5334,58 @@ const Music = (function(){
     duckBus = ctx.createGain(); duckBus.gain.value = 1;
     duckBus.connect(musicGain);
 
-    // reverb send — a short synthesized impulse response (exponential-decay
-    // stereo noise, no external IR file needed) gives the bell accents
-    // actual space/dimension instead of sounding like a dry beep in a box.
-    // Deliberately left on the shared master fader, unsplit — it's low-level
-    // ambience feeding both channels' tails; splitting it means either
-    // duplicating the send or picking an arbitrary owner between music/SFX.
-    reverb = ctx.createConvolver();
-    const irLen = ctx.sampleRate*1.1;
+    // reverb — a synthesized impulse response (exponential-decay stereo
+    // noise, no external IR file needed). Lengthened from 1.1s/exp 2.2 to
+    // 2.6s/exp 1.8 for v2.8.0: the old room was sized for short bell
+    // stingers, and "more atmospheric" is mostly a decay-time decision. The
+    // longer tail is kept under control by `space` scaling the music send
+    // down during combat rather than by shortening the room itself.
+    const irLen = Math.floor(ctx.sampleRate*2.6);
     const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
     for(let ch=0; ch<2; ch++){
       const d = irBuf.getChannelData(ch);
-      for(let i=0;i<irLen;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/irLen, 2.2);
+      for(let i=0;i<irLen;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/irLen, 1.8);
     }
-    reverb.buffer = irBuf;
-    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.4;
-    reverb.connect(reverbSend); reverbSend.connect(master);
+    // stinger/SFX tail — now on sfxGain, so the SFX slider owns its own
+    // reverb instead of it hanging off the shared master fader.
+    reverb = ctx.createConvolver(); reverb.buffer = irBuf;
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.45;
+    reverb.connect(reverbSend); reverbSend.connect(sfxGain);
+    // music tail — its send gain is driven per-frame by mood.space (see
+    // applyMood), which is what actually makes the menu/shop/pause branches
+    // feel like a different, larger room than mid-combat.
+    reverbMusic = ctx.createConvolver(); reverbMusic.buffer = irBuf;
+    reverbMusicSend = ctx.createGain(); reverbMusicSend.gain.value = 0.3;
+    reverbMusic.connect(reverbMusicSend); reverbMusicSend.connect(musicGain);
+  }
+
+  // ---- the persistent core. Built exactly once, at the first user gesture,
+  // and never torn down for the life of the page. Every screen transition is
+  // a mood target change against THIS graph — there is no other graph.
+  function ensureAudio(){
+    ensureCtx();
+    if(ctx.state === 'suspended') ctx.resume();
+    if(coreBuilt) return;
+    coreBuilt = true;
+    buildDrone();
+    buildAtmosPad();
+    buildBossPad('ramiel'); // built silent (mood.omen === 0); only ever heard when a boss is live
+    nextStepTime = ctx.currentTime + 0.1;
+    schedulerHandle = setInterval(schedulerTick, 25);
   }
 
   function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
   function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
 
-  function duckPump(t){
+  // one-shot scheduled automation per kick hit — legitimate cancel+ramp use
+  // (a discrete event, not a continuously-smoothed value). Duck depth scales
+  // with how present the rhythm section actually is, so a branch with a
+  // barely-audible kick doesn't chop a 70% hole in the pad.
+  function duckPump(t, lvl){
+    const depth = 1 - 0.7*(lvl == null ? 1 : lvl);
     duckBus.gain.cancelScheduledValues(t);
     duckBus.gain.setValueAtTime(1, t);
-    duckBus.gain.linearRampToValueAtTime(0.3, t+0.03);
+    duckBus.gain.linearRampToValueAtTime(depth, t+0.03);
     duckBus.gain.exponentialRampToValueAtTime(1, t+0.3);
   }
 
@@ -5177,10 +5456,15 @@ const Music = (function(){
   // kick — pitch-envelope synthesis: a sine sweeping fast from ~150Hz to
   // ~50Hz (the "thump") plus a very short noise click on top (the
   // "attack" transient a pure sine can't give you). No sample needed.
-  function playKick(t, hard){
-    duckPump(t);
+  // `lvl` (0..1) is mood.drive scaled — a per-note level trim applied at
+  // schedule time, NOT continuous automation on a shared param. This is how
+  // the rhythm section fades in/out across a branch change without any of
+  // its voices needing a sustained gain node someone else might also ramp.
+  function playKick(t, hard, lvl){
+    const L = lvl == null ? 1 : lvl;
+    duckPump(t, L);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(hard?0.9:0.7, t);
+    g.gain.setValueAtTime((hard?0.9:0.7)*L, t);
     g.gain.exponentialRampToValueAtTime(0.001, t+0.22);
     g.connect(musicGain);
     const o = ctx.createOscillator(); o.type = 'sine';
@@ -5192,22 +5476,27 @@ const Music = (function(){
     const d = clickBuf.getChannelData(0);
     for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1)*(1-i/d.length);
     const click = ctx.createBufferSource(); click.buffer = clickBuf;
-    const cg = ctx.createGain(); cg.gain.value = hard?0.3:0.18;
+    const cg = ctx.createGain(); cg.gain.value = (hard?0.3:0.18)*L;
     click.connect(cg); cg.connect(musicGain); click.start(t);
   }
 
   // bass pluck — filtered sawtooth, fast decay envelope + a resonant
   // lowpass whose cutoff opens with intensity, the classic trance-pluck
   // sound. This is the actual "deh-neh-net" line.
-  function playBassNote(t, freq){
+  function playBassNote(t, freq, lvl){
+    const L = lvl == null ? 1 : lvl;
     const filt = ctx.createBiquadFilter();
     filt.type = 'lowpass';
-    filt.frequency.setValueAtTime(300 + intensity*2200, t);
-    filt.frequency.exponentialRampToValueAtTime(120 + intensity*400, t+0.15);
+    // cutoff now reads mood.brightness as well as intensity — brightness is
+    // the branch-level "how open is this world" knob, intensity the run's
+    // own build. Sampled once here at note-schedule time, so it can never
+    // collide with applyMood's per-frame sets (different params entirely).
+    filt.frequency.setValueAtTime(220 + intensity*1800 + mood.brightness*900, t);
+    filt.frequency.exponentialRampToValueAtTime(110 + intensity*400, t+0.15);
     filt.Q.value = 8;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.001, t);
-    g.gain.linearRampToValueAtTime(0.42, t+0.008);
+    g.gain.linearRampToValueAtTime(0.42*L, t+0.008);
     g.gain.exponentialRampToValueAtTime(0.001, t+0.17);
     const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq;
     o.connect(filt); filt.connect(g); g.connect(musicGain);
@@ -5242,7 +5531,7 @@ const Music = (function(){
     filt.connect(g);
     g.connect(duckBus); // lead pumps with the kick too — same trance-produced glue as the drone
     const wet = ctx.createGain(); wet.gain.value = 0.18;
-    g.connect(wet); wet.connect(reverb); // a little space on the lead, dry signal stays dominant
+    g.connect(wet); wet.connect(reverbMusic); // a little space on the lead, dry signal stays dominant
 
     // crystalline shimmer — the actual identity fix. Without this, the
     // lead is a generic trance supersaw that could belong to any game; a
@@ -5263,21 +5552,22 @@ const Music = (function(){
     s2.connect(s2g); s2g.connect(gg); s1.connect(gg);
     gg.connect(duckBus);
     const gwet = ctx.createGain(); gwet.gain.value = 0.32; // shimmer gets more space/reverb than the saw stack — that's what reads as "crystalline" rather than "dry pluck"
-    gg.connect(gwet); gwet.connect(reverb);
+    gg.connect(gwet); gwet.connect(reverbMusic);
     s1.start(t); s2.start(t); s1.stop(t+gDur+0.05); s2.stop(t+gDur+0.05);
   }
 
   // hi-hat — short filtered noise burst, noise-based (not tonal) so it
   // reads as a distinct rhythmic layer regardless of what pitch the bass/
   // lead happen to be sitting on at that instant (see skill note #3).
-  function playHat(t, open){
+  function playHat(t, open, lvl){
+    const L = lvl == null ? 1 : lvl;
     const len = open ? 0.16 : 0.06;
     const buf = ctx.createBuffer(1, ctx.sampleRate*len, ctx.sampleRate);
     const d = buf.getChannelData(0);
     for(let i=0;i<d.length;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, open?1.4:2.6);
     const src = ctx.createBufferSource(); src.buffer = buf;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
-    const g = ctx.createGain(); g.gain.value = (open?0.16:0.11) * (0.6+intensity*0.4);
+    const g = ctx.createGain(); g.gain.value = (open?0.16:0.11) * (0.6+intensity*0.4) * L;
     src.connect(hp); hp.connect(g); g.connect(musicGain);
     src.start(t);
   }
@@ -5350,7 +5640,34 @@ const Music = (function(){
     o.connect(og); og.connect(musicGain);
     o.start(t);
 
-    riserNodes = { src, o, g, og };
+    // swell — a sustained low fifth+octave choir-ish pad that grows across
+    // the same window as the riser. The riser alone was a noise sweep and a
+    // pitch climb: tense, but thin. This is the "sustained pad presence
+    // under riser moments" half of the ask, and it's the same one-shot
+    // scheduled-ramp pattern as the rest of startRiser (a single
+    // exponentialRampToValueAtTime across a known duration, never touched
+    // again until stopRiser's own one-shot fade) — deliberately NOT part of
+    // the per-frame mood set, because a riser is an event, not a state.
+    const sw = ctx.createGain();
+    sw.gain.setValueAtTime(0.0001, t);
+    sw.gain.exponentialRampToValueAtTime(0.16, t+durSec);
+    sw.connect(duckBus);
+    const swWet = ctx.createGain(); swWet.gain.value = 0.55;
+    sw.connect(swWet); swWet.connect(reverbMusic);
+    const swFilt = ctx.createBiquadFilter(); swFilt.type='lowpass'; swFilt.Q.value = 1.2;
+    swFilt.frequency.setValueAtTime(300, t);
+    swFilt.frequency.exponentialRampToValueAtTime(2400, t+durSec);
+    swFilt.connect(sw);
+    const swOsc = [ROOT*0.5, ROOT, ROOT*1.4983, ROOT*2].map((f,i)=>{
+      const so = ctx.createOscillator(); so.type = i===0 ? 'sine' : 'triangle';
+      so.frequency.value = f; so.detune.value = (i%2? 8 : -8);
+      const sg = ctx.createGain(); sg.gain.value = i===0 ? 0.5 : 0.3;
+      const sp = ctx.createStereoPanner(); sp.pan.value = (i%2? 0.3 : -0.3);
+      so.connect(sg); sg.connect(sp); sp.connect(swFilt); so.start(t);
+      return so;
+    });
+
+    riserNodes = { src, o, g, og, sw, swOsc };
   }
   function stopRiser(){
     if(!riserActive) return;
@@ -5359,7 +5676,12 @@ const Music = (function(){
     if(nodes){
       rampGain(nodes.g.gain, 0, 0.5);
       rampGain(nodes.og.gain, 0, 0.5);
+      // the swell releases slower than the sweep — it's the tail that hands
+      // over to the boss pad rather than something that has to get out of
+      // the way of it
+      if(nodes.sw) rampGain(nodes.sw.gain, 0, 1.6);
       setTimeout(()=>{ try{ nodes.src.stop(); nodes.o.stop(); }catch(e){} }, 700);
+      if(nodes.swOsc) setTimeout(()=>{ try{ nodes.swOsc.forEach(o=>o.stop()); }catch(e){} }, 1900);
     }
   }
 
@@ -5377,13 +5699,33 @@ const Music = (function(){
     // needs to be real rather than coincidental.
     const prev = bossPad;
     const g = ctx.createGain(); g.gain.value = 0; g.connect(duckBus);
+    // wet send on the boss pad (new in v2.8.0) — the pad was fully dry
+    // before, which is exactly why the boss section read as loud rather
+    // than as large. Deliberately generous: this is the one moment the
+    // score is allowed to sound like a room the size of the arena.
+    const bwet = ctx.createGain(); bwet.gain.value = 0.45;
+    g.connect(bwet); bwet.connect(reverbMusic);
     const pair = kind === 'fracture' ? [LN.b3*0.5, LN.b7*0.5] : [LN.b2*0.5, LN.b6*0.5];
-    const nodes = pair.map(f=>{
-      const o = ctx.createOscillator(); o.type = 'sawtooth';
-      const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = 500;
-      const og = ctx.createGain(); og.gain.value = 0.5;
-      o.frequency.value = f; o.connect(filt); filt.connect(og); og.connect(g); o.start();
-      return o;
+    // each interval is now a detuned PAIR spread across the stereo field
+    // rather than one bare saw, plus a sub an octave below the lower note —
+    // the "more sustained pad presence under boss moments" half of the ask.
+    const nodes = [];
+    pair.forEach((f, idx) => {
+      for(const v of [{det:-9, pan:-0.4}, {det:9, pan:0.4}]){
+        const o = ctx.createOscillator(); o.type = 'sawtooth';
+        const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = 500;
+        const og = ctx.createGain(); og.gain.value = 0.3;
+        const p = ctx.createStereoPanner(); p.pan.value = v.pan;
+        o.frequency.value = f; o.detune.value = v.det;
+        o.connect(filt); filt.connect(og); og.connect(p); p.connect(g); o.start();
+        nodes.push(o);
+      }
+      if(idx === 0){
+        const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.value = f*0.5;
+        const sg = ctx.createGain(); sg.gain.value = 0.55;
+        sub.connect(sg); sg.connect(g); sub.start();
+        nodes.push(sub);
+      }
     });
     bossPad = { gain: g, nodes };
     if(prev){
@@ -5409,14 +5751,241 @@ const Music = (function(){
     }, base+1300);
   }
 
-  function scheduleStep(stepIdx, t){
+  /* ---- MOTIF CORE ---------------------------------------------------
+     The signature theme is now a real, always-present layer riding the
+     same 16th-note clock as the beat, instead of a setTimeout loop that
+     only existed inside the (now removed) menu voice set. One voice
+     (`motifVoice`, the same two-sine bell architecture the whole game's
+     accent bank is built from) states one of four forms depending on which
+     branch of the track is live.
+
+     `title` is the answer to the changelog's own long-standing admission
+     that there was "no true title-theme melody distinct from the in-run
+     lead": the five-note rising motif (r-p4-p5-b6-oct, "a halo lifting")
+     now gets a real descending answer and an actual cadence — bII (Eb) to
+     i (Dm), the Phrygian cadence, which is the mode's own signature move
+     and the game's own harmonic colour. It is not a separate composition:
+     it's the same five notes, the same voice, the same root, on the same
+     clock — the title is simply the calmest branch of the one track.
+  --------------------------------------------------------------------- */
+  function motifVoice(t, freq, dur, vol, pan){
+    if(!ctx) return;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0005, vol), t+0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const p = ctx.createStereoPanner(); p.pan.value = pan||0;
+    g.connect(p);
+    // duckBus, not musicGain — the motif pumps with the kick during a run
+    // exactly like the lead and drone do, so it sits INSIDE the produced
+    // mix rather than floating on top of it. On the menu/shop branches
+    // nothing kicks, so duckBus rests at 1 and it just sounds open.
+    p.connect(duckBus);
+    const wet = ctx.createGain(); wet.gain.value = 0.62; // wettest voice in the mix — this is the layer carrying the "atmospheric"
+    g.connect(wet); wet.connect(reverbMusic);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2.01;
+    const g2 = ctx.createGain(); g2.gain.value = 0.26;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    o1.start(t); o2.start(t); o1.stop(t+dur+0.06); o2.stop(t+dur+0.06);
+  }
+
+  // statement forms — {b:bar, s:16th within bar, d:scale degree, dur, v:level
+  // multiplier, p:pan}. Bars/steps are musical, not seconds, so every form
+  // stretches and compresses with mood.tempo automatically.
+  const MOTIF_FORMS = {
+    // full title theme: rise (5 notes) -> descending answer -> bII -> i
+    title: [
+      {b:0,s:0, d:'r',  dur:2.2, v:1.00, p:-0.10},
+      {b:0,s:8, d:'p4', dur:2.2, v:0.95, p: 0.14},
+      {b:1,s:0, d:'p5', dur:2.2, v:1.00, p:-0.14},
+      {b:1,s:8, d:'b6', dur:2.4, v:0.95, p: 0.10},
+      {b:2,s:0, d:'oct',dur:3.4, v:1.10, p: 0.00},
+      {b:3,s:8, d:'b7', dur:1.6, v:0.72, p: 0.20},
+      {b:4,s:0, d:'b6', dur:1.6, v:0.72, p:-0.20},
+      {b:4,s:8, d:'p5', dur:2.0, v:0.78, p: 0.06},
+      // bII — the Phrygian approach chord, stated as a real triad
+      {b:5,s:0, d:'b2', dur:3.2, v:0.80, p:-0.26},
+      {b:5,s:0, d:'p4', dur:3.2, v:0.52, p: 0.00},
+      {b:5,s:0, d:'b6', dur:3.2, v:0.40, p: 0.26},
+      // i — resolution
+      {b:6,s:0, d:'r',  dur:5.0, v:0.92, p:-0.22},
+      {b:6,s:0, d:'b3', dur:5.0, v:0.56, p: 0.10},
+      {b:6,s:0, d:'p5', dur:5.0, v:0.46, p: 0.24},
+      {b:6,s:0, d:'oct',dur:5.0, v:0.30, p: 0.00},
+    ],
+    // the bare rising gesture, no answer — used quietly under a live run
+    phrase: [
+      {b:0,s:0, d:'r',  dur:1.4, v:1.00, p:-0.12},
+      {b:0,s:8, d:'p4', dur:1.4, v:0.92, p: 0.12},
+      {b:1,s:0, d:'p5', dur:1.4, v:0.96, p:-0.12},
+      {b:1,s:8, d:'b6', dur:1.5, v:0.88, p: 0.12},
+      {b:2,s:0, d:'oct',dur:2.4, v:1.00, p: 0.00},
+    ],
+    // three-note head only — the shop/archive branches, sparse enough to
+    // read as "the theme is still here, quietly" without being a tune
+    fragment: [
+      {b:0,s:0, d:'r',  dur:2.0, v:1.00, p:-0.16},
+      {b:0,s:6, d:'p4', dur:2.0, v:0.85, p: 0.10},
+      {b:0,s:12,d:'p5', dur:2.8, v:0.92, p: 0.00},
+    ],
+    // the motif inverted and falling — death. Same notes, wrong direction.
+    fall: [
+      {b:0,s:0, d:'oct',dur:2.6, v:0.90, p: 0.14},
+      {b:1,s:0, d:'b6', dur:2.6, v:0.82, p:-0.14},
+      {b:2,s:0, d:'p4', dur:2.8, v:0.78, p: 0.10},
+      {b:3,s:0, d:'b2', dur:3.6, v:0.86, p:-0.10},
+      {b:4,s:0, d:'r',  dur:5.0, v:0.80, p: 0.00},
+    ],
+    none: [],
+  };
+
+  let motifEvents = [];   // pending {at:absStep, freq, dur, vol, pan}
+  let motifNextAt = 0;    // absStep at which the next statement is queued
+  function currentMotifPlan(){
+    // a boss fight gets no motif statements at all — the boss's own
+    // harmonic material owns the foreground there, and quoting the game's
+    // "wonder" theme over it would blunt both.
+    if(branch === 'run' && bossMode) return { form:'none', bars:8, vol:0, oct:1 };
+    return BRANCH_MOTIF[branch] || BRANCH_MOTIF.run;
+  }
+  function queueMotifStatement(abs){
+    const plan = currentMotifPlan();
+    const form = MOTIF_FORMS[plan.form] || [];
+    const start = abs + ((16 - (abs % 16)) % 16); // always land on a bar line
+    if(!form.length){ motifNextAt = start + Math.max(4, plan.bars)*16; return; }
+    // density is a real gate on the motif, not just a level trim: below
+    // ~0.12 the theme genuinely stops being stated rather than being stated
+    // inaudibly (which would still cost oscillators every 8 bars).
+    //
+    // A skipped statement retries at the NEXT BAR rather than deferring a
+    // whole cycle. Measured bug this guards against: the first statement is
+    // queued on the scheduler's first tick, ~25ms after the graph is built,
+    // when mood.density is still ~0 because it has had one frame to smooth
+    // from its silent start. Deferring a full cycle there left the title
+    // screen with no theme at all for the first ~26 seconds — i.e. exactly
+    // the first impression this version exists to fix. Found by counting
+    // real oscillator start() calls at the menu, not by reading this code.
+    if(mood.density <= 0.12){ motifNextAt = start + 16; return; }
+    const lvl = plan.vol * (0.45 + mood.density*0.85);
+    for(const e of form){
+      motifEvents.push({ at: start + e.b*16 + e.s, freq: LN[e.d]*plan.oct,
+                         dur: e.dur, vol: lvl*e.v, pan: e.p });
+    }
+    motifNextAt = start + Math.max(4, plan.bars)*16;
+  }
+
+  /* ---- ATMOS PAD ------------------------------------------------------
+     The sustained bed that makes this read as a score rather than a beat.
+     Always running, never rebuilt; `weight` sets its level, `brightness`
+     its cutoff, `tension` crossfades in a dissonant colour pair on top of
+     the consonant core. That crossfade is the literal implementation of
+     "harmonic tension as a live input": when the player is in danger the
+     chord itself changes, it does not just get louder.
+  --------------------------------------------------------------------- */
+  function buildAtmosPad(){
+    if(atmos) return;
+    const out = ctx.createGain(); out.gain.value = 0; out.connect(duckBus);
+    const filt = ctx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value = 300; filt.Q.value = 0.8;
+    filt.connect(out);
+    const wet = ctx.createGain(); wet.gain.value = 0.5;
+    filt.connect(wet); wet.connect(reverbMusic);
+
+    // consonant core — root/fifth/octave/twelfth stacked across the stereo
+    // field. Static micro-detune per voice (not an LFO) gives the stack
+    // body without any scheduled automation on these oscillators.
+    const core = [
+      { f: ROOT*0.5,    g:0.50, pan: 0.00, type:'sine' },
+      { f: ROOT,        g:0.34, pan:-0.34, type:'triangle' },
+      { f: ROOT*1.4983, g:0.24, pan: 0.34, type:'triangle' },
+      { f: ROOT*2,      g:0.15, pan:-0.18, type:'triangle' },
+      { f: ROOT*2.9966, g:0.09, pan: 0.18, type:'sine' },
+    ];
+    const nodes = [];
+    for(const v of core){
+      const o = ctx.createOscillator(); o.type = v.type; o.frequency.value = v.f;
+      o.detune.value = (Math.random()*2-1)*7;
+      const og = ctx.createGain(); og.gain.value = v.g;
+      const p = ctx.createStereoPanner(); p.pan.value = v.pan;
+      o.connect(og); og.connect(p); p.connect(filt); o.start();
+      nodes.push(o);
+    }
+    // slow drift LFO -> detune of two core voices. This is an audio-rate
+    // CONNECTION, not scheduled automation, so it cannot collide with the
+    // per-frame direct sets in applyMood (which never touch .detune).
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.06;
+    const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 9;
+    lfo.connect(lfoAmt); lfoAmt.connect(nodes[1].detune); lfoAmt.connect(nodes[2].detune);
+    lfo.start();
+
+    // tension pair — b2/b6 by default (Ramiel's / the game's general dark
+    // centre). Retuned by a one-shot glide when a boss with different
+    // material is live, so the pad agrees with the boss pad instead of
+    // clashing with it (the exact "boss music is messy" failure the
+    // BOSS_BASS_PHRASE comment above already documents).
+    const tensionGain = ctx.createGain(); tensionGain.gain.value = 0;
+    tensionGain.connect(filt);
+    const tensionOsc = [ROOT*1.0595, ROOT*1.5874].map((f,i)=>{
+      const o = ctx.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const og = ctx.createGain(); og.gain.value = i ? 0.5 : 0.7;
+      const p = ctx.createStereoPanner(); p.pan.value = i ? 0.42 : -0.42;
+      o.connect(og); og.connect(p); p.connect(tensionGain); o.start();
+      return o;
+    });
+    atmos = { out, filt, nodes, tensionGain, tensionOsc, harmony:'default' };
+  }
+  // one-shot glide, not a per-frame set — a harmony change is an event.
+  function setAtmosHarmony(kind){
+    if(!atmos || atmos.harmony === kind) return;
+    atmos.harmony = kind;
+    const pair = kind === 'fracture' ? [ROOT*1.1892, ROOT*1.7818]   // b3/b7 — the Fracture's own pair
+               : kind === 'ramiel'   ? [ROOT*1.0595, ROOT*1.5874]   // b2/b6 — Ramiel's
+               :                       [ROOT*1.0595, ROOT*1.5874];
+    const t = ctx.currentTime;
+    atmos.tensionOsc.forEach((o,i)=>{
+      o.frequency.cancelScheduledValues(t);
+      o.frequency.setValueAtTime(o.frequency.value, t);
+      o.frequency.exponentialRampToValueAtTime(pair[i], t+0.9);
+    });
+  }
+
+  function scheduleStep(stepIdx, t, abs){
     const fillBar = phraseBar === 3;
-    if(KICK_STEPS.includes(stepIdx)) playKick(t, intensity>0.7);
+
+    // --- motif layer: rides every branch, including the ones with no beat
+    // under them at all. This is the layer that is literally never silent,
+    // and it is why the menu and a run are the same track.
+    for(let i=motifEvents.length-1; i>=0; i--){
+      if(motifEvents[i].at <= abs){
+        const e = motifEvents.splice(i,1)[0];
+        motifVoice(t, e.freq, e.dur, e.vol, e.pan);
+      }
+    }
+    if(abs >= motifNextAt) queueMotifStatement(abs);
+
+    // --- rhythm layer: gated by mood.drive, not by whether a run is
+    // "started". On the menu/shop/archive/death branches drive sits at ~0
+    // and none of this fires; leaving a run, drive decays over ~1s and the
+    // drums recede instead of stopping dead mid-bar. Thresholds are
+    // deliberately staggered so instruments drop out and return in a fixed
+    // order (kick -> hats -> clap -> lead) rather than all at once.
+    //
+    // The 0.12 floor is measured, not guessed: at 0.08 the level-up branch
+    // (drive 0.10) and the menu preset as first written (also 0.10) both sat
+    // ABOVE the gate, so a quiet four-on-the-floor was audibly running under
+    // the title screen. Caught by recording real oscillator start() calls on
+    // the menu, not by reading this code. Every "no percussion" branch is now
+    // strictly below this number: menu/shop/archive/victory/death 0.00,
+    // pause 0.04, level-up choice 0.10.
+    if(mood.drive < 0.12) return;
+    const rhythmLvl = Math.min(1, mood.drive/0.55);
+
+    if(KICK_STEPS.includes(stepIdx)) playKick(t, intensity>0.7, rhythmLvl);
 
     // clap arrives at section 2 (~2:10) as a real "the song begins" moment,
     // not from bar 1 — always present once the boss is up, since that's
     // its own fully-arrived arrangement.
-    if(CLAP_STEPS.includes(stepIdx) && (bossMode || section >= 2)) playClap(t);
+    if(mood.drive >= 0.5 && CLAP_STEPS.includes(stepIdx) && (bossMode || section >= 2)) playClap(t);
 
     // bass — during the boss the whole harmonic center shifts to
     // BOSS_BASS_PHRASE (matching the pad/lead's dark b2/b6 center) instead
@@ -5428,11 +5997,11 @@ const Music = (function(){
     for(const n of bassPhrase){
       if(n.step !== stepIdx) continue;
       if(!bossMode && section === 0 && !KICK_STEPS.includes(stepIdx)) continue;
-      playBassNote(t, n.note);
+      playBassNote(t, n.note, rhythmLvl);
     }
     // extra double-time kick under the offbeat once boss intensity is high
     // — the "hardstyle" push
-    if(intensity>0.75 && stepIdx%2===1 && !KICK_STEPS.includes(stepIdx)) playKick(t, true);
+    if(intensity>0.75 && stepIdx%2===1 && !KICK_STEPS.includes(stepIdx)) playKick(t, true, rhythmLvl);
 
     // lead — this is the actual fix for "flat, nothing changes at 1/2/3/4
     // minutes." Silent through sections 0-1 (kick+bass, then +hats, is the
@@ -5440,61 +6009,64 @@ const Music = (function(){
     // section 2 (~2:10), then swaps to a second, different phrase
     // (LEAD_PHRASE_B) at section 3 (~4:20) — two real arrival moments
     // instead of one knob opening a filter over the same 4 bars all game.
-    if(bossMode || section >= 2){
+    if(mood.density >= 0.5 && (bossMode || section >= 2)){
       const phrase = bossMode ? (activeBossKind === 'fracture' ? BOSS2_LEAD_PHRASE[phraseBar] : BOSS_LEAD_PHRASE[phraseBar])
                     : section >= 3 ? LEAD_PHRASE_B[phraseBar] : LEAD_PHRASE[phraseBar];
       for(const n of phrase){
         if(n.step !== stepIdx) continue;
-        playLead(t, n.note, n.dur, 0.11 + intensity*0.1);
+        playLead(t, n.note, n.dur, (0.11 + intensity*0.1) * rhythmLvl);
       }
     }
     // hi-hats arrive at section 1 (~0:45) — before that, the opening is
     // deliberately just kick+bass, so section 1 reads as a real addition
-    if(bossMode || section >= 1){
-      if(HAT_STEPS.includes(stepIdx)) playHat(t, fillBar && stepIdx===14);
-      if(fillBar && stepIdx%2===1 && !HAT_STEPS.includes(stepIdx)) playHat(t, false); // 16th-roll fill on the last bar of the phrase
+    if(mood.drive >= 0.32 && (bossMode || section >= 1)){
+      if(HAT_STEPS.includes(stepIdx)) playHat(t, fillBar && stepIdx===14, rhythmLvl);
+      if(fillBar && stepIdx%2===1 && !HAT_STEPS.includes(stepIdx)) playHat(t, false, rhythmLvl); // 16th-roll fill on the last bar of the phrase
     }
   }
 
   function schedulerTick(){
     if(!ctx) return;
-    // mirrors tick()'s own gate below — without this, the beat keeps
-    // scheduling notes under a frozen game on pause/level-up (audio-designer
-    // finding). Holding nextStepTime at "now" while gated (instead of just
-    // returning) stops step/phraseBar from drifting during the pause and
-    // avoids a burst of catch-up notes firing all at once on resume.
-    const st = Game._test.state();
-    if(!st.running || st.paused || st.levelChoosing || resolving){
-      nextStepTime = ctx.currentTime + 0.1;
-      return;
-    }
+    // The clock NEVER stops now — it is the one continuous thing every
+    // branch of the track shares, and the motif layer rides it on screens
+    // that have no beat at all. What used to be this function's gate
+    // (return early unless a run is live and unpaused) has moved inside
+    // scheduleStep as a mood.drive threshold, so pausing thins the
+    // arrangement instead of freezing the transport.
+    //
+    // Resync guard: setInterval is throttled in a background tab while
+    // ctx.currentTime keeps advancing, so without this the first tick after
+    // refocusing would fire every missed 16th at once (the exact catch-up
+    // burst the old gate was avoiding by a different route).
+    if(nextStepTime < ctx.currentTime - 0.25) nextStepTime = ctx.currentTime + 0.05;
     while(nextStepTime < ctx.currentTime + 0.1){
-      scheduleStep(step, nextStepTime);
+      scheduleStep(step, nextStepTime, absStep);
       nextStepTime += STEP_SEC();
+      absStep++;
       step = (step+1) % 16;
       if(step === 0) phraseBar = (phraseBar+1) % 4;
     }
   }
 
   function buildDrone(){
-    if(drone){ try{ drone.nodes.forEach(o=>o.stop()); }catch(e){} }
+    if(drone) return; // built once, persists for the life of the page
     const g = ctx.createGain(); g.gain.value = 0; g.connect(duckBus);
-    const nodes = [ROOT, ROOT*1.5].map(f=>{
+    // sub-octave added in v2.8.0 — the drone was root+fifth only, which is
+    // where "not epic enough" actually lives: there was nothing below D2.
+    const nodes = [ROOT*0.5, ROOT, ROOT*1.5].map((f,i)=>{
       const o = ctx.createOscillator(); o.type='sine'; o.frequency.value=f;
-      const og = ctx.createGain(); og.gain.value = 0.5;
+      const og = ctx.createGain(); og.gain.value = i===0 ? 0.62 : 0.42;
       o.connect(og); og.connect(g); o.start();
       return o;
     });
     drone = { gain: g, nodes };
   }
 
-  function tick(){
-    requestAnimationFrame(tick);
-    if(!started || !ctx) return;
-    debugTickCount++;
-    const st = Game._test.state();
-    if(!st.running || st.paused || st.levelChoosing || resolving) return;
-
+  /* ---- the run's own contribution to the mood target. Only advances while
+     a run is actually ticking; while paused or in a level-up choice it is
+     FROZEN rather than reset, which is what lets the pause branch inherit
+     the run's real tension instead of replacing it with a generic hold. --- */
+  function advanceRunState(st){
     // near-death tension pulse — silent above 30% HP, then a heartbeat-like
     // thump that speeds up (0.82s down to 0.4s between beats) and gets
     // louder the closer HP is to zero. Previously there was no audio signal
@@ -5551,8 +6123,10 @@ const Music = (function(){
       else if(boss2.phase === 'unboundTelegraph') bossBoost = 0.7;
       else if(boss2.phase === 'unbound') bossBoost = 0.55;
     }
-    const target = Math.min(1, timeBuild + bossBoost);
-    intensity += (target-intensity) * 0.025;
+    // renamed from `target` in v2.8.0 — the module now has a `target` mood
+    // vector at module scope, and the old local was shadowing it.
+    const intensityTarget = Math.min(1, timeBuild + bossBoost);
+    intensity += (intensityTarget-intensity) * 0.025;
 
     // section timeline — real arrival points, computed straight off elapsed
     // time (not intensity, which is a smoothed/lagged value unsuited to
@@ -5588,87 +6162,171 @@ const Music = (function(){
     // activeBossKind tracks WHICH boss's material is live so scheduleStep
     // can pick Ramiel's vs the Fracture's own phrases, and so the pad gets
     // rebuilt with the right note pair on a genuine handoff (not on every
-    // frame — only when the kind actually changes). Teardown when the last
-    // boss goes away happens explicitly in stopForRun's rampGain call
-    // (bossDefeat/death both set resolving=true first, which makes tick()
-    // return early on its very next frame) — this only ever needs to
-    // handle the fade-in/handoff while a boss is alive.
+    // frame — only when the kind actually changes). The pad's LEVEL is no
+    // longer touched here at all: it's driven by mood.omen in applyMood(),
+    // which is what lets it fade out smoothly on death/victory instead of
+    // needing a one-shot ramp in stopForRun that would then be fighting a
+    // per-frame set. Same rule as the drone.
     const bossJustArrived = activeBoss && !bossMode;
     bossMode = !!activeBoss;
     if(bossJustArrived) stopRiser(); // riser resolves the instant a boss actually arrives
     if(newBossKind !== activeBossKind){
       activeBossKind = newBossKind;
-      if(activeBossKind) buildBossPad(activeBossKind);
+      if(activeBossKind){ buildBossPad(activeBossKind); setAtmosHarmony(activeBossKind); }
+      else setAtmosHarmony('default');
     }
-    if(bossPad) bossPad.gain.gain.value = activeBoss ? (0.06 + intensity*0.05) : 0;
-
-    setDistortionAmount(Math.max(0, intensity-0.6)*1.2);
-    // direct value set, not a ramp — intensity is already smoothed in JS
-    // every frame (the line above), so re-ramping the audio param on top of
-    // that on every single frame just fights itself: each new ramp call
-    // cancels the previous one before it can complete, so gain never
-    // actually gets anywhere. Ramping belongs to one-shot events
-    // (stopForRun's fade-out) only, not this continuous update.
-    if(drone) drone.gain.gain.value = 0.12 + intensity*0.08;
   }
 
-  // ---- MENU AMBIENCE — same tonal world as gameplay (built off ROOT, same
-  // D Phrygian color tones) but calmer and sparser. Now states the actual
-  // THEME_MOTIF quietly, one note at a time on a slow cycle, instead of
-  // picking random notes from the scale — the menu is where a player
-  // should first hear "this is Iridescent Cosmology," not just "this is calm."
-  function startMenuAmbience(){
-    ensureCtx();
-    if(ctx.state === 'suspended') ctx.resume();
-    if(menuActive || started) return; // don't layer menu ambience under a live run
-    menuActive = true;
-    const g = ctx.createGain(); g.gain.value = 0;
-    g.connect(musicGain);
-    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value = ROOT; o1.connect(g); o1.start();
-    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value = ROOT*1.4983; o2.connect(g); o2.start(); // quiet fifth, not the full drone pair
-    menuCtxNodes = { gain: g, nodes: [o1,o2] };
-    rampGain(g.gain, 0.07, 2.5);
-    let motifIdx = 0;
-    const scheduleNext = () => {
-      if(!menuActive) return;
-      bell(THEME_MOTIF[motifIdx], 2.4, 0.1);
-      motifIdx = (motifIdx+1) % THEME_MOTIF.length;
-      menuScheduleHandle = setTimeout(scheduleNext, 5500 + Math.random()*4000);
-    };
-    menuScheduleHandle = setTimeout(scheduleNext, 2000);
+  /* ---- MOOD TARGET ----------------------------------------------------
+     The single place game state becomes musical parameters. Everything
+     here is a mapping, not a switch: `run` is generated from the live
+     numbers, and pause / level-up are MODIFIERS applied on top of the
+     run's own live mood rather than replacement presets — which is the
+     difference between "the game is paused" and "a different song is
+     playing now".
+  --------------------------------------------------------------------- */
+  function computeMoodTarget(st, runLive){
+    const b = BRANCHES[branch];
+    if(b){ for(const k in target) target[k] = b[k]; return; }
+
+    // --- branch === 'run' ---
+    const hpFrac = (st.maxhp && st.hp != null) ? Math.max(0, st.hp/st.maxhp) : 1;
+    // near-death is a first-class musical input, not just a heartbeat SFX:
+    // it darkens the filter, pushes tempo, and raises harmonic tension, so
+    // "this player is about to die" is audible without looking at the HUD.
+    const nearDeath = st.hp != null ? Math.max(0, Math.min(1, (0.4 - hpFrac)/0.4)) : 0;
+    const sect = Math.min(4, section);
+    const bossPhaseTension = bossMode
+      ? (st.boss ? (st.boss.phase === 'beamTelegraph' || st.boss.phase === 'beaming' ? 1 :
+                    st.boss.phase === 'charging' ? 0.8 : 0.55)
+        : st.boss2 ? (st.boss2.phase === 'unboundTelegraph' ? 0.9 :
+                      st.boss2.phase === 'unbound' ? 0.7 : 0.6) : 0.55)
+      : 0;
+
+    target.drive      = bossMode ? 0.95 : 0.42 + sect*0.13;
+    target.tension    = Math.min(1, intensity*0.30 + bossPhaseTension*0.55 + nearDeath*0.55);
+    target.density    = bossMode ? 0.92 : 0.30 + sect*0.16;
+    target.brightness = Math.max(0.08, Math.min(1, 0.32 + intensity*0.55 - nearDeath*0.34));
+    // the room CLOSES as combat gets busy and opens again for the boss —
+    // a boss is meant to feel like a bigger space, not just a louder one
+    target.space      = bossMode ? 0.74 : Math.max(0.34, 0.62 - intensity*0.28);
+    target.weight     = bossMode ? 0.96 : 0.50 + intensity*0.34;
+    target.tempo      = (bossMode ? 1.04 : 0.94 + intensity*0.06) + nearDeath*0.035;
+    target.omen       = bossMode ? 1 : 0;
+
+    // --- level-up choice: a lift, not a stop. The world holds its breath
+    // and brightens; the beat thins but the harmony keeps its place.
+    if(st.levelChoosing){
+      target.drive      = 0.10;
+      target.density    = Math.max(target.density, 0.55);
+      target.brightness = Math.min(1, target.brightness + 0.30);
+      target.space      = Math.max(target.space, 0.85);
+      target.tempo      = target.tempo*0.94;
+      return;
+    }
+
+    /* --- PAUSE. Deliberate design decision, stated so it isn't mistaken
+       for an oversight:
+
+       Pause does NOT silence the score and does NOT switch to a menu cue.
+       It keeps the run's own live tension and omen values exactly where the
+       run left them — a paused boss fight still sounds like a boss fight,
+       a paused near-death still sounds like near-death — and applies three
+       changes on top: the percussion drops out (drive -> ~0), the low-pass
+       slams shut (brightness -> 0.12), and the room opens to maximum
+       (space -> 1.0) with the pad holding at full weight.
+
+       The reasoning: pausing is the player stepping outside the run, not
+       out of the world. Silence would break the "one continuous track"
+       structure this whole version exists to build and would make resume a
+       hard cut back in. A generic calm hold would throw away the one piece
+       of information the music is carrying (how much trouble you were in).
+       Muffled-but-still-tense is the only option that keeps both. Previously
+       pause froze the drone/boss pad at whatever gain they happened to be
+       at and cut the drums dead mid-bar, which was neither. --- */
+    if(st.paused){
+      target.drive      = 0.04;
+      target.density    = 0.24;
+      target.brightness = 0.12;
+      target.space      = 1.00;
+      target.weight     = Math.max(0.72, target.weight);
+      target.tempo      = target.tempo*0.88;
+      // tension and omen intentionally left at their live run values
+    }
   }
-  function stopMenuAmbience(){
-    if(!menuActive) return;
-    menuActive = false;
-    if(menuScheduleHandle){ clearTimeout(menuScheduleHandle); menuScheduleHandle = null; }
-    if(menuCtxNodes) rampGain(menuCtxNodes.gain.gain, 0, 0.6);
+
+  /* ---- APPLY. Every write in here is a DIRECT AudioParam set on a value
+     that is already smoothed in JS above. No cancelScheduledValues, no
+     ramps — mixing the two on the same param is the bug class this module
+     already shipped once (see rampGain's header). Nothing outside this
+     function is permitted to schedule automation on these params. --- */
+  function applyMood(){
+    if(drone)  drone.gain.gain.value = 0.04 + mood.weight*0.15;
+    if(atmos){
+      atmos.out.gain.value = mood.weight*0.20;
+      atmos.filt.frequency.value = 180 + mood.brightness*3400;
+      atmos.tensionGain.gain.value = mood.tension*0.32;
+    }
+    if(bossPad) bossPad.gain.gain.value = mood.omen * (0.045 + mood.tension*0.055);
+    if(reverbMusicSend) reverbMusicSend.gain.value = 0.18 + mood.space*0.55;
+    // distortion drive is a mix decision, not a mood dimension of its own —
+    // it belongs to the loud, tense end of the space only.
+    setDistortionAmount(Math.max(0, mood.drive*mood.tension - 0.35)*1.6);
+  }
+
+  function tick(){
+    requestAnimationFrame(tick);
+    if(!ctx) return; // the whole engine is gated on the graph existing, NOT on a run being live — that gate is what used to make menu/run two separate worlds
+    debugTickCount++;
+    const st = Game._test.state();
+    const runLive = st.running && !st.paused && !st.levelChoosing && !resolving;
+    if(runLive) advanceRunState(st);
+    computeMoodTarget(st, runLive);
+    for(const k in mood) mood[k] += (target[k]-mood[k]) * MOOD_SMOOTH[k];
+    applyMood();
+  }
+
+  /* ---- BRANCHING. The public surface every screen uses. A branch change
+     is a target change, nothing more: no node is created, destroyed,
+     started or stopped by this call. --- */
+  function setBranch(name){
+    if(!BRANCHES[name] && name !== 'run') return;
+    branch = name;
+    // a branch change re-times the next motif statement to land on the next
+    // bar rather than finishing the outgoing branch's schedule — the
+    // statement in flight is left alone to ring out, so the transition
+    // overlaps rather than cutting.
+    motifNextAt = Math.min(motifNextAt, absStep + 16);
   }
 
   function start(){
-    ensureCtx();
-    if(ctx.state === 'suspended') ctx.resume();
-    stopMenuAmbience();
-    buildDrone();
-    buildBossPad('ramiel');
+    ensureAudio();
+    // run-scoped state resets. Note what is NOT here any more: no voice is
+    // built, no scheduler is (re)started, no gain is ramped. The graph has
+    // been running since the first user gesture; a run is a coordinate
+    // change in mood space, and these are just the bookkeeping values the
+    // arrangement reads.
     started = true;
-    intensity = 0;
+    intensity = Math.min(intensity, 0.05); // safe to jump: intensity no longer writes any sustained AudioParam, only per-note filter/level values sampled at schedule time
     bossMode = false;
     activeBossKind = null;
+    setAtmosHarmony('default');
     section = 0;
     musicStage = 1;
     phraseBar = 0;
     resolving = false; // death never reset this on its own path - would otherwise silently freeze intensity updates on every run after the first death
-    step = 0;
-    nextStepTime = ctx.currentTime + 0.1;
-    if(schedulerHandle) clearInterval(schedulerHandle);
-    schedulerHandle = setInterval(schedulerTick, 25);
+    setBranch('run');
   }
-  function stopForRun(){
+  // "stop" is now a misnomer kept for its call sites: nothing stops. The run
+  // ends, the track moves to its death/victory branch, and the mood engine
+  // walks the mix there. Crucially there is NO rampGain on drone/bossPad
+  // here any more — those params are written every frame by applyMood, and
+  // scheduling a ramp against a per-frame set is precisely the collision
+  // that caused "dying sticks the music" in v1.x.
+  function stopForRun(outcome){
     started = false;
-    if(schedulerHandle){ clearInterval(schedulerHandle); schedulerHandle = null; }
-    if(drone) rampGain(drone.gain.gain, 0, 1.5);
-    if(bossPad) rampGain(bossPad.gain.gain, 0, 1.0);
     stopRiser();
+    setBranch(outcome === 'victory' ? 'victory' : 'death');
   }
   function toggleMute(){
     muted = !muted;
@@ -5677,7 +6335,7 @@ const Music = (function(){
   }
 
   Events.on('runStart', start);
-  Events.on('toMenu', () => startMenuAmbience());
+  Events.on('toMenu', () => { ensureAudio(); setBranch('menu'); });
   Events.on('levelup', () => bell(ROOT*4*1.5, 1.2, 0.18));
   Events.on('evolutionUnlocked', () => {
     // picking an evolution (vs. a plain weapon/passive level-up, which
@@ -5732,25 +6390,27 @@ const Music = (function(){
   });
   Events.on('bossDefeat', () => {
     resolving = true;
-    stopForRun();
+    stopForRun('victory');
     if(ctx) playVictoryPhrase();
     setTimeout(()=>{ resolving = false; }, 5000);
   });
   Events.on('death', () => {
     resolving = true;
-    stopForRun();
+    stopForRun('death');
   });
 
-  // first user gesture anywhere (autoplay policy requires this) starts the
-  // menu ambience if we're sitting at the menu and nothing else has
-  // claimed the gesture yet.
-  document.addEventListener('pointerdown', () => { if(!started) startMenuAmbience(); }, { once: true });
+  // first user gesture anywhere (autoplay policy requires this) builds the
+  // persistent graph. It does not decide what plays — `branch` already
+  // holds whatever screen the player is on (default 'menu'), so the mood
+  // engine swells the correct branch up from silence on its own.
+  document.addEventListener('pointerdown', () => { ensureAudio(); }, { once: true });
 
   requestAnimationFrame(tick);
 
   return {
     toggleMute,
     stopForRun,
+    setBranch,
     setMusicVolume,
     setSfxVolume,
     _test: { isMuted: () => muted, isStarted: () => started, intensity: () => intensity, bpm: () => BPM,
@@ -5762,8 +6422,26 @@ const Music = (function(){
       bossPadGain: () => bossPad ? bossPad.gain.gain.value : null,
       musicGain: () => musicGain ? musicGain.gain.value : null,
       sfxGain: () => sfxGain ? sfxGain.gain.value : null,
-      isMenuActive: () => menuActive,
-      menuGain: () => menuCtxNodes ? menuCtxNodes.gain.gain.value : null,
+      // ---- v2.8.0 mood-engine hooks. Every one of these reads a REAL live
+      // AudioParam value or the smoothed vector driving it, not an intent
+      // flag — verification for this module is "read the gain", not "check
+      // the state machine said the right word".
+      branch: () => branch,
+      mood: () => ({ ...mood }),
+      moodTarget: () => ({ ...target }),
+      coreBuilt: () => coreBuilt,
+      atmosGain: () => atmos ? atmos.out.gain.value : null,
+      atmosCutoff: () => atmos ? atmos.filt.frequency.value : null,
+      atmosTensionGain: () => atmos ? atmos.tensionGain.gain.value : null,
+      atmosHarmony: () => atmos ? atmos.tensionOsc.map(o=>o.frequency.value) : null,
+      reverbMusicSend: () => reverbMusicSend ? reverbMusicSend.gain.value : null,
+      reverbSfxSend: () => reverbSend ? reverbSend.gain.value : null,
+      duckBusGain: () => duckBus ? duckBus.gain.value : null,
+      stepSec: () => STEP_SEC(),
+      effectiveBpm: () => BPM*mood.tempo,
+      absStep: () => absStep,
+      motifPending: () => motifEvents.length,
+      motifForm: () => currentMotifPlan().form,
       playVictoryPhrase },
   };
 })();
@@ -5889,6 +6567,12 @@ const Settings = (function(){
       const st = Game._test.state();
       if(st.running && !st.paused && !st.levelChoosing) Game.togglePause();
     }
+    // music branch (v2.8.0): only when opened from the menu. Opened mid-run
+    // the game is already paused, and the pause branch — which inherits the
+    // run's live tension — is the correct, more informative mood; overriding
+    // it with the calm archive branch here would throw that away and then
+    // need to guess its way back on close.
+    if(openedFromMenu && typeof Music.setBranch === 'function') Music.setBranch('archive');
     document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
     document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
     document.getElementById('reducedMotionToggle').checked = reducedMotion();
@@ -5896,7 +6580,11 @@ const Settings = (function(){
   }
   function close(){
     document.getElementById('settingsOverlay').classList.remove('show');
-    if(openedFromMenu){ Game.renderMenuBest(); document.getElementById('menuOverlay').classList.add('show'); }
+    if(openedFromMenu){
+      Game.renderMenuBest();
+      document.getElementById('menuOverlay').classList.add('show');
+      if(typeof Music.setBranch === 'function') Music.setBranch('menu');
+    }
   }
   function setMusicVol(v){
     Persist.data.settings.musicVol = Number(v);
@@ -5921,6 +6609,10 @@ const Settings = (function(){
 const Shop = (function(){
   function open(){
     document.getElementById('menuOverlay').classList.remove('show');
+    // v2.8.0: the shop branch of the score — same track, dropped an octave
+    // and slowed, percussion gone entirely. Before this, opening the shop
+    // made zero Music calls and the menu cue just kept playing unchanged.
+    if(typeof Music.setBranch === 'function') Music.setBranch('shop');
     render();
     document.getElementById('shopOverlay').classList.add('show');
   }
@@ -5928,6 +6620,7 @@ const Shop = (function(){
     document.getElementById('shopOverlay').classList.remove('show');
     Game.renderMenuBest();
     document.getElementById('menuOverlay').classList.add('show');
+    if(typeof Music.setBranch === 'function') Music.setBranch('menu');
   }
   function render(){
     document.getElementById('shopShards').textContent = Persist.data.shards;
@@ -6036,12 +6729,17 @@ const Achievements = (function(){
 
   function open(){
     document.getElementById('menuOverlay').classList.remove('show');
+    // v2.8.0: the archive branch — bright, high, still. Shares its branch
+    // with the Evolution Library and menu-opened Settings, which are the
+    // same kind of screen (reading a list of things you already have).
+    if(typeof Music.setBranch === 'function') Music.setBranch('archive');
     render();
     document.getElementById('achieveOverlay').classList.add('show');
   }
   function close(){
     document.getElementById('achieveOverlay').classList.remove('show');
     document.getElementById('menuOverlay').classList.add('show');
+    if(typeof Music.setBranch === 'function') Music.setBranch('menu');
   }
 
   return { open, close, checkAll, render, DEFS };
@@ -6075,12 +6773,14 @@ const EvoLibrary = (function(){
   }
   function open(){
     document.getElementById('menuOverlay').classList.remove('show');
+    if(typeof Music.setBranch === 'function') Music.setBranch('archive');
     render();
     document.getElementById('evoLibraryOverlay').classList.add('show');
   }
   function close(){
     document.getElementById('evoLibraryOverlay').classList.remove('show');
     document.getElementById('menuOverlay').classList.add('show');
+    if(typeof Music.setBranch === 'function') Music.setBranch('menu');
   }
   return { open, close, render };
 })();
