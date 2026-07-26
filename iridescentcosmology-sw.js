@@ -3,7 +3,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'iridescentcosmology-v4'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.8.0 continuous-graph mood engine — one persistent audio graph across every screen, branch targets for menu/shop/archive/pause/death/victory, real title theme with a Phrygian cadence, music/SFX reverb split
+const CACHE_NAME = 'iridescentcosmology-v5'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.9.0 enemy oomph pass — hand-authored regular-enemy silhouettes, glow-clip fix, white-silhouette hit-flash, enemy-side attack reaction
 const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {
