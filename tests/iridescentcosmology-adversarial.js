@@ -27,7 +27,18 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
   const pageErrors = [];
   const overflowHits = [];
   const downloads = [];
-  page.on('console', msg => { if (msg.type() === 'error' && !msg.text().includes('fonts.googleapis')) consoleErrors.push(msg.text()); });
+  // BUG FIX (found by a qa-playtest pass): this filter matched on
+  // 'fonts.googleapis' appearing in the console message TEXT, but a failed
+  // subresource load's console text in Chromium is the bare
+  // "Failed to load resource: net::ERR_CONNECTION_RESET" with no URL — so
+  // the filter never actually fired, and every run's "real" console-error
+  // count included this expected, environment-only failure (no egress to
+  // Google Fonts in this sandbox) undetected. Filtering on the actual
+  // failed request's URL via `requestfailed` is the correct signal, and
+  // means a genuinely new console error can no longer hide behind this one.
+  let fontsRequestFailed = false;
+  page.on('requestfailed', req => { if (req.url().includes('fonts.googleapis.com')) fontsRequestFailed = true; });
+  page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text()); });
   page.on('pageerror', err => pageErrors.push(err.message));
   page.on('download', d => downloads.push(d.suggestedFilename()));
 
@@ -239,6 +250,7 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
 
   console.log('\n=== FINAL RESULTS ===');
   console.log('console errors:', consoleErrors);
+  console.log('  (expected/environmental Google Fonts failure this run:', fontsRequestFailed + ' -- no egress to fonts.googleapis.com in this sandbox, not a game bug)');
   console.log('page errors:', pageErrors);
   console.log('horizontal overflow hits:', overflowHits);
   console.log('downloads triggered:', downloads);

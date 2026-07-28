@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.12.0</title>
+<title>IRIDESCENT COSMOLOGY v2.12.1</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -29,6 +29,59 @@
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
 
+  v2.12.1 — 2026-07-28 — BUG FIX, found by an independent qa-playtest pass
+                          run immediately on v2.12.0's commit (the new
+                          standing practice adopted this round specifically
+                          so a regression gets caught this narrowly instead
+                          of surfacing several passes later): the master-
+                          bus makeup gain shipped in v2.12.0 was calibrated
+                          off compressor.reduction alone, which can't
+                          predict real output level once release time also
+                          changes in the same commit (it did: 250ms->130ms
+                          — a faster release restores gain between kicks,
+                          so average output rises even as the sampled
+                          reduction number gets deeper). Real measurement
+                          (an AnalyserNode spliced into the actual edge into
+                          ctx.destination) at a matched boss/near-death
+                          coordinate: the shipped +9dB put the boss section
+                          ~4dB HOTTER than before the whole compressor
+                          change, peak sample above 1.0 — audible clipping
+                          on the loudest, most dramatically important
+                          section of the game. Dropped to +4dB, which
+                          independently re-measures within ~0.5dB of the
+                          pre-v2.12.0 level with zero clipping across 8
+                          sampled windows at the same coordinate. Also
+                          corrected three stale/conflicting numbers in
+                          v2.12.0's own comments and changelog entry (the
+                          duckPump depth comment said 0.107, real measured
+                          value is ~0.081; two different menu-reverb-send
+                          "before/after" numbers were both sampling noise
+                          around the true 0.7300 fixed point, not a real
+                          drift) — all corrected against the qa-playtest
+                          pass's independent re-measurement, not the
+                          original implementer's numbers. Also fixed a
+                          harness bug in tests/iridescentcosmology-
+                          adversarial.js: its console-error filter matched
+                          on 'fonts.googleapis' appearing in the message
+                          TEXT, but Chromium's actual failed-subresource
+                          console text has no URL in it, so the filter
+                          never fired — every run's error count silently
+                          included this expected, environment-only failure
+                          (no egress to Google Fonts in this sandbox)
+                          undetected. Now filters on the real failed
+                          request's URL instead, so a genuinely new console
+                          error can no longer hide behind it. Separately
+                          found and NOT fixed here (pre-existing, unrelated
+                          to this round's music work, reproduces identically
+                          on the pre-v2.12.0 build): double-clicking the
+                          Settings gear from the menu leaves every overlay
+                          hidden with no way back in except a page reload —
+                          .meta-row sits outside every overlay so the gear
+                          stays clickable while Settings is already open,
+                          and Settings.close() doesn't handle being entered
+                          a second time. Flagged for a future pass, not
+                          addressed in this one.
+
   v2.12.0 — 2026-07-28 — Creative-direction pass on the run branch's score:
                           "addicting and pressurized." No architecture change
                           — the v2.8.0 mood engine (one continuous graph, one
@@ -44,7 +97,10 @@
                           so the fixed 0.18 floor stops keeping a wash of hall
                           on the mix at the dry end. Measured: the run's
                           reverb send fell 0.521 -> 0.390; the menu's moved
-                          0.7196 -> 0.7211, i.e. every open branch
+                          0.7296 -> 0.7297 (independently re-measured by
+                          qa-playtest against the true space=1.0 fixed point
+                          of 0.7300; this entry's own first-pass numbers were
+                          sampling noise, corrected here), i.e. every open branch
                           (menu/shop/archive/death/victory/pause) is where it
                           was, deliberately — this is a run-branch tightening,
                           not a global one.
@@ -1780,7 +1836,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.1</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -5919,7 +5975,7 @@ const Music = (function(){
   // `1 - 0.7*lvl` measured out at a 0.30 floor during a boss fight: audible
   // as glue, not as a squeeze. Now the duck amount itself rides mood.tension
   // (0.78 of the way to silence when calm, 0.92 at full tension), which
-  // measured 0.107 at a boss/near-death coordinate — a real hole punched on
+  // measured ~0.081 at a boss/near-death coordinate — a real hole punched on
   // every kick. mood.tension is READ here, never written: this samples the
   // already-smoothed value once at note-schedule time (the same idiom
   // playBassNote uses for mood.brightness) and writes only duckBus.gain,
@@ -6855,7 +6911,10 @@ const Music = (function(){
     // 0.18 + space*0.55, now 0.12 + space*0.61). Both formulas give ~0.73 at
     // space=1.0, so every open branch (menu/shop/archive/death/victory/pause,
     // all at 0.94-1.00) is left numerically where it was — measured
-    // menu 0.7196 before, 0.7185 after. What changes is the DRY end: at the
+    // menu 0.7296 before, 0.7297 after (both curves converge on the same
+    // ~0.7300 fixed point at space=1.0 — see the changelog entry above for
+    // the qa-playtest-corrected numbers; this comment's own first-pass
+    // figures were sampling noise, not a real drift). What changes is the DRY end: at the
     // run branch's new low space the send now falls to ~0.22 instead of
     // ~0.37. Tightening the room had to happen on both the input (space) and
     // the curve, or the fixed 0.18 floor would have kept a wash of hall on
@@ -6876,9 +6935,23 @@ const Music = (function(){
       compressor.ratio.value     = 4  + press*4;      // 4 .. 8
       compressor.knee.value      = 12 - press*8;      // soft .. hard
       compressor.release.value   = 0.25 - press*0.12; // 250ms .. 130ms, so the compressor itself pumps with the kick
-      // +9dB at full pressure, level-matched against the OLD -20/4 settings
-      // at the measured boss input level (see ensureCtx's makeupGain comment)
-      makeupGain.gain.value = Math.pow(10, press*9/20);
+      // BUG FIX (v2.12.1, found by an independent qa-playtest pass on this
+      // exact commit — the immediate-per-pass QA process adopted this
+      // round specifically to catch this class of thing sooner): shipped
+      // at +9dB, calibrated by reading compressor.reduction alone. That
+      // number cannot predict real output level once release time also
+      // changes (it did, in the same commit: 250ms -> 130ms) — reduction
+      // is an instantaneous sample, a faster release restores gain between
+      // kicks, so average output can rise even as the sampled reduction
+      // number gets deeper. Real measurement (an AnalyserNode spliced into
+      // the actual edge into ctx.destination, at a matched boss/near-death
+      // coordinate across the pre- and post-commit builds): +9dB put the
+      // boss section ~4dB HOTTER than before this whole compressor change,
+      // peak sample above 1.0 (destination hard-clamps it — audible
+      // clipping on the loudest, most dramatically important section of
+      // the game). +4dB, swept and isolated the same way, reproduces the
+      // pre-commit level within ~0.5dB with no clipping.
+      makeupGain.gain.value = Math.pow(10, press*4/20);
     }
     setDistortionAmount(Math.max(0, raw - 0.35)*1.6);
   }
