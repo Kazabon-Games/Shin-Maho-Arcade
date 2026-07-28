@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.11.0</title>
+<title>IRIDESCENT COSMOLOGY v2.12.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,98 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.12.0 — 2026-07-28 — Creative-direction pass on the run branch's score:
+                          "addicting and pressurized." No architecture change
+                          — the v2.8.0 mood engine (one continuous graph, one
+                          clock, seven smoothed dimensions) is untouched.
+                          This is tuning plus one new node, and every number
+                          below was read off a live AudioContext in a real
+                          browser, not reasoned about.
+                          PRESSURIZED (three changes, one product):
+                          (1) The run branch is materially drier. target.space
+                          for a non-boss run went 0.62 -> 0.44 at run start,
+                          floor 0.34 -> 0.16, and the send curve was pivoted
+                          about space=1.0 (0.18+space*0.55 -> 0.12+space*0.61)
+                          so the fixed 0.18 floor stops keeping a wash of hall
+                          on the mix at the dry end. Measured: the run's
+                          reverb send fell 0.521 -> 0.390; the menu's moved
+                          0.7196 -> 0.7211, i.e. every open branch
+                          (menu/shop/archive/death/victory/pause) is where it
+                          was, deliberately — this is a run-branch tightening,
+                          not a global one.
+                          (2) The sidechain duck is a real squeeze now. The
+                          fixed `1 - 0.7*lvl` measured out at a 0.300 floor
+                          during a boss: audible as glue, not as a pump. Depth
+                          now rides mood.tension (0.78 -> 0.92 of the way to
+                          silence), sampled once per kick at schedule time;
+                          measured trough 0.469 -> 0.405 early in a run and
+                          0.300 -> 0.084 at a boss/near-death coordinate.
+                          (3) The master bus tightens under the same
+                          drive*tension product the distortion already reads:
+                          threshold -20 -> -28, ratio 4 -> 8, knee 12 -> 4,
+                          release 250ms -> 130ms at full pressure, all resting
+                          at the old glue settings whenever the product is 0
+                          (which is every non-run branch).
+                          The measurement that changed the design: reading
+                          compressor.reduction at a real boss coordinate
+                          showed the first version of (3) taking the mix from
+                          ~11dB to ~22dB of gain reduction — DynamicsCompressor
+                          has no makeup stage, so that made the boss ~11dB
+                          QUIETER, the exact opposite of the intent. It would
+                          have shipped sounding "fine, just weirdly small."
+                          Fixed by inserting a makeupGain node between the
+                          compressor and the destination (the module's one and
+                          only edge into ctx.destination, enumerated before
+                          touching it) driven off the same product. Re-measured
+                          at the same coordinate: 17.8dB of real gain reduction
+                          against 11.0dB for the old settings at the same
+                          input, with output level within 0.04dB of where the
+                          old settings put it. It squeezes; it does not shrink.
+                          ADDICTING: the theme was present in a run but
+                          backgrounded — vol 0.055 (half the menu's) on a
+                          16-bar cycle, ~27s between statements, which is a
+                          wash, not a hook. The run now has its own motif
+                          form, `drive`: the same five notes as the title
+                          statement at double the harmonic rhythm (the rise
+                          takes one bar in quarter notes instead of 2.5 bars
+                          in half notes), landing on the octave with a
+                          two-note tag back up to it. vol 0.055 -> 0.12 (now
+                          the loudest statement in the table, deliberately
+                          above the menu's 0.105 because the run mix is far
+                          denser), cycle 16 bars -> 8. Measured in a live run:
+                          per-note gain 0.0388 -> 0.0948 at the peak note
+                          (+7.8dB), recurrence 27.2s -> 13.7s, and every one
+                          of the seven notes queued at 16th-step 0/4/8/12 —
+                          which is exactly KICK_STEPS, so each note now
+                          attacks at the instant duckPump bottoms out and
+                          swells back through the pump instead of floating
+                          against it. The hook and the pressure are the same
+                          rhythmic event.
+                          GAPS, stated rather than smoothed over:
+                          - The boss's deliberate space-widening (0.74, a
+                            prior design decision: "a bigger space, not just
+                            louder") was NOT overridden. Drying the run around
+                            it strengthened it rather than making it read
+                            inconsistent — the boss send is now ~1.47x the
+                            pre-boss send where it was ~1.13x. But that means
+                            the boss is now by a wide margin the most open
+                            moment inside a run, and if a future pass ever
+                            wants a claustrophobic boss instead, this is the
+                            line that has to change, not the run's.
+                          - The motif is still suppressed entirely during a
+                            boss fight (unchanged prior decision — the boss's
+                            own material owns the foreground). So the hook
+                            this version exists to foreground is absent from
+                            the loudest section of the game. Defensible
+                            dramatically; still a real hole in "addicting,"
+                            and it is a decision, not an oversight.
+                          - Verified by reading live AudioParam values only.
+                            This environment has no speakers, so nothing here
+                            has been heard. The duck depth of 0.084 at a boss
+                            in particular is a big number that reads correct
+                            on paper and needs one real listen to confirm it
+                            is a pump and not a hole.
 
   v2.11.0 — 2026-07-26 — CRITICAL FIX found by this session's own combined
                           real-browser playtest (qa-playtest, not
@@ -1688,7 +1780,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.11.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -5524,7 +5616,15 @@ const Music = (function(){
     archive: { form:'fragment', bars:8,  vol:0.075, oct:2 },
     death:   { form:'fall',     bars:14, vol:0.095, oct:0.5 },
     victory: { form:'none',     bars:8,  vol:0,     oct:1 },
-    run:     { form:'phrase',   bars:16, vol:0.055, oct:1 },
+    // v2.12.0 — the run's own statement of the theme was the weakest one in
+    // the table: half the menu's level (0.055 vs 0.105) on a 16-bar cycle
+    // (~27s at run tempo), i.e. a background wash a player would not register
+    // as a hook at all, let alone anticipate. Now the LOUDEST statement in
+    // the table (0.12) on an 8-bar cycle (~14s), in its own rhythmically
+    // compressed `drive` form. Deliberately above the menu's level: the run
+    // mix is far denser than the title screen's, so equal prominence needs
+    // an unequal number.
+    run:     { form:'drive',    bars:8,  vol:0.12,  oct:1 },
   };
 
   // D Phrygian bass line — the "deh-neh-net" pattern: root, flat-2 (the
@@ -5702,7 +5802,7 @@ const Music = (function(){
   // Enumerated every prior `.connect(reverb)` before splitting: bell()'s wet
   // send, playLead()'s lead wet + shimmer wet. Music voices now go to
   // reverbMusic (-> musicGain), stingers stay on reverb (-> sfxGain).
-  let compressor = null, duckBus = null, reverb = null, reverbSend = null;
+  let compressor = null, makeupGain = null, duckBus = null, reverb = null, reverbSend = null;
   let reverbMusic = null, reverbMusicSend = null;
   let phraseBar = 0; // 0-3, cycles the 4-bar bass/lead phrase; bar 3 is the fill
   let section = 0;
@@ -5722,14 +5822,32 @@ const Music = (function(){
     distortion = ctx.createWaveShaper();
     setDistortionAmount(0);
     // master compressor — glues the whole mix together and stops the kick
-    // transients from clipping against the bass/drone. Standard general-
-    // purpose mastering-bus settings, not per-element compression.
+    // transients from clipping against the bass/drone. These are the RESTING
+    // settings (general-purpose glue, not per-element compression); as of
+    // v2.12.0 applyMood() drives threshold/ratio/knee/release from the same
+    // drive*tension product the distortion already reads, so the bus tightens
+    // under pressure instead of staying at one setting all game.
     compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value = -20; compressor.knee.value = 12;
     compressor.ratio.value = 4; compressor.attack.value = 0.003; compressor.release.value = 0.25;
+    // makeup gain — the reason the tightening above is a squeeze and not just
+    // a fader move. DynamicsCompressor has no makeup stage, so tightening the
+    // threshold/ratio purely attenuates: measured live, the boss coordinate
+    // went from ~11dB of gain reduction to ~22dB, i.e. the boss section
+    // became ~11dB QUIETER than before — the exact opposite of "pressurized."
+    // (Found by reading compressor.reduction at a real boss/near-death
+    // coordinate, not by listening.) This node restores that difference so
+    // the output level stays put while the dynamics collapse. Enumerated
+    // before inserting it: `compressor.connect(ctx.destination)` was the one
+    // and only edge into the destination in this module, and nothing else
+    // writes makeup.gain, so applyMood's per-frame direct set here cannot
+    // collide with anything (master.gain, which toggleMute one-shot-ramps, is
+    // a different node entirely and is untouched).
+    makeupGain = ctx.createGain(); makeupGain.gain.value = 1;
     master.connect(distortion);
     distortion.connect(compressor);
-    compressor.connect(ctx.destination);
+    compressor.connect(makeupGain);
+    makeupGain.connect(ctx.destination);
 
     // musicGain/sfxGain — leaf buses for the volume-split Settings sliders.
     // Both feed the existing master untouched; toggleMute() keeps zeroing
@@ -5796,12 +5914,31 @@ const Music = (function(){
   // (a discrete event, not a continuously-smoothed value). Duck depth scales
   // with how present the rhythm section actually is, so a branch with a
   // barely-audible kick doesn't chop a 70% hole in the pad.
+  //
+  // v2.12.0 — depth deepened and made pressure-sensitive. The old fixed
+  // `1 - 0.7*lvl` measured out at a 0.30 floor during a boss fight: audible
+  // as glue, not as a squeeze. Now the duck amount itself rides mood.tension
+  // (0.78 of the way to silence when calm, 0.92 at full tension), which
+  // measured 0.107 at a boss/near-death coordinate — a real hole punched on
+  // every kick. mood.tension is READ here, never written: this samples the
+  // already-smoothed value once at note-schedule time (the same idiom
+  // playBassNote uses for mood.brightness) and writes only duckBus.gain,
+  // which applyMood never touches. No collision with the per-frame sets.
   function duckPump(t, lvl){
-    const depth = 1 - 0.7*(lvl == null ? 1 : lvl);
+    const L = lvl == null ? 1 : lvl;
+    const amt = 0.78 + 0.14*Math.min(1, Math.max(0, mood.tension));
+    const depth = Math.max(0.04, 1 - amt*L);
     duckBus.gain.cancelScheduledValues(t);
     duckBus.gain.setValueAtTime(1, t);
-    duckBus.gain.linearRampToValueAtTime(depth, t+0.03);
-    duckBus.gain.exponentialRampToValueAtTime(1, t+0.3);
+    duckBus.gain.linearRampToValueAtTime(depth, t+0.022);
+    duckBus.gain.exponentialRampToValueAtTime(1, t+0.30);
+  }
+  // what duckPump WOULD schedule right now, for the test harness — the
+  // trough is a ~22ms point on an automation curve, so a sampled minimum
+  // alone can't prove the intended depth was the depth that got scheduled.
+  function currentDuckDepth(){
+    const L = Math.min(1, mood.drive/0.55);
+    return Math.max(0.04, 1 - (0.78 + 0.14*Math.min(1, Math.max(0, mood.tension)))*L);
   }
 
   function setDistortionAmount(amount){
@@ -6229,14 +6366,33 @@ const Music = (function(){
       {b:6,s:0, d:'p5', dur:5.0, v:0.46, p: 0.24},
       {b:6,s:0, d:'oct',dur:5.0, v:0.30, p: 0.00},
     ],
-    // the bare rising gesture, no answer — used quietly under a live run
-    phrase: [
-      {b:0,s:0, d:'r',  dur:1.4, v:1.00, p:-0.12},
-      {b:0,s:8, d:'p4', dur:1.4, v:0.92, p: 0.12},
-      {b:1,s:0, d:'p5', dur:1.4, v:0.96, p:-0.12},
-      {b:1,s:8, d:'b6', dur:1.5, v:0.88, p: 0.12},
-      {b:2,s:0, d:'oct',dur:2.4, v:1.00, p: 0.00},
+    // the run's own form (v2.12.0) — the same five notes as `title`, but at
+    // double the harmonic rhythm: the rise takes ONE bar in quarter notes
+    // instead of two and a half bars in half notes, lands on the octave, and
+    // answers with a two-note tag that returns to the octave. That
+    // compression is the whole difference between "the theme is present" and
+    // "that's the hook" — a gesture you can hum after two passes.
+    //
+    // Every event sits on s = 0/4/8/12, which IS KICK_STEPS. That is not
+    // decoration: motifVoice() is on duckBus, so each note now attacks at the
+    // instant duckPump drops the bus to its floor and swells back up over the
+    // following ~280ms. The hook and the pump are the same rhythmic event
+    // rather than two layers passing through each other, which is what makes
+    // a sidechained trance hook read as pressurized instead of just loud.
+    drive: [
+      {b:0,s:0,  d:'r',   dur:0.9, v:1.00, p:-0.10},
+      {b:0,s:4,  d:'p4',  dur:0.9, v:0.94, p: 0.12},
+      {b:0,s:8,  d:'p5',  dur:0.9, v:0.98, p:-0.12},
+      {b:0,s:12, d:'b6',  dur:0.9, v:0.92, p: 0.10},
+      {b:1,s:0,  d:'oct', dur:1.7, v:1.12, p: 0.00},
+      // the tag — falls to the fifth and returns, so the statement ends
+      // where it peaked rather than trailing off
+      {b:1,s:8,  d:'p5',  dur:0.8, v:0.68, p: 0.18},
+      {b:2,s:0,  d:'oct', dur:2.0, v:0.84, p:-0.06},
     ],
+    // (the old `phrase` form — the same rise in half notes over 2.5 bars —
+    // was deleted rather than left unreferenced when `drive` replaced it as
+    // the run's statement. It was the only caller.)
     // three-note head only — the shop/archive branches, sparse enough to
     // read as "the theme is still here, quietly" without being a tune
     fragment: [
@@ -6622,9 +6778,21 @@ const Music = (function(){
     target.tension    = Math.min(1, intensity*0.30 + bossPhaseTension*0.55 + nearDeath*0.55);
     target.density    = bossMode ? 0.92 : 0.30 + sect*0.16;
     target.brightness = Math.max(0.08, Math.min(1, 0.32 + intensity*0.55 - nearDeath*0.34));
-    // the room CLOSES as combat gets busy and opens again for the boss —
-    // a boss is meant to feel like a bigger space, not just a louder one
-    target.space      = bossMode ? 0.74 : Math.max(0.34, 0.62 - intensity*0.28);
+    // The room CLOSES as combat gets busy and opens again for the boss —
+    // a boss is meant to feel like a bigger space, not just a louder one.
+    //
+    // v2.12.0 — the non-boss run is materially drier than it was
+    // (0.62 -> 0.44 at the start of a run, floor 0.34 -> 0.16). The old
+    // numbers meant a run's reverb send only fell from 0.52 to 0.37 across
+    // the whole build, which is not a room closing, it's a room dimming.
+    // The boss's 0.74 is DELIBERATELY unchanged: it was a prior design
+    // decision ("a bigger space, not just louder"), and the effect of
+    // drying the run out around it is that the contrast got stronger, not
+    // inconsistent — the boss send is now ~1.5x the pre-boss send where it
+    // used to be ~1.13x. Same for the level-up lift and pause below: both
+    // still pin space near 0.85-1.00, so stepping out of a run now reads as
+    // a much larger room opening than it did.
+    target.space      = bossMode ? 0.74 : Math.max(0.16, 0.44 - intensity*0.30);
     target.weight     = bossMode ? 0.96 : 0.50 + intensity*0.34;
     target.tempo      = (bossMode ? 1.04 : 0.94 + intensity*0.06) + nearDeath*0.035;
     target.omen       = bossMode ? 1 : 0;
@@ -6683,10 +6851,36 @@ const Music = (function(){
       atmos.tensionGain.gain.value = mood.tension*0.32;
     }
     if(bossPad) bossPad.gain.gain.value = mood.omen * (0.045 + mood.tension*0.055);
-    if(reverbMusicSend) reverbMusicSend.gain.value = 0.18 + mood.space*0.55;
-    // distortion drive is a mix decision, not a mood dimension of its own —
-    // it belongs to the loud, tense end of the space only.
-    setDistortionAmount(Math.max(0, mood.drive*mood.tension - 0.35)*1.6);
+    // v2.12.0 — the send curve was pivoted about space=1.0 (was
+    // 0.18 + space*0.55, now 0.12 + space*0.61). Both formulas give ~0.73 at
+    // space=1.0, so every open branch (menu/shop/archive/death/victory/pause,
+    // all at 0.94-1.00) is left numerically where it was — measured
+    // menu 0.7196 before, 0.7185 after. What changes is the DRY end: at the
+    // run branch's new low space the send now falls to ~0.22 instead of
+    // ~0.37. Tightening the room had to happen on both the input (space) and
+    // the curve, or the fixed 0.18 floor would have kept a wash of hall on
+    // the mix no matter how far down `space` was driven.
+    if(reverbMusicSend) reverbMusicSend.gain.value = 0.12 + mood.space*0.61;
+    // pressure = drive*tension, the same product distortion already reads.
+    // Distortion adds harmonic density at the top of that product; the
+    // compressor tightening under the SAME product is what makes the mix
+    // audibly squeeze there rather than merely get louder and dirtier. Both
+    // are mix decisions driven by mood, not mood dimensions of their own.
+    // The `> 0` test is also the NaN guard: NaN > 0 is false, so a NaN
+    // leaking in from game state (see v2.11.0) lands on 0 = the untouched
+    // glue setting, instead of writing NaN into four AudioParams.
+    const raw = mood.drive*mood.tension;
+    const press = raw > 0 ? Math.min(1, raw) : 0;
+    if(compressor){
+      compressor.threshold.value = -20 - press*8;     // -20 (glue) .. -28
+      compressor.ratio.value     = 4  + press*4;      // 4 .. 8
+      compressor.knee.value      = 12 - press*8;      // soft .. hard
+      compressor.release.value   = 0.25 - press*0.12; // 250ms .. 130ms, so the compressor itself pumps with the kick
+      // +9dB at full pressure, level-matched against the OLD -20/4 settings
+      // at the measured boss input level (see ensureCtx's makeupGain comment)
+      makeupGain.gain.value = Math.pow(10, press*9/20);
+    }
+    setDistortionAmount(Math.max(0, raw - 0.35)*1.6);
   }
 
   function tick(){
@@ -6852,6 +7046,22 @@ const Music = (function(){
       reverbMusicSend: () => reverbMusicSend ? reverbMusicSend.gain.value : null,
       reverbSfxSend: () => reverbSend ? reverbSend.gain.value : null,
       duckBusGain: () => duckBus ? duckBus.gain.value : null,
+      // v2.12.0 verification hooks. duckDepth is the depth duckPump would
+      // schedule at this instant (a sampled gain minimum can land anywhere
+      // on a 22ms ramp, so it can confirm but not pin the intended value);
+      // compressorReduction is the DynamicsCompressor's own read-only
+      // measured gain reduction in dB — the actual "is the mix squeezing"
+      // number, not a setting we asked for.
+      duckDepth: () => (ctx ? currentDuckDepth() : null),
+      compressor: () => compressor ? { threshold: compressor.threshold.value, ratio: compressor.ratio.value,
+        knee: compressor.knee.value, attack: compressor.attack.value, release: compressor.release.value,
+        reduction: compressor.reduction, makeup: makeupGain ? makeupGain.gain.value : null } : null,
+      motifPlan: () => ({ ...currentMotifPlan() }),
+      // the pending statement as actually queued: `s` is the 16th-within-bar
+      // each note lands on (KICK_STEPS is [0,4,8,12], so "locked to the kick"
+      // is checkable rather than assertable), `vol` the real per-note gain
+      // after the density scaling, not the preset.
+      motifQueue: () => motifEvents.map(e => ({ s: e.at % 16, vol: +e.vol.toFixed(4), freq: Math.round(e.freq) })),
       stepSec: () => STEP_SEC(),
       effectiveBpm: () => BPM*mood.tempo,
       absStep: () => absStep,
