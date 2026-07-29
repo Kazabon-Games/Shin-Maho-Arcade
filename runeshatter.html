@@ -40,28 +40,162 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
 
 #gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);touch-action:none;}
 
-.meta-row{position:fixed;bottom:8px;right:10px;display:flex;align-items:center;gap:6px;z-index:50;}
+/* ---- HUD (mirrors wardfall.html's #hud shape) ---- */
+#hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:none;
+  align-items:flex-start;justify-content:space-between;pointer-events:none;z-index:10;
+  font-family:var(--mono);}
+#hud.show{display:flex;}
+.hud-left{display:flex;flex-direction:column;gap:2px;}
+#scoreVal{font-size:26px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
+#tierVal{font-size:11px;color:var(--neon);letter-spacing:.06em;text-transform:uppercase;min-height:14px;}
+.hud-right{text-align:right;display:flex;flex-direction:column;gap:2px;}
+#budgetVal{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:.05em;}
+#budgetLabel{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
+#objectiveVal{position:fixed;top:66px;left:0;right:0;text-align:center;font-family:var(--mono);
+  font-size:11px;color:var(--ink-mid);pointer-events:none;z-index:10;display:none;}
+#objectiveVal.show{display:block;}
+.hud-pause-btn{position:fixed;top:14px;right:14px;z-index:20;pointer-events:auto;
+  width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--panel);
+  color:var(--ink-soft);font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;}
+.hud-pause-btn.show{display:flex;}
+.hud-pause-btn:hover{color:var(--neon);border-color:var(--neon);}
+
+/* ---- overlay/panel/btn — copied verbatim from wardfall.html's own tokens/shapes ---- */
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.86);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
+.overlay.show{display:flex;animation:ovfade .2s ease;}
+@keyframes ovfade{from{opacity:0;}to{opacity:1;}}
+@keyframes panelPop{0%{opacity:0;transform:scale(.92) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
+.overlay .panel{animation:panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;}
+body.reduced-motion .overlay.show,
+body.reduced-motion .panel{animation:none!important;}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:26px 24px;max-width:440px;width:100%;max-height:92vh;overflow-y:auto;
+  box-shadow:0 0 60px -18px rgba(226,184,85,0.22);margin:auto;}
+.panel h1{font-size:2rem;letter-spacing:.18em;text-align:center;color:var(--neon);
+  text-shadow:0 0 26px rgba(255,203,92,0.55);margin-bottom:4px;font-family:var(--display);font-weight:600;}
+.panel h2{font-size:1.2rem;letter-spacing:.1em;color:var(--neon);text-align:center;margin-bottom:16px;font-family:var(--display);font-weight:600;}
+.tagline{text-align:center;color:var(--ink-soft);font-size:.85rem;margin-bottom:18px;font-family:var(--display);font-style:italic;}
+.stat-line{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.85rem;
+  color:var(--ink-mid);padding:6px 0;border-bottom:1px solid var(--border);}
+.stat-line b{color:var(--neon);font-weight:600;}
+.new-best{text-align:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+  color:var(--gold);margin:6px 0 4px;text-transform:uppercase;}
+.btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
+  margin-bottom:10px;transition:all .15s;font-family:inherit;letter-spacing:.04em;}
+.btn:hover{border-color:var(--neon);color:var(--neon);box-shadow:0 0 18px -6px var(--neon);}
+.btn:active{transform:scale(.98);}
+.btn:disabled{opacity:.35;cursor:default;box-shadow:none;}
+
+/* ---- mode-select cards ---- */
+.mode-card{display:block;width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);cursor:pointer;margin-bottom:12px;text-align:left;
+  font-family:inherit;transition:all .15s;}
+.mode-card:hover{border-color:var(--neon);box-shadow:0 0 18px -6px var(--neon);}
+.mode-card .mode-name{font-family:var(--display);font-size:1.15rem;color:var(--neon);letter-spacing:.05em;font-weight:600;}
+.mode-card .mode-desc{font-size:.72rem;color:var(--ink-soft);margin-top:2px;}
+.mode-card .mode-best{font-family:var(--mono);font-size:.72rem;color:var(--ink-mid);margin-top:6px;}
+
+/* ---- level select grid ---- */
+.level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
+.level-tile{aspect-ratio:1;border-radius:10px;border:1px solid var(--border);background:var(--panel2);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:.95rem;cursor:pointer;color:var(--ink-mid);gap:2px;}
+.level-tile .level-star{font-size:.65rem;}
+.level-tile.locked{opacity:.32;cursor:default;}
+.level-tile.completed{border-color:var(--ok);color:var(--ok);box-shadow:0 0 10px -4px var(--ok);}
+.level-tile.current-unlocked{border-color:var(--neon);color:var(--neon);}
+
+/* ---- meta row / version marker ---- */
+.meta-row{position:fixed;bottom:8px;right:10px;display:flex;align-items:center;gap:6px;z-index:60;}
 .version-marker{font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;
   letter-spacing:.02em;pointer-events:none;}
 
-.scaffold-note{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-  flex-direction:column;gap:10px;text-align:center;padding:20px;font-family:var(--display);}
-.scaffold-note h1{font-size:2rem;color:var(--neon);letter-spacing:.1em;font-weight:600;}
-.scaffold-note p{color:var(--ink-soft);font-family:var(--mono);font-size:.8rem;max-width:480px;}
+@media (max-width:480px){
+  .panel{padding:20px 18px;}
+  .level-grid{grid-template-columns:repeat(4,1fr);}
+}
 </style>
 </head>
 <body>
 
 <canvas id="gameCanvas"></canvas>
 
-<div class="scaffold-note">
-  <h1>RUNESHATTER</h1>
-  <p>Phase 0 scaffold. Board/match/bomb engine, modes, audio, and art land in
-     the phases that follow — see GAME_7_PILLARS.md.</p>
+<button class="hud-pause-btn" id="pauseBtn" onclick="Game.togglePause()" aria-label="Pause">❚❚</button>
+<div id="hud">
+  <div class="hud-left">
+    <div id="scoreVal">0</div>
+    <div id="tierVal"></div>
+  </div>
+  <div class="hud-right">
+    <div id="budgetVal">—</div>
+    <div id="budgetLabel">Moves</div>
+  </div>
+</div>
+<div id="objectiveVal"></div>
+
+<!-- MODE SELECT -->
+<div class="overlay show" id="modeSelectScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Runeshatter mode select">
+    <h1>RUNESHATTER</h1>
+    <div class="tagline">shatter the cluster, chain the blast</div>
+    <button class="btn" id="resumeBtn" style="display:none;" onclick="Game.resumeSession()">▶ RESUME SAVED RUN</button>
+    <button class="mode-card" onclick="Game.startEndless()" aria-label="Endless mode">
+      <div class="mode-name">ENDLESS</div>
+      <div class="mode-desc">no limit — chase the highest score you can before the board turns hostile</div>
+      <div class="mode-best">Best score <b id="bestEndless">0</b></div>
+    </button>
+    <button class="mode-card" onclick="Nav.goTo('levelSelect')" aria-label="Levels mode">
+      <div class="mode-name">LEVELS</div>
+      <div class="mode-desc">20 hand-authored boards, tightening move budgets, rising tile tiers</div>
+      <div class="mode-best">Furthest level reached <b id="bestLevels">0</b></div>
+    </button>
+    <button class="mode-card" onclick="Game.startTimed()" aria-label="Timed Survival mode">
+      <div class="mode-name">TIMED SURVIVAL</div>
+      <div class="mode-desc">a running clock, an escalating board — survive it</div>
+      <div class="mode-best">Best score <b id="bestTimed">0</b></div>
+    </button>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+  </div>
+</div>
+
+<!-- LEVEL SELECT -->
+<div class="overlay" id="levelSelectScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Level select">
+    <h2>✦ LEVEL SELECT ✦</h2>
+    <div class="tagline">unlock the next by completing the last</div>
+    <div class="level-grid" id="levelGrid"></div>
+    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back">BACK</button>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div class="overlay" id="pauseOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
+    <h2>PAUSED</h2>
+    <button class="btn" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
+    <button class="btn" onclick="Game.endRunFromPause()" aria-label="End run">END RUN</button>
+    <button class="btn" onclick="Game.quitToMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="overlay" id="resultsScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Run results">
+    <h2 id="resultsTitle">RUN ENDED</h2>
+    <div class="new-best" id="resultsNewBest" style="display:none;">✦ NEW HIGH SCORE ✦</div>
+    <div class="stat-line">Mode <b id="resultsMode">—</b></div>
+    <div class="stat-line">Score <b id="resultsScore">0</b></div>
+    <div class="stat-line" id="resultsLevelRow" style="display:none;">Level <b id="resultsLevel">—</b></div>
+    <div class="stat-line" id="resultsOutcomeRow" style="display:none;">Outcome <b id="resultsOutcome">—</b></div>
+    <button class="btn" onclick="Game.playAgain()" aria-label="Play again">PLAY AGAIN</button>
+    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back to mode select">MODE SELECT</button>
+  </div>
 </div>
 
 <div class="meta-row">
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.1.0</div>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.2.0</div>
 </div>
 
 <script>
@@ -70,6 +204,25 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
 
+   v0.2.0 — 2026-07-29 — Phase 1: mode-agnostic Board engine (8x8 swap/
+                          match/bomb-create/bomb-chain, resolveToFixedPoint
+                          per GAME_7_PILLARS.md §7's explicit correction to
+                          Wardfall's single-wave cascade, reshuffle-on-
+                          no-legal-move guard), ModeRuleset (Endless/Levels/
+                          Timed thresholds + a real 20-level list per §4),
+                          two-key Persist schema (schemaVersion-checked,
+                          session discarded not migrated on mismatch),
+                          Nav.goTo(n)-style screen switching (mode-select,
+                          level-select, main board, pause, results — a
+                          fresh pattern per §7, not a ported one), and a
+                          deliberate gray-box Canvas render (flat colored
+                          tiles, distinct bomb borders, tap-to-swap input,
+                          instant non-animated resolution) — final
+                          faceted-gem/rune-overlay art and juice/audio are
+                          separate later passes, not done here. Adversarial
+                          test suite (tests/runeshatter-adversarial.js)
+                          ships in this same commit per §7's file-growth-
+                          risk paragraph.
    v0.1.0 — 2026-07-29 — Phase 0: scaffold only. Version marker,
                           changelog, shared studio CSS tokens (copied
                           verbatim from wardfall.html/sigilchain.html
@@ -78,6 +231,976 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
                           audio, and rendering land in later phases per
                           GAME_7_PILLARS.md's build order (§9).
 ===================================================================== */
+
+/* =====================================================================
+   EVENTS — matches wardfall.html's own Events module shape verbatim
+   (on/emit pub-sub, per-handler try/catch so one bad listener can't
+   break the emit loop for the rest).
+===================================================================== */
+const Events = (function(){
+  const subs = {};
+  function on(type, fn){ (subs[type] = subs[type]||[]).push(fn); }
+  function off(type, fn){
+    const l = subs[type]; if(!l) return;
+    const i = l.indexOf(fn); if(i>=0) l.splice(i,1);
+  }
+  function emit(type, payload){
+    const l = subs[type];
+    if(!l) return;
+    for(const fn of l){ try{ fn(payload); }catch(e){ console.error('event handler error ['+type+']', e); } }
+  }
+  return { on, off, emit };
+})();
+
+/* =====================================================================
+   PERSIST — exact two-key schema from GAME_7_PILLARS.md §7. highScores
+   and session are checked against schemaVersion independently (they have
+   different lifetimes per §7's own rationale): a session with a mismatched
+   or missing schemaVersion is DROPPED, never migrated — resumability is a
+   convenience, not a save-file contract. This deliberately does NOT
+   follow infall.html's ad-hoc/no-version Persist module (a named gap in
+   GAME_7_PILLARS.md §7), since board-shaped state is much harder to
+   hand-patch than a flat stat blob.
+===================================================================== */
+const SAVE_KEY = 'runeshatter-save-v1';
+const SCHEMA_VERSION = 1;
+const Persist = (function(){
+  const defaultHighScores = () => ({ endless: 0, levels: 0, timedSurvival: 0 });
+  let data = {
+    schemaVersion: SCHEMA_VERSION,
+    highScores: defaultHighScores(),
+    session: null,
+  };
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(!raw) return;
+      const parsed = JSON.parse(raw);
+      if(!parsed || typeof parsed !== 'object'){ return; }
+      if(parsed.schemaVersion === SCHEMA_VERSION && parsed.highScores && typeof parsed.highScores === 'object'){
+        data.highScores = Object.assign(defaultHighScores(), parsed.highScores);
+      } else {
+        // outer envelope schema mismatch (or malformed highScores) — only
+        // one schema version has ever shipped, so there is no real
+        // migration path to write yet; the safe move is defaults, not a
+        // guessed migration.
+        data.highScores = defaultHighScores();
+      }
+      // session carries its OWN nested schemaVersion (see the §7 example
+      // shape) and is validated on its own terms, independent of the
+      // outer envelope check above — dropped (not migrated) on ANY
+      // mismatch, including a missing field entirely.
+      if(parsed.session && typeof parsed.session === 'object' && parsed.session.schemaVersion === SCHEMA_VERSION){
+        data.session = parsed.session;
+      } else {
+        data.session = null;
+      }
+    }catch(e){
+      // corrupt JSON (or any other read failure) — drop to defaults
+      // rather than crash or silently half-read a broken structure.
+      data.highScores = defaultHighScores();
+      data.session = null;
+    }
+  }
+  function save(){
+    try{
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        schemaVersion: SCHEMA_VERSION, highScores: data.highScores, session: data.session,
+      }));
+    }catch(e){}
+  }
+  function setHighScore(mode, value){
+    if(value > (data.highScores[mode]||0)){ data.highScores[mode] = value; save(); return true; }
+    return false;
+  }
+  function saveSession(session){
+    data.session = session ? Object.assign({ schemaVersion: SCHEMA_VERSION }, session) : null;
+    save();
+  }
+  function clearSession(){ data.session = null; save(); }
+  load();
+  return { data, load, save, setHighScore, saveSession, clearSession };
+})();
+
+/* =====================================================================
+   UTILS
+===================================================================== */
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* =====================================================================
+   BOARD — the mode-agnostic engine (GAME_7_PILLARS.md §2, §7). 8x8 grid,
+   swap-adjacent validation, match-3+ detection, match-4 -> line bomb,
+   match-5 -> area bomb, bomb detonation chains into neighboring bombs,
+   resolveToFixedPoint() runs match->clear->gravity->refill->re-check in a
+   loop until stable, with bomb detonations flattened into the clear-set
+   BEFORE gravity runs each pass (the explicit correction to Wardfall's
+   single-wave cascade — see wardfall.html:1008-1010's own comment, which
+   is correct for a board with no gravity-refill and no bomb-chain but
+   would be a correctness bug ported here verbatim).
+
+   Board holds NO mode-name branch anywhere. The one piece of mode-shaped
+   behavior it needs — how many tile types are currently active — is taken
+   through a small injected-ruleset interface (Board.setRuleset /
+   Board.setProgress calling ruleset.tileTierForProgress), never an
+   if(mode===...) check. Board does not itself track score/moves/time —
+   those are session-level concepts that live in the Game orchestration
+   layer below, matching Board's own stated job description ("grid,
+   swap-validate, match-detect, bomb-creation/chain-resolve") which never
+   mentions win/lose.
+===================================================================== */
+const BOARD_SIZE = 8;
+const Board = (function(){
+  const SIZE = BOARD_SIZE;
+  let grid = [];
+  let rng = Math.random;
+  let activeTypes = ['fire','frost','verdant','lightning'];
+  let ruleset = null;
+
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
+  function setRuleset(r){ ruleset = r || null; }
+  function setActiveTypes(types){ activeTypes = types.slice(); }
+  function getActiveTypes(){ return activeTypes.slice(); }
+
+  function inBounds(c,r){ return c>=0 && c<SIZE && r>=0 && r<SIZE; }
+  function at(c,r){ return inBounds(c,r) ? grid[r][c] : null; }
+  function set(c,r,tile){ if(inBounds(c,r)) grid[r][c] = tile; }
+  function randomTile(){ return { type: activeTypes[rngInt(activeTypes.length)], bomb: null, axis: null }; }
+
+  // ---- runs (the atomic 3+ match unit — a straight horizontal or
+  // vertical run of one type; T/L intersections are just two overlapping
+  // runs, unioned into one clear-set below) ----
+  function findRuns(){
+    const runs = [];
+    for(let r=0;r<SIZE;r++){
+      let c=0;
+      while(c<SIZE){
+        const t = grid[r][c] && grid[r][c].type;
+        if(!t){ c++; continue; }
+        let c2=c;
+        while(c2+1<SIZE && grid[r][c2+1] && grid[r][c2+1].type===t) c2++;
+        const len = c2-c+1;
+        if(len>=3){
+          const cells=[]; for(let cc=c;cc<=c2;cc++) cells.push({col:cc,row:r});
+          runs.push({cells, axis:'row', type:t});
+        }
+        c = c2+1;
+      }
+    }
+    for(let c=0;c<SIZE;c++){
+      let r=0;
+      while(r<SIZE){
+        const t = grid[r][c] && grid[r][c].type;
+        if(!t){ r++; continue; }
+        let r2=r;
+        while(r2+1<SIZE && grid[r2+1][c] && grid[r2+1][c].type===t) r2++;
+        const len = r2-r+1;
+        if(len>=3){
+          const cells=[]; for(let rr=r;rr<=r2;rr++) cells.push({col:c,row:rr});
+          runs.push({cells, axis:'col', type:t});
+        }
+        r = r2+1;
+      }
+    }
+    return runs;
+  }
+
+  // an existing bomb tile's blast footprint (includes its own cell)
+  function computeBlast(cell, tile){
+    const cells = [];
+    if(tile.bomb === 'line'){
+      if(tile.axis === 'row'){ for(let c=0;c<SIZE;c++) cells.push({col:c,row:cell.row}); }
+      else { for(let r=0;r<SIZE;r++) cells.push({col:cell.col,row:r}); }
+    } else if(tile.bomb === 'area'){
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+        const c=cell.col+dc, r=cell.row+dr;
+        if(inBounds(c,r)) cells.push({col:c,row:r});
+      }
+    }
+    return cells;
+  }
+
+  function applyGravity(){
+    for(let c=0;c<SIZE;c++){
+      const stack=[];
+      for(let r=0;r<SIZE;r++){ if(grid[r][c]) stack.push(grid[r][c]); }
+      for(let r=SIZE-1, i=stack.length-1; r>=0; r--, i--){ grid[r][c] = i>=0 ? stack[i] : null; }
+    }
+  }
+  function refill(){
+    for(let c=0;c<SIZE;c++) for(let r=0;r<SIZE;r++){ if(!grid[r][c]) grid[r][c] = randomTile(); }
+  }
+
+  // one match->clear->bomb-create/chain settle pass, folded into acc.
+  // returns true if a pass actually ran (i.e. there was something to settle).
+  function settlePass(acc){
+    const runs = findRuns();
+    if(runs.length===0) return false;
+
+    const bombSpecs = new Map(); // "c,r" -> {kind,axis,type,col,row}
+    const runCellKeys = new Set();
+    for(const run of runs){
+      // Anchor = the run's middle cell. There is no "swapped tile" concept
+      // during an arbitrary re-check pass (refills/gravity can produce a
+      // fresh match with no swap at all), so the middle cell is used as a
+      // deterministic, order-independent stand-in — a documented judgment
+      // call, not a literal port of a swap-position rule.
+      const anchor = run.cells[Math.floor((run.cells.length-1)/2)];
+      const key = anchor.col+','+anchor.row;
+      if(run.cells.length >= 5) bombSpecs.set(key, { kind:'area', type:run.type, col:anchor.col, row:anchor.row });
+      else if(run.cells.length === 4) bombSpecs.set(key, { kind:'line', axis:run.axis, type:run.type, col:anchor.col, row:anchor.row });
+      for(const cell of run.cells) runCellKeys.add(cell.col+','+cell.row);
+    }
+
+    const clearSet = new Set();
+    for(const key of runCellKeys){ if(!bombSpecs.has(key)) clearSet.add(key); }
+
+    // chain: any EXISTING bomb tile swept into the clear-set detonates,
+    // and its blast is flattened into the SAME clear-set (before gravity
+    // runs), so a newly-revealed bomb inside another bomb's blast keeps
+    // chaining until nothing new is added.
+    const queue = [];
+    for(const key of clearSet){
+      const [c,r] = key.split(',').map(Number);
+      const t = at(c,r);
+      if(t && t.bomb) queue.push({col:c,row:r});
+    }
+    let bombsDetonated = 0;
+    while(queue.length){
+      const cell = queue.pop();
+      const t = at(cell.col,cell.row);
+      if(!t || !t.bomb) continue;
+      bombsDetonated++;
+      for(const b of computeBlast(cell, t)){
+        const bk = b.col+','+b.row;
+        if(!clearSet.has(bk)){
+          clearSet.add(bk);
+          const bt = at(b.col,b.row);
+          if(bt && bt.bomb) queue.push(b);
+        }
+      }
+    }
+
+    const clearedByType = {};
+    for(const key of clearSet){
+      const [c,r] = key.split(',').map(Number);
+      const t = at(c,r);
+      if(t && t.type) clearedByType[t.type] = (clearedByType[t.type]||0) + 1;
+      set(c,r,null);
+    }
+    for(const spec of bombSpecs.values()){
+      set(spec.col, spec.row, { type: spec.type, bomb: spec.kind, axis: spec.axis||null });
+    }
+
+    acc.passes += 1;
+    acc.cleared += clearSet.size;
+    acc.bombsCreated += bombSpecs.size;
+    acc.bombsDetonated += bombsDetonated;
+    for(const k in clearedByType) acc.clearedByType[k] = (acc.clearedByType[k]||0) + clearedByType[k];
+
+    applyGravity();
+    refill();
+    return true;
+  }
+
+  function swapCreatesMatch(a,b){
+    const ta = at(a.col,a.row), tb = at(b.col,b.row);
+    if(!ta || !tb) return false;
+    set(a.col,a.row,tb); set(b.col,b.row,ta);
+    const has = findRuns().length>0;
+    set(a.col,a.row,ta); set(b.col,b.row,tb);
+    return has;
+  }
+  function hasAnyLegalMove(){
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+      if(c+1<SIZE && swapCreatesMatch({col:c,row:r},{col:c+1,row:r})) return true;
+      if(r+1<SIZE && swapCreatesMatch({col:c,row:r},{col:c,row:r+1})) return true;
+    }
+    return false;
+  }
+  function shuffleBoard(){
+    const flat=[];
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) flat.push(grid[r][c]);
+    for(let i=flat.length-1;i>0;i--){ const j=rngInt(i+1); const tmp=flat[i]; flat[i]=flat[j]; flat[j]=tmp; }
+    let idx=0;
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) grid[r][c]=flat[idx++];
+  }
+
+  function isAdjacent(a,b){ return (Math.abs(a.col-b.col)+Math.abs(a.row-b.row)) === 1; }
+  function trySwap(a,b){
+    if(!isAdjacent(a,b)) return { valid:false };
+    const ta = at(a.col,a.row), tb = at(b.col,b.row);
+    if(!ta || !tb) return { valid:false };
+    set(a.col,a.row,tb); set(b.col,b.row,ta);
+    if(findRuns().length===0){ set(a.col,a.row,ta); set(b.col,b.row,tb); return { valid:false }; }
+    return { valid:true };
+  }
+
+  // resolveToFixedPoint — pure, synchronous. Loops match->clear->gravity->
+  // refill->re-check until stable, THEN applies the reshuffle-on-no-legal-
+  // move guard (built in from day one per §2, since the 6-color state is
+  // the one actually near the deadlock-frequency risk floor). If a
+  // reshuffle itself produces a fresh match (possible — a shuffle just
+  // permutes existing tiles), that gets settled too before the guard
+  // re-checks for a legal move, so the board is NEVER left in a state
+  // with an unresolved live match.
+  function resolveToFixedPoint(){
+    const acc = { passes:0, cleared:0, bombsCreated:0, bombsDetonated:0, clearedByType:{}, reshuffled:false };
+    while(settlePass(acc)){ /* loop until stable */ }
+    let reshuffles = 0;
+    while(!hasAnyLegalMove() && reshuffles < 50){
+      shuffleBoard();
+      reshuffles++;
+      while(settlePass(acc)){ /* settle anything the shuffle itself created */ }
+    }
+    acc.reshuffled = reshuffles>0;
+    return acc;
+  }
+
+  function generateBoard(){
+    let attempts=0;
+    do{
+      grid = [];
+      for(let r=0;r<SIZE;r++){ const row=[]; for(let c=0;c<SIZE;c++) row.push(randomTile()); grid.push(row); }
+      attempts++;
+    } while(findRuns().length>0 && attempts<500);
+  }
+  function init(types){
+    if(types) setActiveTypes(types);
+    generateBoard();
+    let tries=0;
+    while(!hasAnyLegalMove() && tries<50){ generateBoard(); tries++; }
+  }
+
+  function setProgress(value){
+    if(!ruleset || typeof ruleset.tileTierForProgress !== 'function') return { changed:false, tierCount: activeTypes.length };
+    const tier = ruleset.tileTierForProgress(value);
+    if(tier === activeTypes.length) return { changed:false, tierCount: tier };
+    setActiveTypes(TILE_TYPE_POOL.slice(0, tier));
+    return { changed:true, tierCount: tier };
+  }
+
+  function toPlain(){ return grid.map(row => row.map(t => t ? { type:t.type, bomb:t.bomb||null, axis:t.axis||null } : null)); }
+  function fromPlain(pattern){
+    grid = pattern.map(row => row.map(spec => {
+      if(spec == null) return null;
+      if(typeof spec === 'string') return { type: spec, bomb:null, axis:null };
+      return { type: spec.type, bomb: spec.bomb||null, axis: spec.axis||null };
+    }));
+  }
+
+  return {
+    BOARD_SIZE: SIZE,
+    init, setRng, setRuleset, setActiveTypes, getActiveTypes, setProgress,
+    at, trySwap, resolveToFixedPoint, hasAnyLegalMove,
+    serialize: toPlain, restoreGrid: fromPlain,
+    get grid(){ return grid; },
+    _test: {
+      setBoard: fromPlain,
+      getGrid: () => grid,
+      findRuns, computeBlast,
+    },
+  };
+})();
+
+// tile-type pool — base 4 ship at tier 1; void/light unlock at tiers 5/6
+// per GAME_7_PILLARS.md §3.
+const TILE_TYPE_POOL = ['fire','frost','verdant','lightning','void','light'];
+
+/* =====================================================================
+   MODE RULESET — three thin objects consumed by Board through a small
+   interface (tileTierForProgress) and by the Game orchestration layer for
+   checkWin/checkLose, which need session-level counters (score/moves/
+   time) Board intentionally does not hold. Thresholds are the Game
+   Designer's exact numbers from GAME_7_PILLARS.md §3 — explicitly
+   estimates pending real playtest data, same honesty standard the doc
+   states for itself.
+===================================================================== */
+function tierFor(value, t5, t6){ return value>=t6 ? 6 : value>=t5 ? 5 : 4; }
+
+// 20-level list per GAME_7_PILLARS.md §4. JUDGMENT CALL (flagged in the
+// build report): the pillars doc specifies structure (type counts,
+// objective-type shape, moveCap ramp) but not literal target numbers
+// beyond the single L10 worked example (reach 4,000 score in 16 moves —
+// reproduced exactly below). "clearColorCount" is interpreted as "clear
+// at least N tiles of one specified element" (a common, legible match-3
+// objective shape) since the pillars doc names the objective type but
+// not its literal semantics. All numeric targets here are placeholders in
+// the same spirit as the pillars doc's own thresholds — untuned until a
+// real human playthrough, not a claim of balance.
+const LEVELS = [
+  { level:1,  tileTypes:4, moveCap:20, objectives:[{ type:'clearColorCount', target:10, targetType:'fire' }] },
+  { level:2,  tileTypes:4, moveCap:20, objectives:[{ type:'reachScore', target:600 }] },
+  { level:3,  tileTypes:4, moveCap:19, objectives:[{ type:'clearColorCount', target:12, targetType:'verdant' }] },
+  { level:4,  tileTypes:4, moveCap:19, objectives:[{ type:'reachScore', target:900 }] },
+  { level:5,  tileTypes:4, moveCap:18, objectives:[{ type:'clearColorCount', target:14, targetType:'lightning' }] },
+
+  { level:6,  tileTypes:5, moveCap:18, objectives:[{ type:'clearColorCount', target:8,  targetType:'fire' },      { type:'reachScore', target:2000 }] },
+  { level:7,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:9,  targetType:'frost' },     { type:'reachScore', target:2500 }] },
+  { level:8,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:10, targetType:'verdant' },   { type:'reachScore', target:3000 }] },
+  { level:9,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:11, targetType:'lightning' }, { type:'reachScore', target:3500 }] },
+  { level:10, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:12, targetType:'void' },      { type:'reachScore', target:4000 }] },
+  { level:11, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:13, targetType:'fire' },      { type:'reachScore', target:4500 }] },
+  { level:12, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:14, targetType:'frost' },     { type:'reachScore', target:5000 }] },
+  { level:13, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:15, targetType:'verdant' },   { type:'reachScore', target:5500 }] },
+  { level:14, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:16, targetType:'lightning' }, { type:'reachScore', target:6000 }] },
+  { level:15, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:17, targetType:'void' },      { type:'reachScore', target:6500 }] },
+
+  { level:16, tileTypes:6, moveCap:15, objectives:[{ type:'clearColorCount', target:16, targetType:'fire' },      { type:'reachScore', target:7000 }] },
+  { level:17, tileTypes:6, moveCap:14, objectives:[{ type:'clearColorCount', target:17, targetType:'frost' },     { type:'reachScore', target:7500 }] },
+  { level:18, tileTypes:6, moveCap:14, objectives:[{ type:'clearColorCount', target:18, targetType:'verdant' },   { type:'reachScore', target:8000 }] },
+  { level:19, tileTypes:6, moveCap:13, objectives:[{ type:'clearColorCount', target:19, targetType:'lightning' }, { type:'reachScore', target:8500 }] },
+  { level:20, tileTypes:6, moveCap:13, objectives:[{ type:'clearColorCount', target:20, targetType:'light' },     { type:'reachScore', target:9000 }] },
+];
+
+function levelObjectivesMet(def, state){
+  for(const obj of def.objectives){
+    if(obj.type === 'reachScore' && state.score < obj.target) return false;
+    if(obj.type === 'clearColorCount' && (state.clearedByType[obj.targetType]||0) < obj.target) return false;
+  }
+  return true;
+}
+
+const ModeRuleset = {
+  Endless: {
+    tileTierForProgress: (score) => tierFor(score, 3000, 15000),
+    checkWin: () => false,
+    // Endless has no lose condition by design — the reshuffle guard keeps
+    // a legal move available forever, so a run only ends when the player
+    // explicitly ends it (pause -> End Run). Not a placeholder omission.
+    checkLose: () => false,
+  },
+  Timed: {
+    tileTierForProgress: (elapsedSeconds) => tierFor(elapsedSeconds, 45, 110),
+    checkWin: () => false,
+    checkLose: (state) => state.timeRemaining <= 0,
+  },
+  Levels: {
+    tileTierForProgress: (levelIndex) => (LEVELS[levelIndex-1] ? LEVELS[levelIndex-1].tileTypes : 6),
+    checkWin: (state) => !!state.levelDef && levelObjectivesMet(state.levelDef, state),
+    checkLose: (state) => !!state.levelDef && !levelObjectivesMet(state.levelDef, state) && state.movesUsed >= state.levelDef.moveCap,
+  },
+};
+
+/* =====================================================================
+   NAV — the goTo(n)-style screen switch established fresh for this repo
+   (GAME_7_PILLARS.md §7's own §0 correction: no shipped game actually has
+   this pattern to reuse, so this is new territory, not a port). Screens
+   are identified by name rather than a literal numeric index — a small,
+   deliberate readability judgment call on top of the same "goTo" idea,
+   noted explicitly rather than silently deviating from the literal text.
+===================================================================== */
+const Nav = (function(){
+  const SCREEN_IDS = ['modeSelect','levelSelect','results'];
+  let current = 'modeSelect';
+  function elFor(name){ return document.getElementById(name+'Screen'); }
+  function goTo(name){
+    const from = current;
+    for(const id of SCREEN_IDS){
+      const el = elFor(id);
+      if(el) el.classList.toggle('show', id===name);
+    }
+    const hud = document.getElementById('hud');
+    const obj = document.getElementById('objectiveVal');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const onGame = name === 'game';
+    if(hud) hud.classList.toggle('show', onGame);
+    if(obj) obj.classList.toggle('show', onGame);
+    if(pauseBtn) pauseBtn.classList.toggle('show', onGame);
+    current = name;
+    Events.emit('nav:change', { to:name, from });
+  }
+  return { goTo, currentScreen: () => current, SCREEN_IDS };
+})();
+
+/* =====================================================================
+   GAME — session orchestration. Not one of the pillars' explicitly-named
+   8 modules, but every other shipped title in this repo (wardfall.html,
+   sigilchain.html) has exactly this shape of top-level controller module
+   gluing Board+ModeRuleset+Nav+Persist together, so adding it here
+   follows real, checkable precedent rather than inventing a new pattern.
+   Module count for this pass: Persist, Events, Board, ModeRuleset, Nav,
+   Game = 6, well under Wardfall's 11-module ceiling; Juice/Music/Settings
+   are deferred to their own later passes per the task brief.
+===================================================================== */
+const Game = (function(){
+  const TIMED_TOTAL_SECONDS = 180; // not specified by the pillars doc (only
+    // the 45s/110s TIER thresholds are given) — long enough to plausibly
+    // cross both with room to spare. Judgment call, flagged in the report.
+
+  let mode = null;          // 'endless' | 'levels' | 'timed'
+  let levelIndex = 1;
+  let currentLevelDef = null;
+  let score = 0;
+  let movesUsed = 0;
+  let elapsedSeconds = 0;
+  let tierCount = 4;
+  let clearedByType = {};
+  let selected = null;
+  let running = false, paused = false;
+  let lastFrameTs = 0;
+  let sessionSeed = 0;
+  let lastResult = null;
+
+  function poolForTier(n){ return TILE_TYPE_POOL.slice(0, n); }
+  function rulesetFor(m){ return m==='endless' ? ModeRuleset.Endless : m==='timed' ? ModeRuleset.Timed : ModeRuleset.Levels; }
+
+  function newSeed(){ return (Math.random()*0xFFFFFFFF) >>> 0; }
+
+  function beginCommon(m){
+    mode = m;
+    Board.setRuleset(rulesetFor(m));
+    sessionSeed = newSeed();
+    Board.setRng(mulberry32(sessionSeed));
+    score = 0; movesUsed = 0; elapsedSeconds = 0; clearedByType = {}; selected = null;
+    running = true; paused = false; lastFrameTs = 0;
+    document.getElementById('pauseOverlay').classList.remove('show');
+  }
+
+  function startEndless(){
+    beginCommon('endless');
+    tierCount = 4;
+    Board.init(poolForTier(4));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function startTimed(){
+    beginCommon('timed');
+    tierCount = 4;
+    Board.init(poolForTier(4));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function startLevel(n){
+    beginCommon('levels');
+    levelIndex = clamp(n, 1, LEVELS.length);
+    currentLevelDef = LEVELS[levelIndex-1];
+    tierCount = currentLevelDef.tileTypes;
+    Board.init(poolForTier(tierCount));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function playAgain(){
+    if(mode === 'endless') startEndless();
+    else if(mode === 'timed') startTimed();
+    else if(mode === 'levels') startLevel(levelIndex);
+    else Nav.goTo('modeSelect');
+  }
+
+  function getState(){
+    return {
+      mode, score, movesUsed, elapsedSeconds,
+      timeRemaining: Math.max(0, TIMED_TOTAL_SECONDS - elapsedSeconds),
+      levelIndex, levelDef: currentLevelDef, clearedByType, tierCount,
+    };
+  }
+
+  function maybeUpdateTier(){
+    if(mode === 'levels') return; // Levels' tile count is fixed per-level by LEVELS[], not a live ramp
+    const progress = mode === 'endless' ? score : elapsedSeconds;
+    const result = Board.setProgress(progress);
+    if(result.changed) tierCount = result.tierCount;
+  }
+
+  function computeScoreDelta(stats){
+    // Placeholder scoring formula — the pillars doc gives tier/objective
+    // THRESHOLDS but no literal scoring formula, so this is a judgment
+    // call sufficient to drive tier-scaling and objective logic and to be
+    // testable, not a claim of a tuned/final formula (flagged in report).
+    return stats.cleared*10 + stats.bombsCreated*50 + stats.bombsDetonated*100;
+  }
+
+  function checkEnd(){
+    const ruleset = rulesetFor(mode);
+    const state = getState();
+    if(ruleset.checkWin(state)){ endRun(true); return true; }
+    if(ruleset.checkLose(state)){ endRun(false); return true; }
+    return false;
+  }
+
+  function attemptSwap(a,b){
+    if(!running || paused) return false;
+    const result = Board.trySwap(a,b);
+    if(!result.valid) return false;
+    movesUsed++;
+    const stats = Board.resolveToFixedPoint();
+    score += computeScoreDelta(stats);
+    for(const t in stats.clearedByType) clearedByType[t] = (clearedByType[t]||0) + stats.clearedByType[t];
+    maybeUpdateTier();
+    updateHud();
+    persistSession();
+    checkEnd();
+    return true;
+  }
+
+  function handlePointerCell(cell){
+    if(!running || paused || !cell) return;
+    if(!selected){ selected = cell; return; }
+    if(selected.col===cell.col && selected.row===cell.row){ selected = null; return; }
+    const adjacent = (Math.abs(selected.col-cell.col)+Math.abs(selected.row-cell.row)) === 1;
+    if(adjacent){
+      const a = selected; selected = null;
+      attemptSwap(a, cell);
+    } else {
+      selected = cell;
+    }
+  }
+
+  function togglePause(){
+    if(!running) return;
+    paused = !paused;
+    document.getElementById('pauseOverlay').classList.toggle('show', paused);
+  }
+  function endRunFromPause(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    endRun(false);
+  }
+  function quitToMenu(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    running = false;
+    Persist.clearSession();
+    Nav.goTo('modeSelect');
+    renderModeSelectScores();
+  }
+
+  function endRun(won){
+    running = false;
+    let isNewHigh = false;
+    if(mode === 'endless') isNewHigh = Persist.setHighScore('endless', score);
+    else if(mode === 'timed') isNewHigh = Persist.setHighScore('timedSurvival', score);
+    else if(mode === 'levels' && won) isNewHigh = Persist.setHighScore('levels', levelIndex);
+    Persist.clearSession();
+    lastResult = { mode, won, score, levelIndex, isNewHigh };
+    renderResults(lastResult);
+    Nav.goTo('results');
+    Events.emit('game:over', lastResult);
+  }
+
+  function persistSession(){
+    if(!running) return;
+    const movesOrTimeRemaining = mode === 'timed'
+      ? Math.max(0, TIMED_TOTAL_SECONDS - elapsedSeconds)
+      : (currentLevelDef ? currentLevelDef.moveCap - movesUsed : null);
+    Persist.saveSession({
+      mode, boardGrid: Board.serialize(), tileTierIndex: tierCount, score,
+      movesOrTimeRemaining, levelIndex: mode==='levels' ? levelIndex : null, rngSeed: sessionSeed,
+    });
+  }
+  function hasResumableSession(){ return !!Persist.data.session; }
+  function resumeSession(){
+    const s = Persist.data.session;
+    if(!s) return false;
+    mode = s.mode;
+    Board.setRuleset(rulesetFor(mode));
+    levelIndex = s.levelIndex || 1;
+    currentLevelDef = mode === 'levels' ? LEVELS[levelIndex-1] : null;
+    score = s.score || 0;
+    tierCount = s.tileTierIndex || 4;
+    if(mode === 'timed'){
+      elapsedSeconds = TIMED_TOTAL_SECONDS - (s.movesOrTimeRemaining!=null ? s.movesOrTimeRemaining : TIMED_TOTAL_SECONDS);
+      movesUsed = 0;
+    } else {
+      movesUsed = (mode==='levels' && currentLevelDef && s.movesOrTimeRemaining!=null)
+        ? Math.max(0, currentLevelDef.moveCap - s.movesOrTimeRemaining) : 0;
+      elapsedSeconds = 0;
+    }
+    clearedByType = {};
+    Board.setActiveTypes(poolForTier(tierCount));
+    Board.restoreGrid(s.boardGrid);
+    sessionSeed = s.rngSeed || newSeed();
+    Board.setRng(mulberry32(sessionSeed));
+    selected = null; running = true; paused = false; lastFrameTs = 0;
+    Nav.goTo('game');
+    updateHud();
+    return true;
+  }
+
+  // ---- HUD / results / level-select rendering ----
+  function tierLabel(n){
+    const names = ['Fire/Frost/Verdant/Lightning','+ Void','+ Light'];
+    if(n<=4) return '4 tiles — '+names[0];
+    if(n===5) return '5 tiles — '+names[0]+' '+names[1];
+    return '6 tiles — '+names[0]+' '+names[1]+' '+names[2];
+  }
+  function updateHud(){
+    document.getElementById('scoreVal').textContent = String(score);
+    document.getElementById('tierVal').textContent = tierLabel(tierCount);
+    const budgetVal = document.getElementById('budgetVal');
+    const budgetLabel = document.getElementById('budgetLabel');
+    const objectiveEl = document.getElementById('objectiveVal');
+    if(mode === 'timed'){
+      const remaining = Math.max(0, Math.ceil(TIMED_TOTAL_SECONDS - elapsedSeconds));
+      budgetVal.textContent = remaining+'s';
+      budgetLabel.textContent = 'Time';
+      objectiveEl.textContent = '';
+    } else if(mode === 'levels' && currentLevelDef){
+      budgetVal.textContent = String(Math.max(0, currentLevelDef.moveCap - movesUsed));
+      budgetLabel.textContent = 'Moves';
+      objectiveEl.textContent = currentLevelDef.objectives.map(o => {
+        if(o.type==='reachScore') return 'Score ' + Math.min(score,o.target) + '/' + o.target;
+        return 'Clear ' + o.targetType + ' ' + Math.min((clearedByType[o.targetType]||0),o.target) + '/' + o.target;
+      }).join('  •  ');
+    } else {
+      budgetVal.textContent = '—';
+      budgetLabel.textContent = 'Endless';
+      objectiveEl.textContent = '';
+    }
+  }
+  function renderResults(result){
+    document.getElementById('resultsMode').textContent =
+      result.mode==='endless' ? 'Endless' : result.mode==='timed' ? 'Timed Survival' : 'Levels';
+    document.getElementById('resultsScore').textContent = String(result.score);
+    document.getElementById('resultsNewBest').style.display = result.isNewHigh ? 'block' : 'none';
+    const levelRow = document.getElementById('resultsLevelRow');
+    const outcomeRow = document.getElementById('resultsOutcomeRow');
+    if(result.mode === 'levels'){
+      levelRow.style.display = 'flex';
+      document.getElementById('resultsLevel').textContent = String(result.levelIndex);
+      outcomeRow.style.display = 'flex';
+      document.getElementById('resultsOutcome').textContent = result.won ? 'CLEARED' : 'MOVES EXHAUSTED';
+    } else {
+      levelRow.style.display = 'none';
+      outcomeRow.style.display = 'none';
+    }
+    document.getElementById('resultsTitle').textContent = result.mode==='levels' && result.won ? 'LEVEL CLEARED' : 'RUN ENDED';
+  }
+  function renderModeSelectScores(){
+    document.getElementById('bestEndless').textContent = String(Persist.data.highScores.endless||0);
+    document.getElementById('bestTimed').textContent = String(Persist.data.highScores.timedSurvival||0);
+    document.getElementById('bestLevels').textContent = String(Persist.data.highScores.levels||0);
+    document.getElementById('resumeBtn').style.display = hasResumableSession() ? 'block' : 'none';
+  }
+  // Levels lock/unlock/completion is derived from Persist.data.highScores.levels
+  // ("furthest level reached") rather than a separate per-level array — a
+  // deliberate judgment call to stay inside the §7 schema's explicit
+  // two-key discipline (adding a third top-level persisted field for a
+  // full per-level completion table would contradict that discipline; see
+  // build report).
+  function renderLevelSelect(){
+    const furthest = Persist.data.highScores.levels||0;
+    const grid = document.getElementById('levelGrid');
+    grid.innerHTML = '';
+    for(let i=1;i<=LEVELS.length;i++){
+      const completed = i <= furthest;
+      const unlocked = i <= furthest+1;
+      const tile = document.createElement('button');
+      tile.className = 'level-tile' + (!unlocked?' locked':'') + (completed?' completed':'') + (unlocked && !completed ? ' current-unlocked':'');
+      tile.setAttribute('aria-label', 'Level '+i+(completed?' (completed)':unlocked?' (unlocked)':' (locked)'));
+      tile.disabled = !unlocked;
+      tile.innerHTML = String(i) + (completed ? '<div class="level-star">✦</div>' : '');
+      if(unlocked) tile.onclick = () => startLevel(i);
+      grid.appendChild(tile);
+    }
+  }
+  Events.on('nav:change', (e) => { if(e.to==='levelSelect') renderLevelSelect(); if(e.to==='modeSelect') renderModeSelectScores(); });
+
+  // ---- frame loop (timed-mode clock only; grid state itself is always
+  // already-resolved synchronously by Board, per §7 — this loop exists
+  // for the timer and for redraw, not for any deferred game logic) ----
+  function tick(ts){
+    if(running && !paused && mode==='timed'){
+      if(!lastFrameTs) lastFrameTs = ts;
+      const dt = (ts - lastFrameTs)/1000;
+      lastFrameTs = ts;
+      elapsedSeconds += dt;
+      maybeUpdateTier();
+      updateHud();
+      checkEnd();
+    } else {
+      lastFrameTs = 0;
+    }
+    Render.frame();
+    requestAnimationFrame(tick);
+  }
+
+  return {
+    startEndless, startTimed, startLevel, playAgain,
+    attemptSwap, handlePointerCell, togglePause, endRunFromPause, quitToMenu,
+    resumeSession, hasResumableSession, persistSession,
+    getState, getSelected: () => selected, isRunning: () => running, isPaused: () => paused,
+    renderModeSelectScores, renderLevelSelect, tick,
+    _test: {
+      state: () => Object.assign({ running, paused, selected }, getState()),
+      forceMode: (m) => { beginCommon(m); },
+    },
+  };
+})();
+
+/* =====================================================================
+   RENDER — deliberate gray-box pass (per task brief): flat colored
+   rounded rects per tile type, a visually distinct shape/border for
+   line-bombs vs area-bombs, no animation, no particles. Final
+   faceted-gem/rune-overlay art and juice land in a separate visual-art
+   pass — see GAME_7_PILLARS.md §5's own verification requirement (a real
+   screenshot/video comparison against Sigil Chain/Wardfall), deliberately
+   NOT attempted here.
+
+   Colors: fire/frost/verdant are placeholder hues chosen to clear real
+   RGB-distance collisions against Sigil Chain's already-shipped rune
+   colors (sigilchain.html's fire #ff5c3d, water #4ea8ff) and against this
+   portfolio's --gold/--danger/--ok tokens — not final art, just gray-box
+   values picked with the same collision-avoidance discipline the studio
+   already applies elsewhere. Lightning (#c9e8ff) and void's cyan rim
+   (#4fe6ff) are the pillars doc's own exact specified hex values.
+===================================================================== */
+const TILE_COLORS = {
+  fire: '#e8542a', frost: '#2ec4d6', verdant: '#4caf6b',
+  lightning: '#c9e8ff', void: '#140a1f', light: '#f0eaff',
+};
+const Render = (function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W=0, H=0, dpr=1;
+  let boardX=0, boardY=0, cell=40;
+  const N = BOARD_SIZE;
+
+  function layout(){
+    const topPad = 96, sidePad = 16, bottomPad = 24;
+    const availW = W - sidePad*2;
+    const availH = H - topPad - bottomPad;
+    cell = Math.floor(Math.min(availW, availH) / N);
+    cell = clamp(cell, 24, 72);
+    const boardSize = cell*N;
+    boardX = (W-boardSize)/2;
+    boardY = topPad + Math.max(0, (availH-boardSize)/2);
+  }
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    layout();
+  }
+  window.addEventListener('resize', resize);
+
+  function cellRect(col,row){ return { x: boardX+col*cell, y: boardY+row*cell, w:cell, h:cell }; }
+  function cellFromPoint(x,y){
+    const col = Math.floor((x-boardX)/cell);
+    const row = Math.floor((y-boardY)/cell);
+    if(col<0||col>=N||row<0||row>=N) return null;
+    return { col, row };
+  }
+
+  function roundedRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawTile(tile, x, y, w, h, isSelected){
+    if(!tile) return;
+    const pad = w*0.08;
+    const cx = x+w/2, cy = y+h/2;
+    const color = TILE_COLORS[tile.type] || '#888';
+    ctx.save();
+    if(tile.bomb === 'area'){
+      const rad = (w-pad*2)/2;
+      ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
+      ctx.lineWidth = Math.max(2, w*0.06);
+      ctx.strokeStyle = '#ffffff'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx,cy,rad*0.62,0,Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, w*0.035); ctx.stroke();
+    } else if(tile.bomb === 'line'){
+      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.18);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.setLineDash([Math.max(3,w*0.1), Math.max(2,w*0.06)]);
+      ctx.lineWidth = Math.max(2, w*0.07);
+      ctx.strokeStyle = '#ffffff'; ctx.stroke();
+      ctx.setLineDash([]);
+      // directional chevron along the bomb's axis
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      if(tile.axis === 'row'){
+        ctx.moveTo(cx-w*0.16, cy-h*0.14); ctx.lineTo(cx+w*0.16, cy); ctx.lineTo(cx-w*0.16, cy+h*0.14);
+      } else {
+        ctx.moveTo(cx-w*0.14, cy-h*0.16); ctx.lineTo(cx, cy+h*0.16); ctx.lineTo(cx+w*0.14, cy-h*0.16);
+      }
+      ctx.closePath(); ctx.fill();
+    } else if(tile.type === 'void'){
+      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.22);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = Math.max(2, w*0.05);
+      ctx.strokeStyle = '#4fe6ff'; ctx.stroke();
+    } else {
+      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.22);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.stroke();
+    }
+    if(isSelected){
+      roundedRect(x+2, y+2, w-4, h-4, Math.min(w,h)*0.22);
+      ctx.lineWidth = Math.max(2, w*0.06);
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--neon') || '#ffcb5c';
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function frame(){
+    ctx.clearRect(0,0,W,H);
+    if(Nav.currentScreen() !== 'game') return;
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fillRect(boardX, boardY, cell*N, cell*N);
+    const selected = Game.getSelected();
+    for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      const t = Board.at(c,r);
+      const rect = cellRect(c,r);
+      const isSel = selected && selected.col===c && selected.row===r;
+      drawTile(t, rect.x, rect.y, rect.w, rect.h, isSel);
+    }
+  }
+
+  // ---- input: tap-to-select, tap-adjacent-to-swap ----
+  let dragStart = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    if(Nav.currentScreen() !== 'game' || Game.isPaused() || !Game.isRunning()) return;
+    const cell0 = cellFromPoint(e.clientX, e.clientY);
+    if(!cell0) return;
+    dragStart = { cell: cell0, x:e.clientX, y:e.clientY };
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if(!dragStart) return;
+    const start = dragStart; dragStart = null;
+    if(Nav.currentScreen() !== 'game' || Game.isPaused() || !Game.isRunning()) return;
+    const dx = e.clientX-start.x, dy = e.clientY-start.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist > cell*0.35){
+      // drag-swap: pick the neighbor in the dominant drag direction
+      let target;
+      if(Math.abs(dx) > Math.abs(dy)) target = { col: start.cell.col + (dx>0?1:-1), row: start.cell.row };
+      else target = { col: start.cell.col, row: start.cell.row + (dy>0?1:-1) };
+      Game.handlePointerCell(start.cell);
+      Game.handlePointerCell(target);
+    } else {
+      Game.handlePointerCell(start.cell);
+    }
+  });
+
+  resize();
+  return { frame, resize, _test: { cellFromPoint, cellRect, layoutInfo: () => ({ boardX, boardY, cell }) } };
+})();
+
+renderModeSelectScoresOnLoad();
+function renderModeSelectScoresOnLoad(){ Game.renderModeSelectScores(); }
+
+requestAnimationFrame((ts) => { Game.tick(ts); });
 </script>
 
 </body>
