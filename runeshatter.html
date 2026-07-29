@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Runeshatter — Shin Mahou Arcade</title>
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140b30'/%3E%3Cpath d='M16 4 L26 12 L22 28 L10 28 L6 12 Z' fill='none' stroke='%23ff6a3d' stroke-width='1.3'/%3E%3Cpath d='M16 4 L16 28 M6 12 L26 12' stroke='%234fe6ff' stroke-width='1' opacity='0.7'/%3E%3Ccircle cx='16' cy='16' r='3.4' fill='%23ffcb5c'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icons/runeshatter-192.png">
+<meta name="description" content="Swap runes, shatter clusters of four or five into bombs, and let the chain reaction do the rest. An arcane match-3 from Kazabon Game Studio.">
+<meta property="og:title" content="Runeshatter">
+<meta property="og:description" content="Swap runes, shatter clusters of four or five into bombs, and let the chain reaction do the rest.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#140b30;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --danger:#ff4d70;
+  --ok:#5eff9c;
+  --border:rgba(255,203,92,0.25);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:var(--body-font);user-select:none;-webkit-user-select:none;}
+
+#gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);touch-action:none;}
+
+.meta-row{position:fixed;bottom:8px;right:10px;display:flex;align-items:center;gap:6px;z-index:50;}
+.version-marker{font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;
+  letter-spacing:.02em;pointer-events:none;}
+
+.scaffold-note{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:10px;text-align:center;padding:20px;font-family:var(--display);}
+.scaffold-note h1{font-size:2rem;color:var(--neon);letter-spacing:.1em;font-weight:600;}
+.scaffold-note p{color:var(--ink-soft);font-family:var(--mono);font-size:.8rem;max-width:480px;}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div class="scaffold-note">
+  <h1>RUNESHATTER</h1>
+  <p>Phase 0 scaffold. Board/match/bomb engine, modes, audio, and art land in
+     the phases that follow — see GAME_7_PILLARS.md.</p>
+</div>
+
+<div class="meta-row">
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.1.0</div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   RUNESHATTER — CHANGE LOG
+   (one line per change, most recent on top)
+
+   v0.1.0 — 2026-07-29 — Phase 0: scaffold only. Version marker,
+                          changelog, shared studio CSS tokens (copied
+                          verbatim from wardfall.html/sigilchain.html
+                          per the confirmed cross-game token match). No
+                          feature code yet — engine, modes, persistence,
+                          audio, and rendering land in later phases per
+                          GAME_7_PILLARS.md's build order (§9).
+===================================================================== */
+</script>
+
+</body>
+</html>
