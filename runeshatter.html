@@ -241,7 +241,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="meta-row">
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
   <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.5.0</div>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.5.1</div>
 </div>
 
 <script>
@@ -249,6 +249,38 @@ textarea.form-input{min-height:70px;resize:vertical;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.5.1 — 2026-07-29 — Two real bugs fixed, found by a qa-playtest
+                          adversarial real-UI pass (not the automated
+                          test-hook suites, which couldn't have caught
+                          either):
+                          (1) Render's pending/shards/rings/sweeps/reveals
+                          arrays never cleared on a screen transition —
+                          frame() freezes their real-time drain the moment
+                          Nav leaves 'game', but wall-clock keeps moving, so
+                          a chain queued right as a run ended (Levels' final
+                          move, a mid-chain quit-to-menu) sat frozen past
+                          its fireAt and fired as one stale burst on the
+                          FIRST FRAME OF THE NEXT RUN. Fixed by resetting
+                          all five arrays on every nav:change back to
+                          'game' — never on pause/resume (no nav:change
+                          fires), so a mid-chain pause still resumes
+                          correctly where it left off. Verified live: 12
+                          effects queued by a real swap stay frozen at 12
+                          while sitting on the menu, then correctly zero on
+                          the next run's first frame (previously would have
+                          burst).
+                          (2) Bugrep.open() silently paused a running game
+                          (the real pause overlay sits hidden underneath the
+                          bug-report overlay, same z-index, later in DOM)
+                          and close() never resumed it — closing a report
+                          filed mid-run dropped the player onto an
+                          unrequested pause menu. Fixed with a
+                          pausedByThis flag so close() only un-pauses what
+                          open() itself paused, leaving an
+                          already-paused game paused. Verified live both
+                          ways. 53/53 adversarial + 41/41 audio tests still
+                          passing.
 
    v0.5.0 — 2026-07-29 — Bug-report widget, ported verbatim from
                           infall.html's own Bugrep module/CSS/markup
@@ -2093,6 +2125,18 @@ const Render = (function(){
   let shards = [], rings = [], sweeps = [], reveals = [];
   let pending = []; // {fireAt, run}
 
+  // qa-playtest finding: frame() bails out early whenever the screen isn't
+  // 'game' (below), which freezes `pending`'s real-time drain but NOT wall
+  // clock time — so a chain queued right as a run ended (Levels' final
+  // move, a mid-chain quit-to-menu) sat frozen past its fireAt, then fired
+  // as one batch of stale rings/sweeps/reveals on the very first frame of
+  // the NEXT run. Reset on every return to the 'game' screen (fresh start,
+  // Play Again, or a different mode) — never on pause/resume, which
+  // doesn't fire nav:change and SHOULD let a mid-chain animation resume
+  // where it left off.
+  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; }
+  Events.on('nav:change', (e) => { if(e.to === 'game') resetParticles(); });
+
   function spawnShardBurst(cells, axis, elementType){
     const color = TILE_COLORS[elementType] || '#fff';
     const along = axis === 'row' ? {x:1,y:0} : {x:0,y:1};
@@ -2287,7 +2331,8 @@ const Render = (function(){
   });
 
   resize();
-  return { frame, resize, _test: { cellFromPoint, cellRect, layoutInfo: () => ({ boardX, boardY, cell }) } };
+  return { frame, resize, _test: { cellFromPoint, cellRect, layoutInfo: () => ({ boardX, boardY, cell }),
+    particleCounts: () => ({ shards: shards.length, rings: rings.length, sweeps: sweeps.length, reveals: reveals.length, pending: pending.length }) } };
 })();
 
 renderModeSelectScoresOnLoad();
@@ -2313,12 +2358,24 @@ const Bugrep = (function(){
     b.style.display = l.length ? 'flex' : 'none';
     b.textContent = l.length;
   }
+  // qa-playtest finding: opening mid-run silently paused the game (the
+  // real pause overlay sits underneath this one, same z-index, later in
+  // DOM order so it's hidden but still active) and closing never resumed
+  // it — a player who never asked to pause landed on the pause menu after
+  // just filing a report. pausedByThis tracks whether OPEN was the one
+  // that paused, so CLOSE only un-pauses what it itself paused.
+  let pausedByThis = false;
   function open(){
-    if(Game.isRunning() && !Game.isPaused()) Game.togglePause();
+    pausedByThis = Game.isRunning() && !Game.isPaused();
+    if(pausedByThis) Game.togglePause();
     renderList();
     document.getElementById('bugOverlay').classList.add('show');
   }
-  function close(){ document.getElementById('bugOverlay').classList.remove('show'); }
+  function close(){
+    document.getElementById('bugOverlay').classList.remove('show');
+    if(pausedByThis && Game.isRunning() && Game.isPaused()) Game.togglePause();
+    pausedByThis = false;
+  }
   function cat(btn){
     document.querySelectorAll('.bugcat .btn').forEach(b => b.classList.remove('sel'));
     btn.classList.add('sel');
