@@ -3,7 +3,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'iridescentcosmology-v9'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.12.1 — fixed audible clipping on the boss section caused by v2.12.0's makeup-gain overshoot, found by an immediate qa-playtest pass on that commit
+const CACHE_NAME = 'iridescentcosmology-v10'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.12.2 — fixed a Settings-gear double-click soft lock that stranded the player with every overlay hidden
 const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {

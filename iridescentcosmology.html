@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.12.1</title>
+<title>IRIDESCENT COSMOLOGY v2.12.2</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,27 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.12.2 — 2026-07-29 — BUG FIX: the double-click-the-Settings-gear soft
+                          lock named and deliberately left alone in
+                          v2.12.1's own changelog entry. Root cause:
+                          open()'s openedFromMenu flag was re-derived from
+                          menuOverlay's visibility on every call — correct
+                          on first entry, but the first call had already
+                          hidden menuOverlay, so a re-entrant second call
+                          (gear clicked again while settings was already
+                          showing) always re-derived it as false, silently
+                          overwriting the true value close() needed to
+                          restore the menu. Fixed with a guard at the top
+                          of open(): a re-entrant call while settingsOverlay
+                          is already showing now just no-ops, the same way
+                          a second click on most other UI in this file is
+                          already absorbed rather than re-running entry
+                          logic. Verified against both repro shapes (two
+                          separate clicks, and a plain browser dblclick) and
+                          added permanent regression coverage in
+                          tests/iridescentcosmology-adversarial.js so this
+                          exact class of thing can't silently return.
 
   v2.12.1 — 2026-07-28 — BUG FIX, found by an independent qa-playtest pass
                           run immediately on v2.12.0's commit (the new
@@ -1836,7 +1857,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.1</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.2</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -7259,6 +7280,18 @@ const Settings = (function(){
   // hiding it.
   let openedFromMenu = false;
   function open(){
+    // BUG FIX (found by qa-playtest, v2.12.1 changelog): double-clicking
+    // the gear re-entered open() while settingsOverlay was already
+    // showing. Since the first call had already hidden menuOverlay,
+    // openedFromMenu's re-derivation on the second call always landed on
+    // false — silently overwriting the true value from the first call —
+    // and close() then never restored the menu, stranding the player with
+    // every overlay hidden and no way back short of a reload. A re-entrant
+    // open() while already open should just no-op, same as every other
+    // overlay's own open() already effectively does via its single-click
+    // affordance; this settings gear was the one place a second click
+    // could re-run entry logic instead of being absorbed.
+    if(document.getElementById('settingsOverlay').classList.contains('show')) return;
     openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
     if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
     else {

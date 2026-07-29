@@ -64,6 +64,22 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
   await page.click('#settingsOverlay .btn', { timeout: 2000 });
   await page.waitForTimeout(200);
 
+  console.log('--- double-click the Settings gear, then BACK (regression: used to strand every overlay hidden with no way back short of a reload) ---');
+  await page.click('[aria-label=Settings]', { timeout: 2000 });
+  await page.waitForTimeout(150);
+  await page.click('[aria-label=Settings]', { timeout: 2000 }); // re-entrant open() while already open
+  await page.waitForTimeout(150);
+  await page.click('#settingsOverlay .btn', { timeout: 2000 });
+  await page.waitForTimeout(200);
+  const menuReachableAfterDblClick = await page.$('text=OPEN THE COSMOLOGY');
+  console.log('menu reachable after gear/gear/BACK:', !!menuReachableAfterDblClick);
+  if (!menuReachableAfterDblClick) {
+    // stuck -- reload so the rest of the suite isn't cascading failures from this one
+    await page.goto(BASE_URL, { waitUntil: 'load' });
+    await page.waitForTimeout(500);
+  }
+  await checkOverflow('after settings double-click');
+
   console.log('--- start a run, mash dash (keyboard + mocked gamepad), rapid pause/settings/resume ---');
   await page.click('text=OPEN THE COSMOLOGY', { timeout: 2000 });
   await page.waitForTimeout(200);
