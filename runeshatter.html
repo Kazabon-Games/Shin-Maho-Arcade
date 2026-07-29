@@ -111,6 +111,13 @@ body.reduced-motion .panel{animation:none!important;}
 .meta-row{position:fixed;bottom:8px;right:10px;display:flex;align-items:center;gap:6px;z-index:60;}
 .version-marker{font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;
   letter-spacing:.02em;pointer-events:none;}
+/* ---- icon-btn — copied verbatim from wardfall.html/sigilchain.html's own
+   token (same size/shape/hover), so the mute control matches this studio's
+   real existing pattern rather than inventing a new one for this game. ---- */
+.icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
+  display:flex;align-items:center;justify-content:center;}
+.icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
 
 @media (max-width:480px){
   .panel{padding:20px 18px;}
@@ -195,7 +202,8 @@ body.reduced-motion .panel{animation:none!important;}
 </div>
 
 <div class="meta-row">
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.2.0</div>
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.3.0</div>
 </div>
 
 <script>
@@ -204,6 +212,26 @@ body.reduced-motion .panel{animation:none!important;}
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
 
+   v0.3.0 — 2026-07-29 — Phase 1.5: the Music mood engine (§6), built in
+                          now rather than deferred, per STUDIO_BIBLE.md
+                          §14's Game 4 mandate. New Game-level event surface
+                          (board:resolved, bomb:charge, bomb:detonate,
+                          match:plain, tier:up) added to attemptSwap()/
+                          maybeUpdateTier() — Board itself gained only
+                          additive per-resolve stats (bomb kind + column
+                          breakdowns), no mode branch and no new dependency.
+                          Music: one drone/filter/distortion graph driven by
+                          three live inputs (tile-tier harmony, decaying
+                          bomb-chain "heat", mode-specific urgency reusing
+                          Sigil Chain's (10-remaining)/10 idiom); new
+                          synthesized SFX (bomb-charge sweep, line/area
+                          detonation, chain-escalation step-up, an original
+                          tier-up fanfare); reaches for three previously-
+                          unused-in-portfolio techniques per §6's capability
+                          audit (notch BiquadFilterNode, setValueCurveAtTime
+                          shatter envelope, spatial PannerNode panned to
+                          grid column). Mute toggle added to match every
+                          other shipped game's pattern.
    v0.2.0 — 2026-07-29 — Phase 1: mode-agnostic Board engine (8x8 swap/
                           match/bomb-create/bomb-chain, resolveToFixedPoint
                           per GAME_7_PILLARS.md §7's explicit correction to
@@ -480,6 +508,12 @@ const Board = (function(){
       const t = at(cell.col,cell.row);
       if(!t || !t.bomb) continue;
       bombsDetonated++;
+      // audio-signal enrichment only (GAME_7_PILLARS.md §6) — kind + column
+      // per detonation, so Music can tell a line-bomb thump from an
+      // area-bomb chord and pan a spatial cue toward the column it happened
+      // in, without Board taking on any mode-name branch or new dependency.
+      acc.bombsDetonatedByKind[t.bomb] = (acc.bombsDetonatedByKind[t.bomb]||0) + 1;
+      acc.detonationCols.push(cell.col);
       for(const b of computeBlast(cell, t)){
         const bk = b.col+','+b.row;
         if(!clearSet.has(bk)){
@@ -499,6 +533,11 @@ const Board = (function(){
     }
     for(const spec of bombSpecs.values()){
       set(spec.col, spec.row, { type: spec.type, bomb: spec.kind, axis: spec.axis||null });
+      // same audio-signal enrichment as the detonation loop above — kind +
+      // column of each newly-created bomb, so Music's bomb-charge sweep can
+      // be panned toward the column it actually formed in.
+      acc.bombsCreatedByKind[spec.kind] = (acc.bombsCreatedByKind[spec.kind]||0) + 1;
+      acc.creationCols.push(spec.col);
     }
 
     acc.passes += 1;
@@ -554,7 +593,12 @@ const Board = (function(){
   // re-checks for a legal move, so the board is NEVER left in a state
   // with an unresolved live match.
   function resolveToFixedPoint(){
-    const acc = { passes:0, cleared:0, bombsCreated:0, bombsDetonated:0, clearedByType:{}, reshuffled:false };
+    // bombsCreatedByKind/bombsDetonatedByKind/creationCols/detonationCols
+    // are audio-signal enrichment for Music (GAME_7_PILLARS.md §6) — pure
+    // additional facts about what the engine already computed, not new
+    // engine behavior and not a mode-name branch.
+    const acc = { passes:0, cleared:0, bombsCreated:0, bombsDetonated:0, clearedByType:{}, reshuffled:false,
+      bombsCreatedByKind:{line:0,area:0}, bombsDetonatedByKind:{line:0,area:0}, creationCols:[], detonationCols:[] };
     while(settlePass(acc)){ /* loop until stable */ }
     let reshuffles = 0;
     while(!hasAnyLegalMove() && reshuffles < 50){
@@ -764,6 +808,13 @@ const Game = (function(){
     score = 0; movesUsed = 0; elapsedSeconds = 0; clearedByType = {}; selected = null;
     running = true; paused = false; lastFrameTs = 0;
     document.getElementById('pauseOverlay').classList.remove('show');
+    // called from the mode-card onclick handlers — a real user gesture, the
+    // one place Web Audio requires for AudioContext creation to succeed.
+    // NOTE: `Music` is a top-level `const`, not a `window` property (only
+    // `var`/function declarations attach to `window` in a classic script),
+    // so `typeof Music !== 'undefined'` is the correct existence check —
+    // `window.Music` would silently always be undefined and skip this call.
+    if(typeof Music !== 'undefined') Music.ensureCtx();
   }
 
   function startEndless(){
@@ -811,7 +862,12 @@ const Game = (function(){
     if(mode === 'levels') return; // Levels' tile count is fixed per-level by LEVELS[], not a live ramp
     const progress = mode === 'endless' ? score : elapsedSeconds;
     const result = Board.setProgress(progress);
-    if(result.changed) tierCount = result.tierCount;
+    if(result.changed){
+      tierCount = result.tierCount;
+      // drives Music's harmony-layer per GAME_7_PILLARS.md §6 — a new tile
+      // tier unlocking is a discrete structural event, not a per-frame value.
+      Events.emit('tier:up', { tierCount });
+    }
   }
 
   function computeScoreDelta(stats){
@@ -841,6 +897,28 @@ const Game = (function(){
     maybeUpdateTier();
     updateHud();
     persistSession();
+
+    // ---- Music event surface (GAME_7_PILLARS.md §6) ----
+    // Primary signal: the full per-move resolution stats, so Music can
+    // derive "chain heat" from stats.passes/stats.bombsDetonated — a
+    // multi-pass, multi-bomb resolution IS the chain-reaction climax
+    // moment, not something Music should have to re-detect on its own.
+    Events.emit('board:resolved', { stats });
+    // Distinguished sub-events, computed here rather than left for Music to
+    // guess from raw stats fields — a bomb can be CREATED and an existing
+    // bomb can DETONATE in the same resolution (a fresh match-4 forms while
+    // an unrelated bomb chains elsewhere), so these are independent flags,
+    // not a mutually-exclusive switch.
+    if(stats.bombsCreated > 0){
+      Events.emit('bomb:charge', { count: stats.bombsCreated, byKind: stats.bombsCreatedByKind, cols: stats.creationCols });
+    }
+    if(stats.bombsDetonated > 0){
+      Events.emit('bomb:detonate', { count: stats.bombsDetonated, byKind: stats.bombsDetonatedByKind, cols: stats.detonationCols, passes: stats.passes });
+    }
+    if(stats.bombsCreated === 0 && stats.bombsDetonated === 0 && stats.cleared > 0){
+      Events.emit('match:plain', { cleared: stats.cleared });
+    }
+
     checkEnd();
     return true;
   }
@@ -922,6 +1000,7 @@ const Game = (function(){
     sessionSeed = s.rngSeed || newSeed();
     Board.setRng(mulberry32(sessionSeed));
     selected = null; running = true; paused = false; lastFrameTs = 0;
+    if(typeof Music !== 'undefined') Music.ensureCtx(); // also a real click handler (RESUME SAVED RUN)
     Nav.goTo('game');
     updateHud();
     return true;
@@ -1010,14 +1089,25 @@ const Game = (function(){
   // already-resolved synchronously by Board, per §7 — this loop exists
   // for the timer and for redraw, not for any deferred game logic) ----
   function tick(ts){
-    if(running && !paused && mode==='timed'){
+    if(running && !paused){
       if(!lastFrameTs) lastFrameTs = ts;
       const dt = (ts - lastFrameTs)/1000;
       lastFrameTs = ts;
+      // elapsedSeconds now accrues for EVERY running mode, not just Timed —
+      // Timed's own checkEnd/maybeUpdateTier/updateHud calls below are
+      // unchanged (identical to before this pass), but Endless previously
+      // never advanced elapsedSeconds at all, leaving Music with no "how
+      // long has this run been going" signal for its own urgency mapping
+      // (GAME_7_PILLARS.md §6 — "elapsed-run-time-vs-current-tier in
+      // Endless"). Levels doesn't use elapsedSeconds for anything gameplay-
+      // facing (its lose condition is move-budget only), so accruing it
+      // there too is inert — extra unused data, not a behavior change.
       elapsedSeconds += dt;
-      maybeUpdateTier();
-      updateHud();
-      checkEnd();
+      if(mode==='timed'){
+        maybeUpdateTier();
+        updateHud();
+        checkEnd();
+      }
     } else {
       lastFrameTs = 0;
     }
@@ -1034,6 +1124,472 @@ const Game = (function(){
     _test: {
       state: () => Object.assign({ running, paused, selected }, getState()),
       forceMode: (m) => { beginCommon(m); },
+    },
+  };
+})();
+
+/* =====================================================================
+   MUSIC — the mood engine, built in from this pass per GAME_7_PILLARS.md
+   §6/STUDIO_BIBLE.md §14 (not deferred to a later "still sounds flat"
+   identity pass). Scoped down per the adaptive-game-audio skill's own
+   "how much do you actually need" guidance: this is closer to Sigil
+   Chain's reduced shape (one master -> distortion -> compressor ->
+   destination, a musicGain/sfxGain split, one continuous drone, no step
+   sequencer) than to Iridescent Cosmology's full trance production chain
+   — Runeshatter is a puzzle game whose audio need is a mood-reactive drone
+   plus a real stinger set, not a continuous produced beat.
+
+   Three live inputs into ONE drone/filter/distortion graph, exactly per
+   §6:
+     - tile-tier count (4/5/6)  -> harmonic color (root+fifth baseline,
+       +b7 at tier 5, +tritone at tier 6) + filter brightness. Structural/
+       discrete, so tier changes are ramped ONCE on the 'tier:up' event
+       (rampGain over a fixed duration) — NOT re-ramped every frame.
+     - chain "heat" (0..1, incremented per bomb-chain link/detonation on
+       'bomb:detonate', decayed a fixed fraction every animation frame) ->
+       filter/pulse/distortion climax driver.
+     - mode-specific urgency, Sigil Chain's exact `(10-remaining)/10`
+       idiom, remaining = time (Timed), moves (Levels), or an elapsed-vs-
+       tier squared-easing build mirroring Iridescent Cosmology's own
+       elapsed-time escalation (Endless, which has no natural "remaining").
+
+   heat and urgency are recomputed and SET DIRECTLY every animation frame
+   (droneTick) — never re-ramped on top of themselves, per the adaptive-
+   game-audio skill's one hard rule ("dying sticks the music"). Tier
+   changes and one-shot stingers (bell/detonation/fanfare) are the only
+   things that ever call rampGain or schedule an envelope.
+===================================================================== */
+const Music = (function(){
+  let ctx, master, distortion, compressor, musicGain, sfxGain, reverb, reverbSend;
+  let muted = false, started = false;
+  let drone = null, droneFilter = null, droneVoices = null;
+  let heat = 0;          // decaying chain-heat driver, 0..1
+  let lastUrgency = 0;   // exposed for verification only
+  let lastDistortionAmount = 0;
+  const HEAT_DECAY_PER_SEC = 0.9; // ~1.8s to decay from full heat to silence
+
+  // ---- graph setup — every primitive below is copied verbatim from the
+  // proven reference implementations (sigilchain.html/wardfall.html/
+  // iridescentcosmology.html), cited at each site; only the MAPPINGS are
+  // new, per the skill's "don't invent a new synthesis approach" rule. ----
+
+  // standard soft-clip waveshaper curve, amount 0 = transparent — verbatim
+  // from iridescentcosmology.html:5113-5118 / sigilchain.html:1303-1308.
+  function setDistortionAmount(amount){
+    lastDistortionAmount = amount;
+    const n = 256, curve = new Float32Array(n), k = amount*40;
+    for(let i=0;i<n;i++){ const x = i/(n-1)*2-1; curve[i] = (1+k)*x/(1+k*Math.abs(x)); }
+    distortion.curve = curve;
+  }
+
+  function ensureCtx(){
+    if(ctx) return;
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value = muted?0:0.5;
+    distortion = ctx.createWaveShaper(); setDistortionAmount(0);
+    compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value=-20; compressor.knee.value=12; compressor.ratio.value=4;
+    compressor.attack.value=0.003; compressor.release.value=0.25;
+    master.connect(distortion); distortion.connect(compressor); compressor.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = (Persist.data.settings && Persist.data.settings.musicVol) || 0.8; musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = (Persist.data.settings && Persist.data.settings.sfxVol) || 0.8; sfxGain.connect(master);
+    // synthesized convolution reverb — no audio file, a short burst of
+    // exponentially-decaying stereo noise, generated once here. Buffer-
+    // generation loop copied verbatim from sigilchain.html:1320-1326 /
+    // iridescentcosmology.html:5091-5100 per the skill's explicit "copy
+    // the buffer-generation loop verbatim" instruction.
+    reverb = ctx.createConvolver();
+    const irLen = Math.floor(ctx.sampleRate*0.9);
+    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for(let ch=0; ch<2; ch++){ const d=irBuf.getChannelData(ch); for(let i=0;i<irLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/irLen,2.2); }
+    reverb.buffer = irBuf;
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.35;
+    reverb.connect(reverbSend); reverbSend.connect(master);
+    started = true;
+    buildDrone();
+  }
+
+  // every gain ramp in this module goes through this — cancel-then-set-
+  // then-ramp, verbatim idiom from iridescentcosmology.html:5129-5134 /
+  // sigilchain.html:1384-1389. This is the ONLY function that schedules a
+  // ramp; droneTick's per-frame writes below always use direct assignment.
+  function rampGain(param, target, seconds){
+    const t = ctx.currentTime;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(target, t+seconds);
+  }
+
+  // shared two-oscillator sine bell — verbatim idiom from
+  // sigilchain.html:1390-1406 / wardfall.html:1586-1602. Every stinger in
+  // this module (plain-match clink, area-bomb chord, tier-up fanfare)
+  // composes THIS one primitive, not a new synthesis voice per moment.
+  function bell(freq, dur, vol){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol||0.22, t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+(dur||1.0));
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2.01;
+    const g2 = ctx.createGain(); g2.gain.value=0.28;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    const wet = ctx.createGain(); wet.gain.value=0.45;
+    g.connect(wet); wet.connect(reverb);
+    o1.start(t); o2.start(t);
+    o1.stop(t+(dur||1.0)+0.05); o2.stop(t+(dur||1.0)+0.05);
+  }
+
+  // filtered-noise-burst helper — same pattern as playHat/playClap in
+  // iridescentcosmology.html:5273-5316 (exponential-decay envelope baked
+  // straight into the buffer, then shaped further by a biquad downstream).
+  function makeNoiseBuffer(lenSeconds, decayExp){
+    const len = Math.max(1, Math.floor(ctx.sampleRate*lenSeconds));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decayExp);
+    return buf;
+  }
+
+  // reach-for-genuinely-unused-technique #1 (capability audit, §6 last
+  // paragraph): spatial PannerNode mapped to grid column, replacing the
+  // static StereoPannerNode width trick every other cue in this portfolio
+  // uses. A chain sweeping across the board now actually pans with it.
+  function makeColumnPanner(col){
+    const p = ctx.createPanner();
+    p.panningModel = 'equalpower';
+    const x = ((col==null ? (BOARD_SIZE-1)/2 : col) / (BOARD_SIZE-1)) * 2 - 1; // -1..1 across the 8 columns
+    if(p.positionX){ p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = 0; }
+    else if(p.setPosition){ p.setPosition(x, 0, 0); } // older-engine fallback, same effective position
+    return p;
+  }
+
+  // reach-for-genuinely-unused-technique #2: setValueCurveAtTime for a
+  // non-monotonic crack-rebound-decay envelope — a sharp crack, a small
+  // rebound back up, then settle, which a plain exponential decay can't
+  // express. One-shot automation (matches the skill's rule: a fixed-
+  // duration shape gets ONE scheduled call, never touched again).
+  const SHATTER_CURVE_SHAPE = [0, 1, 0.32, 0.6, 0.16, 0.28, 0.05, 0.0001];
+  function applyShatterEnvelope(gainParam, t, dur, peak){
+    const curve = new Float32Array(SHATTER_CURVE_SHAPE.length);
+    for(let i=0;i<curve.length;i++) curve[i] = Math.max(0.00001, SHATTER_CURVE_SHAPE[i]*peak);
+    gainParam.cancelScheduledValues(t);
+    gainParam.setValueCurveAtTime(curve, t, dur);
+  }
+
+  // ---- drone — the continuous mood engine ----
+  // Root chosen distinct from Sigil Chain's A2 (110Hz) and Wardfall's 60Hz
+  // pair, giving Runeshatter its own low end. Interval math: root+fifth is
+  // the audible tier-4 baseline; b7 (minor 7th) layers in at tier 5, the
+  // tritone at tier 6 — each an added "color tone" per §6, not a key
+  // change, so the drone gets more dissonant/arcane rather than modulating.
+  const DRONE_ROOT = 130.81; // C3
+  function makeDroneVoice(freq, baseGain, pan){
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+    const g = ctx.createGain(); g.gain.value = 0; // brought in per-tier by applyTierToDrone, never at creation time
+    const p = ctx.createStereoPanner(); p.pan.value = pan; // per-voice stereo width, same technique as sigilchain.html:1348-1354
+    o.connect(g); g.connect(p); o.start();
+    return { osc:o, gain:g, pan:p, baseGain };
+  }
+  function buildDrone(){
+    const g = ctx.createGain(); g.gain.value = 0;
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 260; droneFilter.Q.value = 0.7;
+    g.connect(droneFilter); droneFilter.connect(musicGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.22; droneFilter.connect(wet); wet.connect(reverb);
+    droneVoices = {
+      root:    makeDroneVoice(DRONE_ROOT,                       0.6,  -0.22),
+      fifth:   makeDroneVoice(DRONE_ROOT*1.5,                   0.4,   0.22),
+      b7:      makeDroneVoice(DRONE_ROOT*Math.pow(2,10/12),     0.30, -0.34),
+      tritone: makeDroneVoice(DRONE_ROOT*Math.pow(2,6/12),      0.26,  0.34),
+    };
+    for(const v of Object.values(droneVoices)) v.pan.connect(g);
+    drone = { gain: g };
+  }
+  // tier changes are discrete/rare — a ONE-SHOT ramp per voice, not a
+  // per-frame write (the exact distinction the adaptive-game-audio skill
+  // names as the single most common real bug in this codebase's history).
+  // snap=true is used on run start/resume to set the correct tier
+  // immediately instead of audibly ramping up from a tier-4 baseline.
+  function applyTierToDrone(tierCount, snap){
+    if(!droneVoices) return;
+    const dur = snap ? 0.05 : 1.3;
+    rampGain(droneVoices.b7.gain.gain,      tierCount>=5 ? droneVoices.b7.baseGain      : 0, dur);
+    rampGain(droneVoices.tritone.gain.gain, tierCount>=6 ? droneVoices.tritone.baseGain : 0, dur);
+    if(snap){
+      rampGain(droneVoices.root.gain.gain,  droneVoices.root.baseGain,  0.05);
+      rampGain(droneVoices.fifth.gain.gain, droneVoices.fifth.baseGain, 0.05);
+    }
+  }
+
+  function clamp01(v){ return v<0?0:v>1?1:v; }
+
+  // mode-specific urgency — Sigil Chain's exact `(10-remaining)/10` idiom
+  // (sigilchain.html:1370), reused verbatim for Timed/Levels; Endless has
+  // no natural "remaining" counter (per §6) so it instead mirrors
+  // iridescentcosmology.html:5533-5539's own elapsed-time squared-easing
+  // build. JUDGMENT CALL (flagged in build report): the "marker" (time to
+  // reach max urgency) shortens as tierCount rises, which is this game's
+  // own reading of "elapsed-run-time-VS-CURRENT-TIER" — Iridescent
+  // Cosmology's marker is a fixed wall-clock point, Runeshatter's is
+  // tier-relative since Endless has no boss/stage marker to build toward.
+  function computeUrgency(st){
+    if(st.mode === 'timed'){
+      return st.timeRemaining <= 10 ? (10-st.timeRemaining)/10 : 0;
+    }
+    if(st.mode === 'levels' && st.levelDef){
+      const remaining = st.levelDef.moveCap - st.movesUsed;
+      return remaining <= 10 ? clamp01((10-remaining)/10) : 0;
+    }
+    if(st.mode === 'endless'){
+      const marker = Math.max(30, 180 - (st.tierCount-4)*45);
+      const progress = clamp01(st.elapsedSeconds/marker);
+      return progress*progress;
+    }
+    return 0;
+  }
+
+  // per-frame mood tick — heat decays and urgency/tier are recomputed and
+  // SET DIRECTLY every frame (never ramped here — see module header).
+  function droneTick(){
+    requestAnimationFrame(droneTick);
+    if(!ctx || !drone) return;
+    const dtSec = 1/60; // rAF-frame approximation, matches this codebase's existing per-frame decay idioms (no separate timestamp plumbing needed for a decay this slow)
+    heat *= Math.pow(1-HEAT_DECAY_PER_SEC, dtSec);
+    if(heat < 0.002) heat = 0;
+    // `Game` is a top-level `const` defined earlier in this same script, not
+    // a `window` property — it's already in scope by the time this function
+    // is even reachable (droneTick's own requestAnimationFrame(droneTick)
+    // call above only fires after the whole script, including `Game`'s own
+    // definition, has finished executing once), so no existence guard is
+    // needed here, matching sigilchain.html/wardfall.html's own droneTick.
+    if(!Game.isRunning() || Game.isPaused()){
+      drone.gain.gain.value = 0;
+      setDistortionAmount(0);
+      return;
+    }
+    const st = Game.getState();
+    const urgency = computeUrgency(st);
+    lastUrgency = urgency;
+    const tierBrightness = clamp01((st.tierCount-4)/2); // 0 at 4 tiles, 1 at 6 tiles
+
+    const pulseRate = 2 + heat*7; // heat also speeds up the pulse — the "something big is happening" read
+    const pulse = heat>0.02 ? (0.5+0.5*Math.sin(ctx.currentTime*Math.PI*2*pulseRate)) : 0;
+
+    drone.gain.gain.value = 0.045 + tierBrightness*0.02 + heat*0.15*(0.55+0.45*pulse) + urgency*0.05;
+    droneFilter.frequency.value = 260 + tierBrightness*520 + heat*1450 + urgency*420;
+    droneFilter.Q.value = 0.7 + urgency*2.6; // urgency's own fingerprint — resonance, not just brightness
+    setDistortionAmount(clamp01(heat*0.42 + urgency*0.12));
+  }
+  requestAnimationFrame(droneTick);
+
+  // ---- new synthesized SFX (GAME_7_PILLARS.md §6) ----
+
+  // bomb-charge — rising ~200->900Hz sweep through a sweeping bandpass,
+  // layered filtered noise underneath for texture, panned to the column
+  // the bomb actually formed in.
+  function bombChargeSweep(col){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const dur = 0.32;
+    const panner = makeColumnPanner(col); panner.connect(sfxGain);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=6;
+    bp.frequency.setValueAtTime(200, t);
+    bp.frequency.exponentialRampToValueAtTime(900, t+dur);
+    const o = ctx.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.exponentialRampToValueAtTime(900, t+dur);
+    o.connect(bp); bp.connect(g);
+
+    const nbuf = makeNoiseBuffer(dur, 1.4);
+    const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+    const nbp = ctx.createBiquadFilter(); nbp.type='bandpass'; nbp.Q.value=4;
+    nbp.frequency.setValueAtTime(220, t);
+    nbp.frequency.exponentialRampToValueAtTime(950, t+dur);
+    const ng = ctx.createGain(); ng.gain.value = 0.16;
+    nsrc.connect(nbp); nbp.connect(ng);
+
+    g.connect(panner); ng.connect(panner);
+    o.start(t); o.stop(t+dur+0.03);
+    nsrc.start(t);
+  }
+
+  // detonation — line bombs: noise burst through a fast-closing lowpass
+  // envelope (bright crack collapsing to a dull thud) + a pitch-swept sine
+  // thump 150->50Hz. Area bombs: a wider/longer burst + a 3-note bell
+  // chord through reverb (reuses bell()'s own triad idiom, sigilchain.html
+  // circleChord). Both route their noise burst through the shatter-impact
+  // setValueCurveAtTime envelope and a column-mapped spatial PannerNode.
+  function playDetonation(kind, col){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const panner = makeColumnPanner(col); panner.connect(sfxGain);
+    const wet = ctx.createGain(); wet.gain.value = kind==='area' ? 0.5 : 0.3;
+    panner.connect(wet); wet.connect(reverb);
+
+    if(kind === 'line'){
+      const dur = 0.42;
+      const nbuf = makeNoiseBuffer(dur, 2.2);
+      const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+      const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=0.9;
+      lp.frequency.setValueAtTime(5200, t);
+      lp.frequency.exponentialRampToValueAtTime(180, t+dur);
+      const ng = ctx.createGain();
+      applyShatterEnvelope(ng.gain, t, dur, 0.32);
+      nsrc.connect(lp); lp.connect(ng); ng.connect(panner);
+      nsrc.start(t);
+
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.34, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t+0.28);
+      const o = ctx.createOscillator(); o.type='sine';
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(50, t+0.22);
+      o.connect(og); og.connect(panner);
+      o.start(t); o.stop(t+0.3);
+    } else {
+      const dur = 0.6;
+      const nbuf = makeNoiseBuffer(dur, 1.5);
+      const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=0.7;
+      const ng = ctx.createGain();
+      applyShatterEnvelope(ng.gain, t, dur, 0.34);
+      nsrc.connect(bp); bp.connect(ng); ng.connect(panner);
+      nsrc.start(t);
+
+      const root = 220;
+      bell(root, 0.9, 0.2);
+      bell(root*Math.pow(2,4/12), 0.9, 0.17);
+      bell(root*Math.pow(2,7/12), 0.9, 0.15);
+    }
+  }
+
+  // chain escalation — extends Wardfall's comboBell step-up idiom
+  // (wardfall.html:1616-1621: pitch climbs one step per streak length) per
+  // detonation within a chain window. Reach-for-genuinely-unused-technique
+  // #3: a 'notch' BiquadFilterNode (zero uses anywhere in this portfolio
+  // before now, per §6's capability audit) swept upward through the tone
+  // as it decays — a "zap" color a plain bell can't produce. Distortion is
+  // deliberately NOT set here: it's already driven continuously from the
+  // shared `heat` variable in droneTick, and this cue shares the same
+  // master bus, so it inherits the same climax coloration automatically.
+  function chainEscalationTick(step){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const cappedStep = Math.min(step, 10);
+    const freq = 260 * Math.pow(2, cappedStep/12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14 + cappedStep*0.012, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.4);
+    const notch = ctx.createBiquadFilter();
+    notch.type = 'notch'; notch.Q.value = 9;
+    notch.frequency.setValueAtTime(freq*0.5, t);
+    notch.frequency.exponentialRampToValueAtTime(freq*3.2, t+0.36);
+    const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=freq;
+    o.connect(notch); notch.connect(g); g.connect(sfxGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.3; g.connect(wet); wet.connect(reverb);
+    o.start(t); o.stop(t+0.42);
+  }
+
+  // tier-up fanfare — Runeshatter's OWN 4-note ascending motif (root,
+  // major 2nd, major 3rd, perfect 5th) landing on a bright open fifth-
+  // above-the-octave chord, an original signature per §6 ("not a reused
+  // motif from another game") — distinct from Iridescent Cosmology's halo
+  // motif and Sigil Chain's circleChord triad in both interval choice and
+  // rhythm. Composed from repeated bell() calls, same idiom as Wonderland's
+  // playVictoryPhrase()/sigilchain's circleChord (a moment is a composed
+  // sequence of the one shared primitive, not a new synthesis voice).
+  function tierUpFanfare(tierCount){
+    if(!ctx || muted) return;
+    const root = 220 * Math.pow(2, (tierCount-4)/2); // each tier-up lands a whole step higher than the last, so tier 5 and tier 6 are audibly distinct events
+    const steps = [1, 9/8, 5/4, 3/2];
+    steps.forEach((ratio, i) => {
+      setTimeout(() => { if(!muted && ctx) bell(root*ratio, 0.34, 0.16+i*0.02); }, i*110);
+    });
+    setTimeout(() => {
+      if(muted || !ctx) return;
+      bell(root*2, 0.9, 0.24);
+      bell(root*3, 0.7, 0.16);
+    }, steps.length*110 + 40);
+  }
+
+  // ordinary (non-bomb) match — the game's baseline feedback moment, a
+  // light shard-clink using the shared bell() primitive, pitch nudged up
+  // slightly with cleared-tile count so a bigger plain match still reads
+  // as marginally brighter than a minimum 3-match.
+  function plainMatchClink(cleared){
+    if(!ctx || muted) return;
+    const freq = 480 + Math.min(cleared||3, 12)*14;
+    bell(freq, 0.26, 0.11);
+  }
+
+  function toggleMute(){
+    muted = !muted;
+    if(master) rampGain(master.gain, muted?0:0.5, 0.15);
+    return muted;
+  }
+  function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
+  function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
+
+  // ---- event wiring ----
+  Events.on('tier:up', (p) => { applyTierToDrone(p.tierCount, false); tierUpFanfare(p.tierCount); });
+  Events.on('nav:change', (e) => {
+    // a fresh run start or a resumed session both land on 'game' — snap
+    // the drone's harmonic layer to the CURRENT tier immediately (a
+    // resumed tier-6 session shouldn't audibly ramp up from a tier-4
+    // baseline), and clear any leftover heat from a previous run.
+    if(e.to === 'game' && ctx){
+      heat = 0;
+      applyTierToDrone(Game.getState().tierCount, true);
+    }
+  });
+  Events.on('bomb:charge', (p) => {
+    const cols = p.cols || [];
+    for(let i=0;i<(p.count||1);i++){
+      const col = cols[i];
+      setTimeout(() => { if(!muted) bombChargeSweep(col); }, i*70);
+    }
+  });
+  Events.on('bomb:detonate', (p) => {
+    heat = clamp01(heat + 0.22*(p.count||1));
+    const kinds = p.byKind || {};
+    const cols = p.cols || [];
+    let idx = 0;
+    for(let i=0;i<(kinds.line||0);i++){ const c=cols[idx]; const d=idx; setTimeout(()=>{ if(!muted) playDetonation('line', c); }, d*90); idx++; }
+    for(let i=0;i<(kinds.area||0);i++){ const c=cols[idx]; const d=idx; setTimeout(()=>{ if(!muted) playDetonation('area', c); }, d*90); idx++; }
+    // chain-escalation step-up cue, once per detonation beyond the first —
+    // staggered ~80-120ms apart, mirroring the visual "flash-primes for one
+    // beat before its own detonation fires ~80-120ms later" cadence from
+    // GAME_7_PILLARS.md §5, applied here to audio instead of the sprite.
+    for(let s=1;s<(p.count||1);s++){
+      const step = s;
+      setTimeout(() => { if(!muted) chainEscalationTick(step); }, step*100);
+    }
+  });
+  Events.on('match:plain', (p) => plainMatchClink(p.cleared));
+
+  return {
+    ensureCtx, toggleMute, setMusicVolume, setSfxVolume,
+    _test: {
+      isMuted: () => muted,
+      isStarted: () => started,
+      droneGain: () => drone ? drone.gain.gain.value : null,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+      droneFilterQ: () => droneFilter ? droneFilter.Q.value : null,
+      droneVoiceGain: (name) => droneVoices && droneVoices[name] ? droneVoices[name].gain.gain.value : null,
+      musicGainValue: () => musicGain ? musicGain.gain.value : null,
+      sfxGainValue: () => sfxGain ? sfxGain.gain.value : null,
+      masterGainValue: () => master ? master.gain.value : null,
+      distortionAmount: () => lastDistortionAmount,
+      heatValue: () => heat,
+      urgencyValue: () => lastUrgency,
     },
   };
 })();
