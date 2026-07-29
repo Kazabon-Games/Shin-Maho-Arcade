@@ -1,0 +1,2422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Runeshatter — Shin Mahou Arcade</title>
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23140b30'/%3E%3Cpath d='M16 4 L26 12 L22 28 L10 28 L6 12 Z' fill='none' stroke='%23ff6a3d' stroke-width='1.3'/%3E%3Cpath d='M16 4 L16 28 M6 12 L26 12' stroke='%234fe6ff' stroke-width='1' opacity='0.7'/%3E%3Ccircle cx='16' cy='16' r='3.4' fill='%23ffcb5c'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="icons/runeshatter-192.png">
+<meta name="description" content="Swap runes, shatter clusters of four or five into bombs, and let the chain reaction do the rest. An arcane match-3 from Kazabon Game Studio.">
+<meta property="og:title" content="Runeshatter">
+<meta property="og:description" content="Swap runes, shatter clusters of four or five into bombs, and let the chain reaction do the rest.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Quicksand:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --bg:#140b30;
+  --panel:#231442;
+  --panel2:#301c58;
+  --ink:#f4ecff;
+  --ink-mid:#c2b3e8;
+  --ink-soft:#8674b8;
+  --neon:#ffcb5c;
+  --neon2:#b98aff;
+  --gold:#ffd76b;
+  --danger:#ff4d70;
+  --ok:#5eff9c;
+  --border:rgba(255,203,92,0.25);
+  --mono:'IBM Plex Mono','Courier New',monospace;
+  --display:'Cormorant Garamond',Georgia,serif;
+  --body-font:'Quicksand',system-ui,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:var(--body-font);user-select:none;-webkit-user-select:none;}
+
+#gameCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--bg);touch-action:none;}
+
+/* ---- HUD (mirrors wardfall.html's #hud shape) ---- */
+#hud{position:fixed;top:0;left:0;right:0;padding:14px 16px;display:none;
+  align-items:flex-start;justify-content:space-between;pointer-events:none;z-index:10;
+  font-family:var(--mono);}
+#hud.show{display:flex;}
+.hud-left{display:flex;flex-direction:column;gap:2px;}
+#scoreVal{font-size:26px;font-weight:700;color:var(--ink);letter-spacing:.03em;}
+#tierVal{font-size:11px;color:var(--neon);letter-spacing:.06em;text-transform:uppercase;min-height:14px;}
+.hud-right{text-align:right;display:flex;flex-direction:column;gap:2px;}
+#budgetVal{font-size:22px;font-weight:700;color:var(--ink);letter-spacing:.05em;}
+#budgetLabel{font-size:11px;color:var(--ink-soft);letter-spacing:.08em;text-transform:uppercase;}
+#objectiveVal{position:fixed;top:66px;left:0;right:0;text-align:center;font-family:var(--mono);
+  font-size:11px;color:var(--ink-mid);pointer-events:none;z-index:10;display:none;}
+#objectiveVal.show{display:block;}
+.hud-pause-btn{position:fixed;top:14px;right:14px;z-index:20;pointer-events:auto;
+  width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--panel);
+  color:var(--ink-soft);font-size:14px;cursor:pointer;display:none;align-items:center;justify-content:center;}
+.hud-pause-btn.show{display:flex;}
+.hud-pause-btn:hover{color:var(--neon);border-color:var(--neon);}
+
+/* ---- overlay/panel/btn — copied verbatim from wardfall.html's own tokens/shapes ---- */
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,0.86);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;}
+.overlay.show{display:flex;animation:ovfade .2s ease;}
+@keyframes ovfade{from{opacity:0;}to{opacity:1;}}
+@keyframes panelPop{0%{opacity:0;transform:scale(.92) translateY(6px);}100%{opacity:1;transform:scale(1) translateY(0);}}
+.overlay .panel{animation:panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;}
+body.reduced-motion .overlay.show,
+body.reduced-motion .panel{animation:none!important;}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+  padding:26px 24px;max-width:440px;width:100%;max-height:92vh;overflow-y:auto;
+  box-shadow:0 0 60px -18px rgba(226,184,85,0.22);margin:auto;}
+.panel h1{font-size:2rem;letter-spacing:.18em;text-align:center;color:var(--neon);
+  text-shadow:0 0 26px rgba(255,203,92,0.55);margin-bottom:4px;font-family:var(--display);font-weight:600;}
+.panel h2{font-size:1.2rem;letter-spacing:.1em;color:var(--neon);text-align:center;margin-bottom:16px;font-family:var(--display);font-weight:600;}
+.tagline{text-align:center;color:var(--ink-soft);font-size:.85rem;margin-bottom:18px;font-family:var(--display);font-style:italic;}
+.stat-line{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.85rem;
+  color:var(--ink-mid);padding:6px 0;border-bottom:1px solid var(--border);}
+.stat-line b{color:var(--neon);font-weight:600;}
+.new-best{text-align:center;font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+  color:var(--gold);margin:6px 0 4px;text-transform:uppercase;}
+.btn{display:block;width:100%;padding:.85rem;border-radius:10px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-size:.95rem;font-weight:600;cursor:pointer;
+  margin-bottom:10px;transition:all .15s;font-family:inherit;letter-spacing:.04em;}
+.btn:hover{border-color:var(--neon);color:var(--neon);box-shadow:0 0 18px -6px var(--neon);}
+.btn:active{transform:scale(.98);}
+.btn:disabled{opacity:.35;cursor:default;box-shadow:none;}
+
+/* ---- mode-select cards ---- */
+.mode-card{display:block;width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);cursor:pointer;margin-bottom:12px;text-align:left;
+  font-family:inherit;transition:all .15s;}
+.mode-card:hover{border-color:var(--neon);box-shadow:0 0 18px -6px var(--neon);}
+.mode-card .mode-name{font-family:var(--display);font-size:1.15rem;color:var(--neon);letter-spacing:.05em;font-weight:600;}
+.mode-card .mode-desc{font-size:.72rem;color:var(--ink-soft);margin-top:2px;}
+.mode-card .mode-best{font-family:var(--mono);font-size:.72rem;color:var(--ink-mid);margin-top:6px;}
+
+/* ---- level select grid ---- */
+.level-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px;}
+.level-tile{aspect-ratio:1;border-radius:10px;border:1px solid var(--border);background:var(--panel2);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:700;font-size:.95rem;cursor:pointer;color:var(--ink-mid);gap:2px;}
+.level-tile .level-star{font-size:.65rem;}
+.level-tile.locked{opacity:.32;cursor:default;}
+.level-tile.completed{border-color:var(--ok);color:var(--ok);box-shadow:0 0 10px -4px var(--ok);}
+.level-tile.current-unlocked{border-color:var(--neon);color:var(--neon);}
+
+/* ---- meta row / version marker ---- */
+.meta-row{position:fixed;bottom:8px;right:10px;display:flex;align-items:center;gap:6px;z-index:60;}
+.version-marker{font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;
+  letter-spacing:.02em;pointer-events:none;}
+/* ---- icon-btn — copied verbatim from wardfall.html/sigilchain.html's own
+   token (same size/shape/hover), so the mute control matches this studio's
+   real existing pattern rather than inventing a new one for this game. ---- */
+.icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+  background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
+  display:flex;align-items:center;justify-content:center;position:relative;}
+.icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
+
+/* ---- bug reporter — copied verbatim from infall.html's own Bugrep
+   widget/CSS (studio's own proven pattern, not the generic skill's raw
+   default palette) so it matches this game's real tokens automatically. */
+.bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;
+  font-size:9px;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;}
+.bugrep-badge:empty,.bugrep-badge[data-zero]{display:none;}
+.bugcat{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.bugcat .btn{width:auto;flex:1;padding:.5rem;font-size:.78rem;margin-bottom:0;}
+.bugcat .btn.sel{border-color:var(--neon2);color:var(--neon2);}
+.form-input{width:100%;padding:.7rem;border-radius:8px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-family:inherit;font-size:.85rem;margin-bottom:10px;}
+textarea.form-input{min-height:70px;resize:vertical;}
+.bug-item{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;
+  margin-bottom:8px;font-size:.8rem;position:relative;}
+.bug-item .del{position:absolute;top:6px;right:8px;color:var(--danger);font-size:.7rem;cursor:pointer;opacity:.7;}
+.bug-item .cat{font-family:var(--mono);font-size:.65rem;color:var(--neon2);text-transform:uppercase;margin-bottom:2px;}
+
+@media (max-width:480px){
+  .panel{padding:20px 18px;}
+  .level-grid{grid-template-columns:repeat(4,1fr);}
+}
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<button class="hud-pause-btn" id="pauseBtn" onclick="Game.togglePause()" aria-label="Pause">❚❚</button>
+<div id="hud">
+  <div class="hud-left">
+    <div id="scoreVal">0</div>
+    <div id="tierVal"></div>
+  </div>
+  <div class="hud-right">
+    <div id="budgetVal">—</div>
+    <div id="budgetLabel">Moves</div>
+  </div>
+</div>
+<div id="objectiveVal"></div>
+
+<!-- MODE SELECT -->
+<div class="overlay show" id="modeSelectScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Runeshatter mode select">
+    <h1>RUNESHATTER</h1>
+    <div class="tagline">shatter the cluster, chain the blast</div>
+    <button class="btn" id="resumeBtn" style="display:none;" onclick="Game.resumeSession()">▶ RESUME SAVED RUN</button>
+    <button class="mode-card" onclick="Game.startEndless()" aria-label="Endless mode">
+      <div class="mode-name">ENDLESS</div>
+      <div class="mode-desc">no limit — chase the highest score you can before the board turns hostile</div>
+      <div class="mode-best">Best score <b id="bestEndless">0</b></div>
+    </button>
+    <button class="mode-card" onclick="Nav.goTo('levelSelect')" aria-label="Levels mode">
+      <div class="mode-name">LEVELS</div>
+      <div class="mode-desc">20 hand-authored boards, tightening move budgets, rising tile tiers</div>
+      <div class="mode-best">Furthest level reached <b id="bestLevels">0</b></div>
+    </button>
+    <button class="mode-card" onclick="Game.startTimed()" aria-label="Timed Survival mode">
+      <div class="mode-name">TIMED SURVIVAL</div>
+      <div class="mode-desc">a running clock, an escalating board — survive it</div>
+      <div class="mode-best">Best score <b id="bestTimed">0</b></div>
+    </button>
+    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+  </div>
+</div>
+
+<!-- LEVEL SELECT -->
+<div class="overlay" id="levelSelectScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Level select">
+    <h2>✦ LEVEL SELECT ✦</h2>
+    <div class="tagline">unlock the next by completing the last</div>
+    <div class="level-grid" id="levelGrid"></div>
+    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back">BACK</button>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div class="overlay" id="pauseOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
+    <h2>PAUSED</h2>
+    <button class="btn" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
+    <button class="btn" onclick="Game.endRunFromPause()" aria-label="End run">END RUN</button>
+    <button class="btn" onclick="Game.quitToMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="overlay" id="resultsScreen">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Run results">
+    <h2 id="resultsTitle">RUN ENDED</h2>
+    <div class="new-best" id="resultsNewBest" style="display:none;">✦ NEW HIGH SCORE ✦</div>
+    <div class="stat-line">Mode <b id="resultsMode">—</b></div>
+    <div class="stat-line">Score <b id="resultsScore">0</b></div>
+    <div class="stat-line" id="resultsLevelRow" style="display:none;">Level <b id="resultsLevel">—</b></div>
+    <div class="stat-line" id="resultsOutcomeRow" style="display:none;">Outcome <b id="resultsOutcome">—</b></div>
+    <button class="btn" onclick="Game.playAgain()" aria-label="Play again">PLAY AGAIN</button>
+    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back to mode select">MODE SELECT</button>
+  </div>
+</div>
+
+<!-- BUG REPORTER — copied verbatim from infall.html's own Bugrep widget
+     markup (this studio's proven pattern) -->
+<div class="overlay" id="bugOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
+    <h2>REPORT ISSUE</h2>
+    <div class="bugcat">
+      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+    </div>
+    <input class="form-input" id="bugTitle" placeholder="Short title">
+    <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
+    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <div id="bugList"></div>
+    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+  </div>
+</div>
+
+<div class="meta-row">
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
+  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.5.1</div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   RUNESHATTER — CHANGE LOG
+   (one line per change, most recent on top)
+
+   v0.5.1 — 2026-07-29 — Two real bugs fixed, found by a qa-playtest
+                          adversarial real-UI pass (not the automated
+                          test-hook suites, which couldn't have caught
+                          either):
+                          (1) Render's pending/shards/rings/sweeps/reveals
+                          arrays never cleared on a screen transition —
+                          frame() freezes their real-time drain the moment
+                          Nav leaves 'game', but wall-clock keeps moving, so
+                          a chain queued right as a run ended (Levels' final
+                          move, a mid-chain quit-to-menu) sat frozen past
+                          its fireAt and fired as one stale burst on the
+                          FIRST FRAME OF THE NEXT RUN. Fixed by resetting
+                          all five arrays on every nav:change back to
+                          'game' — never on pause/resume (no nav:change
+                          fires), so a mid-chain pause still resumes
+                          correctly where it left off. Verified live: 12
+                          effects queued by a real swap stay frozen at 12
+                          while sitting on the menu, then correctly zero on
+                          the next run's first frame (previously would have
+                          burst).
+                          (2) Bugrep.open() silently paused a running game
+                          (the real pause overlay sits hidden underneath the
+                          bug-report overlay, same z-index, later in DOM)
+                          and close() never resumed it — closing a report
+                          filed mid-run dropped the player onto an
+                          unrequested pause menu. Fixed with a
+                          pausedByThis flag so close() only un-pauses what
+                          open() itself paused, leaving an
+                          already-paused game paused. Verified live both
+                          ways. 53/53 adversarial + 41/41 audio tests still
+                          passing.
+
+   v0.5.0 — 2026-07-29 — Bug-report widget, ported verbatim from
+                          infall.html's own Bugrep module/CSS/markup
+                          (this studio's proven shipped pattern) per the
+                          bug-report-widget skill's "don't rewrite the
+                          functions per project" rule — only the storage
+                          key/exported-document id changed
+                          ('runeshatter_v1'), and open() pauses through
+                          this game's own Game.isRunning()/isPaused()/
+                          togglePause() API instead of infall's Game.state
+                          check. Flag icon + badge added to the existing
+                          meta-row alongside the mute button.
+
+   v0.4.0 — 2026-07-29 — Real visual art pass (§5), replacing v0.2.0's
+                          gray-box render. Faceted-gem tiles (shadeHex +
+                          alternating-facet technique, verbatim from
+                          sigilchain.html) each with a hand-authored
+                          asymmetric silhouette (never a uniform ngon) and
+                          a rune-line overlay stroked on top — the paired-
+                          glyph idiom. Idle-pulse breathing motion on every
+                          element except lightning, which snap-flickers
+                          instead (a named exception, not an oversight).
+                          Distinct line-bomb/area-bomb glyphs on a shared
+                          dark "rune-forged" base with the tile's own
+                          element as an accent color, plus orbiting
+                          satellite shards on area bombs. Board's
+                          resolveToFixedPoint() now returns a positional
+                          `timeline` (clear/bombCreate/bombDetonate events
+                          with real cell coordinates) so Render can spawn
+                          directional shatter-shard particles along the
+                          real match axis, reuse Wardfall's ring-shockwave
+                          verbatim for area-bomb detonation, a linear sweep
+                          for line-bomb detonation, and stagger bomb-chain
+                          playback ~90-100ms per link — state still
+                          resolves instantly per §7, only playback catches
+                          up. Reaches for three capability-audit gaps used
+                          nowhere else in this portfolio: ctx.clip() for a
+                          mana-drain reveal wipe on bomb creation,
+                          ctx.createPattern() for the board backdrop
+                          texture, ctx.createConicGradient() used inside
+                          real gameplay (previously portal-chrome only) for
+                          the area-bomb's mana-surge detonation sweep.
+                          Verified: 53/53 adversarial + 41/41 audio tests
+                          still passing (no regression), real screenshots
+                          at board render size confirm the six elements and
+                          both bomb kinds read as distinct silhouettes and
+                          that particles actually fire. NOT yet done: the
+                          §5-mandated human/producer side-by-side screenshot
+                          comparison against Sigil Chain's and Wardfall's
+                          own boards — flagged honestly, not skipped
+                          silently.
+
+   v0.3.0 — 2026-07-29 — Phase 1.5: the Music mood engine (§6), built in
+                          now rather than deferred, per STUDIO_BIBLE.md
+                          §14's Game 4 mandate. New Game-level event surface
+                          (board:resolved, bomb:charge, bomb:detonate,
+                          match:plain, tier:up) added to attemptSwap()/
+                          maybeUpdateTier() — Board itself gained only
+                          additive per-resolve stats (bomb kind + column
+                          breakdowns), no mode branch and no new dependency.
+                          Music: one drone/filter/distortion graph driven by
+                          three live inputs (tile-tier harmony, decaying
+                          bomb-chain "heat", mode-specific urgency reusing
+                          Sigil Chain's (10-remaining)/10 idiom); new
+                          synthesized SFX (bomb-charge sweep, line/area
+                          detonation, chain-escalation step-up, an original
+                          tier-up fanfare); reaches for three previously-
+                          unused-in-portfolio techniques per §6's capability
+                          audit (notch BiquadFilterNode, setValueCurveAtTime
+                          shatter envelope, spatial PannerNode panned to
+                          grid column). Mute toggle added to match every
+                          other shipped game's pattern.
+   v0.2.0 — 2026-07-29 — Phase 1: mode-agnostic Board engine (8x8 swap/
+                          match/bomb-create/bomb-chain, resolveToFixedPoint
+                          per GAME_7_PILLARS.md §7's explicit correction to
+                          Wardfall's single-wave cascade, reshuffle-on-
+                          no-legal-move guard), ModeRuleset (Endless/Levels/
+                          Timed thresholds + a real 20-level list per §4),
+                          two-key Persist schema (schemaVersion-checked,
+                          session discarded not migrated on mismatch),
+                          Nav.goTo(n)-style screen switching (mode-select,
+                          level-select, main board, pause, results — a
+                          fresh pattern per §7, not a ported one), and a
+                          deliberate gray-box Canvas render (flat colored
+                          tiles, distinct bomb borders, tap-to-swap input,
+                          instant non-animated resolution) — final
+                          faceted-gem/rune-overlay art and juice/audio are
+                          separate later passes, not done here. Adversarial
+                          test suite (tests/runeshatter-adversarial.js)
+                          ships in this same commit per §7's file-growth-
+                          risk paragraph.
+   v0.1.0 — 2026-07-29 — Phase 0: scaffold only. Version marker,
+                          changelog, shared studio CSS tokens (copied
+                          verbatim from wardfall.html/sigilchain.html
+                          per the confirmed cross-game token match). No
+                          feature code yet — engine, modes, persistence,
+                          audio, and rendering land in later phases per
+                          GAME_7_PILLARS.md's build order (§9).
+===================================================================== */
+
+/* =====================================================================
+   EVENTS — matches wardfall.html's own Events module shape verbatim
+   (on/emit pub-sub, per-handler try/catch so one bad listener can't
+   break the emit loop for the rest).
+===================================================================== */
+const Events = (function(){
+  const subs = {};
+  function on(type, fn){ (subs[type] = subs[type]||[]).push(fn); }
+  function off(type, fn){
+    const l = subs[type]; if(!l) return;
+    const i = l.indexOf(fn); if(i>=0) l.splice(i,1);
+  }
+  function emit(type, payload){
+    const l = subs[type];
+    if(!l) return;
+    for(const fn of l){ try{ fn(payload); }catch(e){ console.error('event handler error ['+type+']', e); } }
+  }
+  return { on, off, emit };
+})();
+
+/* =====================================================================
+   PERSIST — exact two-key schema from GAME_7_PILLARS.md §7. highScores
+   and session are checked against schemaVersion independently (they have
+   different lifetimes per §7's own rationale): a session with a mismatched
+   or missing schemaVersion is DROPPED, never migrated — resumability is a
+   convenience, not a save-file contract. This deliberately does NOT
+   follow infall.html's ad-hoc/no-version Persist module (a named gap in
+   GAME_7_PILLARS.md §7), since board-shaped state is much harder to
+   hand-patch than a flat stat blob.
+===================================================================== */
+const SAVE_KEY = 'runeshatter-save-v1';
+const SCHEMA_VERSION = 1;
+const Persist = (function(){
+  const defaultHighScores = () => ({ endless: 0, levels: 0, timedSurvival: 0 });
+  let data = {
+    schemaVersion: SCHEMA_VERSION,
+    highScores: defaultHighScores(),
+    session: null,
+  };
+  function load(){
+    try{
+      const raw = localStorage.getItem(SAVE_KEY);
+      if(!raw) return;
+      const parsed = JSON.parse(raw);
+      if(!parsed || typeof parsed !== 'object'){ return; }
+      if(parsed.schemaVersion === SCHEMA_VERSION && parsed.highScores && typeof parsed.highScores === 'object'){
+        data.highScores = Object.assign(defaultHighScores(), parsed.highScores);
+      } else {
+        // outer envelope schema mismatch (or malformed highScores) — only
+        // one schema version has ever shipped, so there is no real
+        // migration path to write yet; the safe move is defaults, not a
+        // guessed migration.
+        data.highScores = defaultHighScores();
+      }
+      // session carries its OWN nested schemaVersion (see the §7 example
+      // shape) and is validated on its own terms, independent of the
+      // outer envelope check above — dropped (not migrated) on ANY
+      // mismatch, including a missing field entirely.
+      if(parsed.session && typeof parsed.session === 'object' && parsed.session.schemaVersion === SCHEMA_VERSION){
+        data.session = parsed.session;
+      } else {
+        data.session = null;
+      }
+    }catch(e){
+      // corrupt JSON (or any other read failure) — drop to defaults
+      // rather than crash or silently half-read a broken structure.
+      data.highScores = defaultHighScores();
+      data.session = null;
+    }
+  }
+  function save(){
+    try{
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        schemaVersion: SCHEMA_VERSION, highScores: data.highScores, session: data.session,
+      }));
+    }catch(e){}
+  }
+  function setHighScore(mode, value){
+    if(value > (data.highScores[mode]||0)){ data.highScores[mode] = value; save(); return true; }
+    return false;
+  }
+  function saveSession(session){
+    data.session = session ? Object.assign({ schemaVersion: SCHEMA_VERSION }, session) : null;
+    save();
+  }
+  function clearSession(){ data.session = null; save(); }
+  load();
+  return { data, load, save, setHighScore, saveSession, clearSession };
+})();
+
+/* =====================================================================
+   UTILS
+===================================================================== */
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mulberry32(seed){
+  let s = seed >>> 0;
+  return function(){
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* =====================================================================
+   BOARD — the mode-agnostic engine (GAME_7_PILLARS.md §2, §7). 8x8 grid,
+   swap-adjacent validation, match-3+ detection, match-4 -> line bomb,
+   match-5 -> area bomb, bomb detonation chains into neighboring bombs,
+   resolveToFixedPoint() runs match->clear->gravity->refill->re-check in a
+   loop until stable, with bomb detonations flattened into the clear-set
+   BEFORE gravity runs each pass (the explicit correction to Wardfall's
+   single-wave cascade — see wardfall.html:1008-1010's own comment, which
+   is correct for a board with no gravity-refill and no bomb-chain but
+   would be a correctness bug ported here verbatim).
+
+   Board holds NO mode-name branch anywhere. The one piece of mode-shaped
+   behavior it needs — how many tile types are currently active — is taken
+   through a small injected-ruleset interface (Board.setRuleset /
+   Board.setProgress calling ruleset.tileTierForProgress), never an
+   if(mode===...) check. Board does not itself track score/moves/time —
+   those are session-level concepts that live in the Game orchestration
+   layer below, matching Board's own stated job description ("grid,
+   swap-validate, match-detect, bomb-creation/chain-resolve") which never
+   mentions win/lose.
+===================================================================== */
+const BOARD_SIZE = 8;
+const Board = (function(){
+  const SIZE = BOARD_SIZE;
+  let grid = [];
+  let rng = Math.random;
+  let activeTypes = ['fire','frost','verdant','lightning'];
+  let ruleset = null;
+
+  function setRng(fn){ rng = fn || Math.random; }
+  function rngInt(n){ return Math.floor(rng()*n); }
+  function setRuleset(r){ ruleset = r || null; }
+  function setActiveTypes(types){ activeTypes = types.slice(); }
+  function getActiveTypes(){ return activeTypes.slice(); }
+
+  function inBounds(c,r){ return c>=0 && c<SIZE && r>=0 && r<SIZE; }
+  function at(c,r){ return inBounds(c,r) ? grid[r][c] : null; }
+  function set(c,r,tile){ if(inBounds(c,r)) grid[r][c] = tile; }
+  function randomTile(){ return { type: activeTypes[rngInt(activeTypes.length)], bomb: null, axis: null }; }
+
+  // ---- runs (the atomic 3+ match unit — a straight horizontal or
+  // vertical run of one type; T/L intersections are just two overlapping
+  // runs, unioned into one clear-set below) ----
+  function findRuns(){
+    const runs = [];
+    for(let r=0;r<SIZE;r++){
+      let c=0;
+      while(c<SIZE){
+        const t = grid[r][c] && grid[r][c].type;
+        if(!t){ c++; continue; }
+        let c2=c;
+        while(c2+1<SIZE && grid[r][c2+1] && grid[r][c2+1].type===t) c2++;
+        const len = c2-c+1;
+        if(len>=3){
+          const cells=[]; for(let cc=c;cc<=c2;cc++) cells.push({col:cc,row:r});
+          runs.push({cells, axis:'row', type:t});
+        }
+        c = c2+1;
+      }
+    }
+    for(let c=0;c<SIZE;c++){
+      let r=0;
+      while(r<SIZE){
+        const t = grid[r][c] && grid[r][c].type;
+        if(!t){ r++; continue; }
+        let r2=r;
+        while(r2+1<SIZE && grid[r2+1][c] && grid[r2+1][c].type===t) r2++;
+        const len = r2-r+1;
+        if(len>=3){
+          const cells=[]; for(let rr=r;rr<=r2;rr++) cells.push({col:c,row:rr});
+          runs.push({cells, axis:'col', type:t});
+        }
+        r = r2+1;
+      }
+    }
+    return runs;
+  }
+
+  // an existing bomb tile's blast footprint (includes its own cell)
+  function computeBlast(cell, tile){
+    const cells = [];
+    if(tile.bomb === 'line'){
+      if(tile.axis === 'row'){ for(let c=0;c<SIZE;c++) cells.push({col:c,row:cell.row}); }
+      else { for(let r=0;r<SIZE;r++) cells.push({col:cell.col,row:r}); }
+    } else if(tile.bomb === 'area'){
+      for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+        const c=cell.col+dc, r=cell.row+dr;
+        if(inBounds(c,r)) cells.push({col:c,row:r});
+      }
+    }
+    return cells;
+  }
+
+  function applyGravity(){
+    for(let c=0;c<SIZE;c++){
+      const stack=[];
+      for(let r=0;r<SIZE;r++){ if(grid[r][c]) stack.push(grid[r][c]); }
+      for(let r=SIZE-1, i=stack.length-1; r>=0; r--, i--){ grid[r][c] = i>=0 ? stack[i] : null; }
+    }
+  }
+  function refill(){
+    for(let c=0;c<SIZE;c++) for(let r=0;r<SIZE;r++){ if(!grid[r][c]) grid[r][c] = randomTile(); }
+  }
+
+  // one match->clear->bomb-create/chain settle pass, folded into acc.
+  // returns true if a pass actually ran (i.e. there was something to settle).
+  function settlePass(acc){
+    const runs = findRuns();
+    if(runs.length===0) return false;
+
+    const bombSpecs = new Map(); // "c,r" -> {kind,axis,type,col,row}
+    const runCellKeys = new Set();
+    for(const run of runs){
+      // Anchor = the run's middle cell. There is no "swapped tile" concept
+      // during an arbitrary re-check pass (refills/gravity can produce a
+      // fresh match with no swap at all), so the middle cell is used as a
+      // deterministic, order-independent stand-in — a documented judgment
+      // call, not a literal port of a swap-position rule.
+      const anchor = run.cells[Math.floor((run.cells.length-1)/2)];
+      const key = anchor.col+','+anchor.row;
+      const makesBomb = run.cells.length >= 4;
+      if(run.cells.length >= 5) bombSpecs.set(key, { kind:'area', type:run.type, col:anchor.col, row:anchor.row });
+      else if(run.cells.length === 4) bombSpecs.set(key, { kind:'line', axis:run.axis, type:run.type, col:anchor.col, row:anchor.row });
+      for(const cell of run.cells) runCellKeys.add(cell.col+','+cell.row);
+      // visual-signal enrichment (GAME_7_PILLARS.md §5) — a positional
+      // timeline Render can walk to spawn directional shatter-shards along
+      // the real match axis, exactly at the real cleared cells, and to
+      // stagger chain playback below. Pure additional fact, same discipline
+      // as the audio enrichment already on this object (bombsCreatedByKind
+      // etc.) — no new engine behavior, no mode-name branch.
+      const shardCells = makesBomb ? run.cells.filter(c => !(c.col===anchor.col && c.row===anchor.row)) : run.cells;
+      acc.timeline.push({ type:'clear', axis:run.axis, elementType:run.type, cells:shardCells, pass:acc.passes+1 });
+    }
+
+    const clearSet = new Set();
+    for(const key of runCellKeys){ if(!bombSpecs.has(key)) clearSet.add(key); }
+
+    // chain: any EXISTING bomb tile swept into the clear-set detonates,
+    // and its blast is flattened into the SAME clear-set (before gravity
+    // runs), so a newly-revealed bomb inside another bomb's blast keeps
+    // chaining until nothing new is added.
+    const queue = [];
+    for(const key of clearSet){
+      const [c,r] = key.split(',').map(Number);
+      const t = at(c,r);
+      if(t && t.bomb) queue.push({col:c,row:r});
+    }
+    let bombsDetonated = 0;
+    while(queue.length){
+      const cell = queue.pop();
+      const t = at(cell.col,cell.row);
+      if(!t || !t.bomb) continue;
+      bombsDetonated++;
+      // audio-signal enrichment only (GAME_7_PILLARS.md §6) — kind + column
+      // per detonation, so Music can tell a line-bomb thump from an
+      // area-bomb chord and pan a spatial cue toward the column it happened
+      // in, without Board taking on any mode-name branch or new dependency.
+      acc.bombsDetonatedByKind[t.bomb] = (acc.bombsDetonatedByKind[t.bomb]||0) + 1;
+      acc.detonationCols.push(cell.col);
+      // chainOrder (0-indexed) lets Render stagger each detonation within
+      // this pass by ~80-120ms per GAME_7_PILLARS.md §5's "flash-primes for
+      // one beat before its own detonation fires" spec, even though Board
+      // itself resolves the whole chain synchronously and instantly.
+      acc.timeline.push({ type:'bombDetonate', kind:t.bomb, axis:t.axis||null, elementType:t.type, col:cell.col, row:cell.row, chainOrder:bombsDetonated-1, pass:acc.passes+1 });
+      for(const b of computeBlast(cell, t)){
+        const bk = b.col+','+b.row;
+        if(!clearSet.has(bk)){
+          clearSet.add(bk);
+          const bt = at(b.col,b.row);
+          if(bt && bt.bomb) queue.push(b);
+        }
+      }
+    }
+
+    const clearedByType = {};
+    for(const key of clearSet){
+      const [c,r] = key.split(',').map(Number);
+      const t = at(c,r);
+      if(t && t.type) clearedByType[t.type] = (clearedByType[t.type]||0) + 1;
+      set(c,r,null);
+    }
+    for(const spec of bombSpecs.values()){
+      set(spec.col, spec.row, { type: spec.type, bomb: spec.kind, axis: spec.axis||null });
+      // same audio-signal enrichment as the detonation loop above — kind +
+      // column of each newly-created bomb, so Music's bomb-charge sweep can
+      // be panned toward the column it actually formed in.
+      acc.bombsCreatedByKind[spec.kind] = (acc.bombsCreatedByKind[spec.kind]||0) + 1;
+      acc.creationCols.push(spec.col);
+      acc.timeline.push({ type:'bombCreate', kind:spec.kind, axis:spec.axis||null, elementType:spec.type, col:spec.col, row:spec.row, pass:acc.passes+1 });
+    }
+
+    acc.passes += 1;
+    acc.cleared += clearSet.size;
+    acc.bombsCreated += bombSpecs.size;
+    acc.bombsDetonated += bombsDetonated;
+    for(const k in clearedByType) acc.clearedByType[k] = (acc.clearedByType[k]||0) + clearedByType[k];
+
+    applyGravity();
+    refill();
+    return true;
+  }
+
+  function swapCreatesMatch(a,b){
+    const ta = at(a.col,a.row), tb = at(b.col,b.row);
+    if(!ta || !tb) return false;
+    set(a.col,a.row,tb); set(b.col,b.row,ta);
+    const has = findRuns().length>0;
+    set(a.col,a.row,ta); set(b.col,b.row,tb);
+    return has;
+  }
+  function hasAnyLegalMove(){
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+      if(c+1<SIZE && swapCreatesMatch({col:c,row:r},{col:c+1,row:r})) return true;
+      if(r+1<SIZE && swapCreatesMatch({col:c,row:r},{col:c,row:r+1})) return true;
+    }
+    return false;
+  }
+  function shuffleBoard(){
+    const flat=[];
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) flat.push(grid[r][c]);
+    for(let i=flat.length-1;i>0;i--){ const j=rngInt(i+1); const tmp=flat[i]; flat[i]=flat[j]; flat[j]=tmp; }
+    let idx=0;
+    for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++) grid[r][c]=flat[idx++];
+  }
+
+  function isAdjacent(a,b){ return (Math.abs(a.col-b.col)+Math.abs(a.row-b.row)) === 1; }
+  function trySwap(a,b){
+    if(!isAdjacent(a,b)) return { valid:false };
+    const ta = at(a.col,a.row), tb = at(b.col,b.row);
+    if(!ta || !tb) return { valid:false };
+    set(a.col,a.row,tb); set(b.col,b.row,ta);
+    if(findRuns().length===0){ set(a.col,a.row,ta); set(b.col,b.row,tb); return { valid:false }; }
+    return { valid:true };
+  }
+
+  // resolveToFixedPoint — pure, synchronous. Loops match->clear->gravity->
+  // refill->re-check until stable, THEN applies the reshuffle-on-no-legal-
+  // move guard (built in from day one per §2, since the 6-color state is
+  // the one actually near the deadlock-frequency risk floor). If a
+  // reshuffle itself produces a fresh match (possible — a shuffle just
+  // permutes existing tiles), that gets settled too before the guard
+  // re-checks for a legal move, so the board is NEVER left in a state
+  // with an unresolved live match.
+  function resolveToFixedPoint(){
+    // bombsCreatedByKind/bombsDetonatedByKind/creationCols/detonationCols
+    // are audio-signal enrichment for Music (GAME_7_PILLARS.md §6) — pure
+    // additional facts about what the engine already computed, not new
+    // engine behavior and not a mode-name branch.
+    const acc = { passes:0, cleared:0, bombsCreated:0, bombsDetonated:0, clearedByType:{}, reshuffled:false,
+      bombsCreatedByKind:{line:0,area:0}, bombsDetonatedByKind:{line:0,area:0}, creationCols:[], detonationCols:[],
+      timeline:[] };
+    while(settlePass(acc)){ /* loop until stable */ }
+    let reshuffles = 0;
+    while(!hasAnyLegalMove() && reshuffles < 50){
+      shuffleBoard();
+      reshuffles++;
+      while(settlePass(acc)){ /* settle anything the shuffle itself created */ }
+    }
+    acc.reshuffled = reshuffles>0;
+    return acc;
+  }
+
+  function generateBoard(){
+    let attempts=0;
+    do{
+      grid = [];
+      for(let r=0;r<SIZE;r++){ const row=[]; for(let c=0;c<SIZE;c++) row.push(randomTile()); grid.push(row); }
+      attempts++;
+    } while(findRuns().length>0 && attempts<500);
+  }
+  function init(types){
+    if(types) setActiveTypes(types);
+    generateBoard();
+    let tries=0;
+    while(!hasAnyLegalMove() && tries<50){ generateBoard(); tries++; }
+  }
+
+  function setProgress(value){
+    if(!ruleset || typeof ruleset.tileTierForProgress !== 'function') return { changed:false, tierCount: activeTypes.length };
+    const tier = ruleset.tileTierForProgress(value);
+    if(tier === activeTypes.length) return { changed:false, tierCount: tier };
+    setActiveTypes(TILE_TYPE_POOL.slice(0, tier));
+    return { changed:true, tierCount: tier };
+  }
+
+  function toPlain(){ return grid.map(row => row.map(t => t ? { type:t.type, bomb:t.bomb||null, axis:t.axis||null } : null)); }
+  function fromPlain(pattern){
+    grid = pattern.map(row => row.map(spec => {
+      if(spec == null) return null;
+      if(typeof spec === 'string') return { type: spec, bomb:null, axis:null };
+      return { type: spec.type, bomb: spec.bomb||null, axis: spec.axis||null };
+    }));
+  }
+
+  return {
+    BOARD_SIZE: SIZE,
+    init, setRng, setRuleset, setActiveTypes, getActiveTypes, setProgress,
+    at, trySwap, resolveToFixedPoint, hasAnyLegalMove,
+    serialize: toPlain, restoreGrid: fromPlain,
+    get grid(){ return grid; },
+    _test: {
+      setBoard: fromPlain,
+      getGrid: () => grid,
+      findRuns, computeBlast,
+    },
+  };
+})();
+
+// tile-type pool — base 4 ship at tier 1; void/light unlock at tiers 5/6
+// per GAME_7_PILLARS.md §3.
+const TILE_TYPE_POOL = ['fire','frost','verdant','lightning','void','light'];
+
+/* =====================================================================
+   MODE RULESET — three thin objects consumed by Board through a small
+   interface (tileTierForProgress) and by the Game orchestration layer for
+   checkWin/checkLose, which need session-level counters (score/moves/
+   time) Board intentionally does not hold. Thresholds are the Game
+   Designer's exact numbers from GAME_7_PILLARS.md §3 — explicitly
+   estimates pending real playtest data, same honesty standard the doc
+   states for itself.
+===================================================================== */
+function tierFor(value, t5, t6){ return value>=t6 ? 6 : value>=t5 ? 5 : 4; }
+
+// 20-level list per GAME_7_PILLARS.md §4. JUDGMENT CALL (flagged in the
+// build report): the pillars doc specifies structure (type counts,
+// objective-type shape, moveCap ramp) but not literal target numbers
+// beyond the single L10 worked example (reach 4,000 score in 16 moves —
+// reproduced exactly below). "clearColorCount" is interpreted as "clear
+// at least N tiles of one specified element" (a common, legible match-3
+// objective shape) since the pillars doc names the objective type but
+// not its literal semantics. All numeric targets here are placeholders in
+// the same spirit as the pillars doc's own thresholds — untuned until a
+// real human playthrough, not a claim of balance.
+const LEVELS = [
+  { level:1,  tileTypes:4, moveCap:20, objectives:[{ type:'clearColorCount', target:10, targetType:'fire' }] },
+  { level:2,  tileTypes:4, moveCap:20, objectives:[{ type:'reachScore', target:600 }] },
+  { level:3,  tileTypes:4, moveCap:19, objectives:[{ type:'clearColorCount', target:12, targetType:'verdant' }] },
+  { level:4,  tileTypes:4, moveCap:19, objectives:[{ type:'reachScore', target:900 }] },
+  { level:5,  tileTypes:4, moveCap:18, objectives:[{ type:'clearColorCount', target:14, targetType:'lightning' }] },
+
+  { level:6,  tileTypes:5, moveCap:18, objectives:[{ type:'clearColorCount', target:8,  targetType:'fire' },      { type:'reachScore', target:2000 }] },
+  { level:7,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:9,  targetType:'frost' },     { type:'reachScore', target:2500 }] },
+  { level:8,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:10, targetType:'verdant' },   { type:'reachScore', target:3000 }] },
+  { level:9,  tileTypes:5, moveCap:17, objectives:[{ type:'clearColorCount', target:11, targetType:'lightning' }, { type:'reachScore', target:3500 }] },
+  { level:10, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:12, targetType:'void' },      { type:'reachScore', target:4000 }] },
+  { level:11, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:13, targetType:'fire' },      { type:'reachScore', target:4500 }] },
+  { level:12, tileTypes:5, moveCap:16, objectives:[{ type:'clearColorCount', target:14, targetType:'frost' },     { type:'reachScore', target:5000 }] },
+  { level:13, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:15, targetType:'verdant' },   { type:'reachScore', target:5500 }] },
+  { level:14, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:16, targetType:'lightning' }, { type:'reachScore', target:6000 }] },
+  { level:15, tileTypes:5, moveCap:15, objectives:[{ type:'clearColorCount', target:17, targetType:'void' },      { type:'reachScore', target:6500 }] },
+
+  { level:16, tileTypes:6, moveCap:15, objectives:[{ type:'clearColorCount', target:16, targetType:'fire' },      { type:'reachScore', target:7000 }] },
+  { level:17, tileTypes:6, moveCap:14, objectives:[{ type:'clearColorCount', target:17, targetType:'frost' },     { type:'reachScore', target:7500 }] },
+  { level:18, tileTypes:6, moveCap:14, objectives:[{ type:'clearColorCount', target:18, targetType:'verdant' },   { type:'reachScore', target:8000 }] },
+  { level:19, tileTypes:6, moveCap:13, objectives:[{ type:'clearColorCount', target:19, targetType:'lightning' }, { type:'reachScore', target:8500 }] },
+  { level:20, tileTypes:6, moveCap:13, objectives:[{ type:'clearColorCount', target:20, targetType:'light' },     { type:'reachScore', target:9000 }] },
+];
+
+function levelObjectivesMet(def, state){
+  for(const obj of def.objectives){
+    if(obj.type === 'reachScore' && state.score < obj.target) return false;
+    if(obj.type === 'clearColorCount' && (state.clearedByType[obj.targetType]||0) < obj.target) return false;
+  }
+  return true;
+}
+
+const ModeRuleset = {
+  Endless: {
+    tileTierForProgress: (score) => tierFor(score, 3000, 15000),
+    checkWin: () => false,
+    // Endless has no lose condition by design — the reshuffle guard keeps
+    // a legal move available forever, so a run only ends when the player
+    // explicitly ends it (pause -> End Run). Not a placeholder omission.
+    checkLose: () => false,
+  },
+  Timed: {
+    tileTierForProgress: (elapsedSeconds) => tierFor(elapsedSeconds, 45, 110),
+    checkWin: () => false,
+    checkLose: (state) => state.timeRemaining <= 0,
+  },
+  Levels: {
+    tileTierForProgress: (levelIndex) => (LEVELS[levelIndex-1] ? LEVELS[levelIndex-1].tileTypes : 6),
+    checkWin: (state) => !!state.levelDef && levelObjectivesMet(state.levelDef, state),
+    checkLose: (state) => !!state.levelDef && !levelObjectivesMet(state.levelDef, state) && state.movesUsed >= state.levelDef.moveCap,
+  },
+};
+
+/* =====================================================================
+   NAV — the goTo(n)-style screen switch established fresh for this repo
+   (GAME_7_PILLARS.md §7's own §0 correction: no shipped game actually has
+   this pattern to reuse, so this is new territory, not a port). Screens
+   are identified by name rather than a literal numeric index — a small,
+   deliberate readability judgment call on top of the same "goTo" idea,
+   noted explicitly rather than silently deviating from the literal text.
+===================================================================== */
+const Nav = (function(){
+  const SCREEN_IDS = ['modeSelect','levelSelect','results'];
+  let current = 'modeSelect';
+  function elFor(name){ return document.getElementById(name+'Screen'); }
+  function goTo(name){
+    const from = current;
+    for(const id of SCREEN_IDS){
+      const el = elFor(id);
+      if(el) el.classList.toggle('show', id===name);
+    }
+    const hud = document.getElementById('hud');
+    const obj = document.getElementById('objectiveVal');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const onGame = name === 'game';
+    if(hud) hud.classList.toggle('show', onGame);
+    if(obj) obj.classList.toggle('show', onGame);
+    if(pauseBtn) pauseBtn.classList.toggle('show', onGame);
+    current = name;
+    Events.emit('nav:change', { to:name, from });
+  }
+  return { goTo, currentScreen: () => current, SCREEN_IDS };
+})();
+
+/* =====================================================================
+   GAME — session orchestration. Not one of the pillars' explicitly-named
+   8 modules, but every other shipped title in this repo (wardfall.html,
+   sigilchain.html) has exactly this shape of top-level controller module
+   gluing Board+ModeRuleset+Nav+Persist together, so adding it here
+   follows real, checkable precedent rather than inventing a new pattern.
+   Module count for this pass: Persist, Events, Board, ModeRuleset, Nav,
+   Game = 6, well under Wardfall's 11-module ceiling; Juice/Music/Settings
+   are deferred to their own later passes per the task brief.
+===================================================================== */
+const Game = (function(){
+  const TIMED_TOTAL_SECONDS = 180; // not specified by the pillars doc (only
+    // the 45s/110s TIER thresholds are given) — long enough to plausibly
+    // cross both with room to spare. Judgment call, flagged in the report.
+
+  let mode = null;          // 'endless' | 'levels' | 'timed'
+  let levelIndex = 1;
+  let currentLevelDef = null;
+  let score = 0;
+  let movesUsed = 0;
+  let elapsedSeconds = 0;
+  let tierCount = 4;
+  let clearedByType = {};
+  let selected = null;
+  let running = false, paused = false;
+  let lastFrameTs = 0;
+  let sessionSeed = 0;
+  let lastResult = null;
+
+  function poolForTier(n){ return TILE_TYPE_POOL.slice(0, n); }
+  function rulesetFor(m){ return m==='endless' ? ModeRuleset.Endless : m==='timed' ? ModeRuleset.Timed : ModeRuleset.Levels; }
+
+  function newSeed(){ return (Math.random()*0xFFFFFFFF) >>> 0; }
+
+  function beginCommon(m){
+    mode = m;
+    Board.setRuleset(rulesetFor(m));
+    sessionSeed = newSeed();
+    Board.setRng(mulberry32(sessionSeed));
+    score = 0; movesUsed = 0; elapsedSeconds = 0; clearedByType = {}; selected = null;
+    running = true; paused = false; lastFrameTs = 0;
+    document.getElementById('pauseOverlay').classList.remove('show');
+    // called from the mode-card onclick handlers — a real user gesture, the
+    // one place Web Audio requires for AudioContext creation to succeed.
+    // NOTE: `Music` is a top-level `const`, not a `window` property (only
+    // `var`/function declarations attach to `window` in a classic script),
+    // so `typeof Music !== 'undefined'` is the correct existence check —
+    // `window.Music` would silently always be undefined and skip this call.
+    if(typeof Music !== 'undefined') Music.ensureCtx();
+  }
+
+  function startEndless(){
+    beginCommon('endless');
+    tierCount = 4;
+    Board.init(poolForTier(4));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function startTimed(){
+    beginCommon('timed');
+    tierCount = 4;
+    Board.init(poolForTier(4));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function startLevel(n){
+    beginCommon('levels');
+    levelIndex = clamp(n, 1, LEVELS.length);
+    currentLevelDef = LEVELS[levelIndex-1];
+    tierCount = currentLevelDef.tileTypes;
+    Board.init(poolForTier(tierCount));
+    Nav.goTo('game');
+    persistSession();
+    updateHud();
+  }
+  function playAgain(){
+    if(mode === 'endless') startEndless();
+    else if(mode === 'timed') startTimed();
+    else if(mode === 'levels') startLevel(levelIndex);
+    else Nav.goTo('modeSelect');
+  }
+
+  function getState(){
+    return {
+      mode, score, movesUsed, elapsedSeconds,
+      timeRemaining: Math.max(0, TIMED_TOTAL_SECONDS - elapsedSeconds),
+      levelIndex, levelDef: currentLevelDef, clearedByType, tierCount,
+    };
+  }
+
+  function maybeUpdateTier(){
+    if(mode === 'levels') return; // Levels' tile count is fixed per-level by LEVELS[], not a live ramp
+    const progress = mode === 'endless' ? score : elapsedSeconds;
+    const result = Board.setProgress(progress);
+    if(result.changed){
+      tierCount = result.tierCount;
+      // drives Music's harmony-layer per GAME_7_PILLARS.md §6 — a new tile
+      // tier unlocking is a discrete structural event, not a per-frame value.
+      Events.emit('tier:up', { tierCount });
+    }
+  }
+
+  function computeScoreDelta(stats){
+    // Placeholder scoring formula — the pillars doc gives tier/objective
+    // THRESHOLDS but no literal scoring formula, so this is a judgment
+    // call sufficient to drive tier-scaling and objective logic and to be
+    // testable, not a claim of a tuned/final formula (flagged in report).
+    return stats.cleared*10 + stats.bombsCreated*50 + stats.bombsDetonated*100;
+  }
+
+  function checkEnd(){
+    const ruleset = rulesetFor(mode);
+    const state = getState();
+    if(ruleset.checkWin(state)){ endRun(true); return true; }
+    if(ruleset.checkLose(state)){ endRun(false); return true; }
+    return false;
+  }
+
+  function attemptSwap(a,b){
+    if(!running || paused) return false;
+    const result = Board.trySwap(a,b);
+    if(!result.valid) return false;
+    movesUsed++;
+    const stats = Board.resolveToFixedPoint();
+    score += computeScoreDelta(stats);
+    for(const t in stats.clearedByType) clearedByType[t] = (clearedByType[t]||0) + stats.clearedByType[t];
+    maybeUpdateTier();
+    updateHud();
+    persistSession();
+
+    // ---- Music event surface (GAME_7_PILLARS.md §6) ----
+    // Primary signal: the full per-move resolution stats, so Music can
+    // derive "chain heat" from stats.passes/stats.bombsDetonated — a
+    // multi-pass, multi-bomb resolution IS the chain-reaction climax
+    // moment, not something Music should have to re-detect on its own.
+    Events.emit('board:resolved', { stats });
+    // Distinguished sub-events, computed here rather than left for Music to
+    // guess from raw stats fields — a bomb can be CREATED and an existing
+    // bomb can DETONATE in the same resolution (a fresh match-4 forms while
+    // an unrelated bomb chains elsewhere), so these are independent flags,
+    // not a mutually-exclusive switch.
+    if(stats.bombsCreated > 0){
+      Events.emit('bomb:charge', { count: stats.bombsCreated, byKind: stats.bombsCreatedByKind, cols: stats.creationCols });
+    }
+    if(stats.bombsDetonated > 0){
+      Events.emit('bomb:detonate', { count: stats.bombsDetonated, byKind: stats.bombsDetonatedByKind, cols: stats.detonationCols, passes: stats.passes });
+    }
+    if(stats.bombsCreated === 0 && stats.bombsDetonated === 0 && stats.cleared > 0){
+      Events.emit('match:plain', { cleared: stats.cleared });
+    }
+
+    checkEnd();
+    return true;
+  }
+
+  function handlePointerCell(cell){
+    if(!running || paused || !cell) return;
+    if(!selected){ selected = cell; return; }
+    if(selected.col===cell.col && selected.row===cell.row){ selected = null; return; }
+    const adjacent = (Math.abs(selected.col-cell.col)+Math.abs(selected.row-cell.row)) === 1;
+    if(adjacent){
+      const a = selected; selected = null;
+      attemptSwap(a, cell);
+    } else {
+      selected = cell;
+    }
+  }
+
+  function togglePause(){
+    if(!running) return;
+    paused = !paused;
+    document.getElementById('pauseOverlay').classList.toggle('show', paused);
+  }
+  function endRunFromPause(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    endRun(false);
+  }
+  function quitToMenu(){
+    document.getElementById('pauseOverlay').classList.remove('show');
+    running = false;
+    Persist.clearSession();
+    Nav.goTo('modeSelect');
+    renderModeSelectScores();
+  }
+
+  function endRun(won){
+    running = false;
+    let isNewHigh = false;
+    if(mode === 'endless') isNewHigh = Persist.setHighScore('endless', score);
+    else if(mode === 'timed') isNewHigh = Persist.setHighScore('timedSurvival', score);
+    else if(mode === 'levels' && won) isNewHigh = Persist.setHighScore('levels', levelIndex);
+    Persist.clearSession();
+    lastResult = { mode, won, score, levelIndex, isNewHigh };
+    renderResults(lastResult);
+    Nav.goTo('results');
+    Events.emit('game:over', lastResult);
+  }
+
+  function persistSession(){
+    if(!running) return;
+    const movesOrTimeRemaining = mode === 'timed'
+      ? Math.max(0, TIMED_TOTAL_SECONDS - elapsedSeconds)
+      : (currentLevelDef ? currentLevelDef.moveCap - movesUsed : null);
+    Persist.saveSession({
+      mode, boardGrid: Board.serialize(), tileTierIndex: tierCount, score,
+      movesOrTimeRemaining, levelIndex: mode==='levels' ? levelIndex : null, rngSeed: sessionSeed,
+    });
+  }
+  function hasResumableSession(){ return !!Persist.data.session; }
+  function resumeSession(){
+    const s = Persist.data.session;
+    if(!s) return false;
+    mode = s.mode;
+    Board.setRuleset(rulesetFor(mode));
+    levelIndex = s.levelIndex || 1;
+    currentLevelDef = mode === 'levels' ? LEVELS[levelIndex-1] : null;
+    score = s.score || 0;
+    tierCount = s.tileTierIndex || 4;
+    if(mode === 'timed'){
+      elapsedSeconds = TIMED_TOTAL_SECONDS - (s.movesOrTimeRemaining!=null ? s.movesOrTimeRemaining : TIMED_TOTAL_SECONDS);
+      movesUsed = 0;
+    } else {
+      movesUsed = (mode==='levels' && currentLevelDef && s.movesOrTimeRemaining!=null)
+        ? Math.max(0, currentLevelDef.moveCap - s.movesOrTimeRemaining) : 0;
+      elapsedSeconds = 0;
+    }
+    clearedByType = {};
+    Board.setActiveTypes(poolForTier(tierCount));
+    Board.restoreGrid(s.boardGrid);
+    sessionSeed = s.rngSeed || newSeed();
+    Board.setRng(mulberry32(sessionSeed));
+    selected = null; running = true; paused = false; lastFrameTs = 0;
+    if(typeof Music !== 'undefined') Music.ensureCtx(); // also a real click handler (RESUME SAVED RUN)
+    Nav.goTo('game');
+    updateHud();
+    return true;
+  }
+
+  // ---- HUD / results / level-select rendering ----
+  function tierLabel(n){
+    const names = ['Fire/Frost/Verdant/Lightning','+ Void','+ Light'];
+    if(n<=4) return '4 tiles — '+names[0];
+    if(n===5) return '5 tiles — '+names[0]+' '+names[1];
+    return '6 tiles — '+names[0]+' '+names[1]+' '+names[2];
+  }
+  function updateHud(){
+    document.getElementById('scoreVal').textContent = String(score);
+    document.getElementById('tierVal').textContent = tierLabel(tierCount);
+    const budgetVal = document.getElementById('budgetVal');
+    const budgetLabel = document.getElementById('budgetLabel');
+    const objectiveEl = document.getElementById('objectiveVal');
+    if(mode === 'timed'){
+      const remaining = Math.max(0, Math.ceil(TIMED_TOTAL_SECONDS - elapsedSeconds));
+      budgetVal.textContent = remaining+'s';
+      budgetLabel.textContent = 'Time';
+      objectiveEl.textContent = '';
+    } else if(mode === 'levels' && currentLevelDef){
+      budgetVal.textContent = String(Math.max(0, currentLevelDef.moveCap - movesUsed));
+      budgetLabel.textContent = 'Moves';
+      objectiveEl.textContent = currentLevelDef.objectives.map(o => {
+        if(o.type==='reachScore') return 'Score ' + Math.min(score,o.target) + '/' + o.target;
+        return 'Clear ' + o.targetType + ' ' + Math.min((clearedByType[o.targetType]||0),o.target) + '/' + o.target;
+      }).join('  •  ');
+    } else {
+      budgetVal.textContent = '—';
+      budgetLabel.textContent = 'Endless';
+      objectiveEl.textContent = '';
+    }
+  }
+  function renderResults(result){
+    document.getElementById('resultsMode').textContent =
+      result.mode==='endless' ? 'Endless' : result.mode==='timed' ? 'Timed Survival' : 'Levels';
+    document.getElementById('resultsScore').textContent = String(result.score);
+    document.getElementById('resultsNewBest').style.display = result.isNewHigh ? 'block' : 'none';
+    const levelRow = document.getElementById('resultsLevelRow');
+    const outcomeRow = document.getElementById('resultsOutcomeRow');
+    if(result.mode === 'levels'){
+      levelRow.style.display = 'flex';
+      document.getElementById('resultsLevel').textContent = String(result.levelIndex);
+      outcomeRow.style.display = 'flex';
+      document.getElementById('resultsOutcome').textContent = result.won ? 'CLEARED' : 'MOVES EXHAUSTED';
+    } else {
+      levelRow.style.display = 'none';
+      outcomeRow.style.display = 'none';
+    }
+    document.getElementById('resultsTitle').textContent = result.mode==='levels' && result.won ? 'LEVEL CLEARED' : 'RUN ENDED';
+  }
+  function renderModeSelectScores(){
+    document.getElementById('bestEndless').textContent = String(Persist.data.highScores.endless||0);
+    document.getElementById('bestTimed').textContent = String(Persist.data.highScores.timedSurvival||0);
+    document.getElementById('bestLevels').textContent = String(Persist.data.highScores.levels||0);
+    document.getElementById('resumeBtn').style.display = hasResumableSession() ? 'block' : 'none';
+  }
+  // Levels lock/unlock/completion is derived from Persist.data.highScores.levels
+  // ("furthest level reached") rather than a separate per-level array — a
+  // deliberate judgment call to stay inside the §7 schema's explicit
+  // two-key discipline (adding a third top-level persisted field for a
+  // full per-level completion table would contradict that discipline; see
+  // build report).
+  function renderLevelSelect(){
+    const furthest = Persist.data.highScores.levels||0;
+    const grid = document.getElementById('levelGrid');
+    grid.innerHTML = '';
+    for(let i=1;i<=LEVELS.length;i++){
+      const completed = i <= furthest;
+      const unlocked = i <= furthest+1;
+      const tile = document.createElement('button');
+      tile.className = 'level-tile' + (!unlocked?' locked':'') + (completed?' completed':'') + (unlocked && !completed ? ' current-unlocked':'');
+      tile.setAttribute('aria-label', 'Level '+i+(completed?' (completed)':unlocked?' (unlocked)':' (locked)'));
+      tile.disabled = !unlocked;
+      tile.innerHTML = String(i) + (completed ? '<div class="level-star">✦</div>' : '');
+      if(unlocked) tile.onclick = () => startLevel(i);
+      grid.appendChild(tile);
+    }
+  }
+  Events.on('nav:change', (e) => { if(e.to==='levelSelect') renderLevelSelect(); if(e.to==='modeSelect') renderModeSelectScores(); });
+
+  // ---- frame loop (timed-mode clock only; grid state itself is always
+  // already-resolved synchronously by Board, per §7 — this loop exists
+  // for the timer and for redraw, not for any deferred game logic) ----
+  function tick(ts){
+    if(running && !paused){
+      if(!lastFrameTs) lastFrameTs = ts;
+      const dt = (ts - lastFrameTs)/1000;
+      lastFrameTs = ts;
+      // elapsedSeconds now accrues for EVERY running mode, not just Timed —
+      // Timed's own checkEnd/maybeUpdateTier/updateHud calls below are
+      // unchanged (identical to before this pass), but Endless previously
+      // never advanced elapsedSeconds at all, leaving Music with no "how
+      // long has this run been going" signal for its own urgency mapping
+      // (GAME_7_PILLARS.md §6 — "elapsed-run-time-vs-current-tier in
+      // Endless"). Levels doesn't use elapsedSeconds for anything gameplay-
+      // facing (its lose condition is move-budget only), so accruing it
+      // there too is inert — extra unused data, not a behavior change.
+      elapsedSeconds += dt;
+      if(mode==='timed'){
+        maybeUpdateTier();
+        updateHud();
+        checkEnd();
+      }
+    } else {
+      lastFrameTs = 0;
+    }
+    Render.frame();
+    requestAnimationFrame(tick);
+  }
+
+  return {
+    startEndless, startTimed, startLevel, playAgain,
+    attemptSwap, handlePointerCell, togglePause, endRunFromPause, quitToMenu,
+    resumeSession, hasResumableSession, persistSession,
+    getState, getSelected: () => selected, isRunning: () => running, isPaused: () => paused,
+    renderModeSelectScores, renderLevelSelect, tick,
+    _test: {
+      state: () => Object.assign({ running, paused, selected }, getState()),
+      forceMode: (m) => { beginCommon(m); },
+    },
+  };
+})();
+
+/* =====================================================================
+   MUSIC — the mood engine, built in from this pass per GAME_7_PILLARS.md
+   §6/STUDIO_BIBLE.md §14 (not deferred to a later "still sounds flat"
+   identity pass). Scoped down per the adaptive-game-audio skill's own
+   "how much do you actually need" guidance: this is closer to Sigil
+   Chain's reduced shape (one master -> distortion -> compressor ->
+   destination, a musicGain/sfxGain split, one continuous drone, no step
+   sequencer) than to Iridescent Cosmology's full trance production chain
+   — Runeshatter is a puzzle game whose audio need is a mood-reactive drone
+   plus a real stinger set, not a continuous produced beat.
+
+   Three live inputs into ONE drone/filter/distortion graph, exactly per
+   §6:
+     - tile-tier count (4/5/6)  -> harmonic color (root+fifth baseline,
+       +b7 at tier 5, +tritone at tier 6) + filter brightness. Structural/
+       discrete, so tier changes are ramped ONCE on the 'tier:up' event
+       (rampGain over a fixed duration) — NOT re-ramped every frame.
+     - chain "heat" (0..1, incremented per bomb-chain link/detonation on
+       'bomb:detonate', decayed a fixed fraction every animation frame) ->
+       filter/pulse/distortion climax driver.
+     - mode-specific urgency, Sigil Chain's exact `(10-remaining)/10`
+       idiom, remaining = time (Timed), moves (Levels), or an elapsed-vs-
+       tier squared-easing build mirroring Iridescent Cosmology's own
+       elapsed-time escalation (Endless, which has no natural "remaining").
+
+   heat and urgency are recomputed and SET DIRECTLY every animation frame
+   (droneTick) — never re-ramped on top of themselves, per the adaptive-
+   game-audio skill's one hard rule ("dying sticks the music"). Tier
+   changes and one-shot stingers (bell/detonation/fanfare) are the only
+   things that ever call rampGain or schedule an envelope.
+===================================================================== */
+const Music = (function(){
+  let ctx, master, distortion, compressor, musicGain, sfxGain, reverb, reverbSend;
+  let muted = false, started = false;
+  let drone = null, droneFilter = null, droneVoices = null;
+  let heat = 0;          // decaying chain-heat driver, 0..1
+  let lastUrgency = 0;   // exposed for verification only
+  let lastDistortionAmount = 0;
+  const HEAT_DECAY_PER_SEC = 0.9; // ~1.8s to decay from full heat to silence
+
+  // ---- graph setup — every primitive below is copied verbatim from the
+  // proven reference implementations (sigilchain.html/wardfall.html/
+  // iridescentcosmology.html), cited at each site; only the MAPPINGS are
+  // new, per the skill's "don't invent a new synthesis approach" rule. ----
+
+  // standard soft-clip waveshaper curve, amount 0 = transparent — verbatim
+  // from iridescentcosmology.html:5113-5118 / sigilchain.html:1303-1308.
+  function setDistortionAmount(amount){
+    lastDistortionAmount = amount;
+    const n = 256, curve = new Float32Array(n), k = amount*40;
+    for(let i=0;i<n;i++){ const x = i/(n-1)*2-1; curve[i] = (1+k)*x/(1+k*Math.abs(x)); }
+    distortion.curve = curve;
+  }
+
+  function ensureCtx(){
+    if(ctx) return;
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value = muted?0:0.5;
+    distortion = ctx.createWaveShaper(); setDistortionAmount(0);
+    compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value=-20; compressor.knee.value=12; compressor.ratio.value=4;
+    compressor.attack.value=0.003; compressor.release.value=0.25;
+    master.connect(distortion); distortion.connect(compressor); compressor.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = (Persist.data.settings && Persist.data.settings.musicVol) || 0.8; musicGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = (Persist.data.settings && Persist.data.settings.sfxVol) || 0.8; sfxGain.connect(master);
+    // synthesized convolution reverb — no audio file, a short burst of
+    // exponentially-decaying stereo noise, generated once here. Buffer-
+    // generation loop copied verbatim from sigilchain.html:1320-1326 /
+    // iridescentcosmology.html:5091-5100 per the skill's explicit "copy
+    // the buffer-generation loop verbatim" instruction.
+    reverb = ctx.createConvolver();
+    const irLen = Math.floor(ctx.sampleRate*0.9);
+    const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
+    for(let ch=0; ch<2; ch++){ const d=irBuf.getChannelData(ch); for(let i=0;i<irLen;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/irLen,2.2); }
+    reverb.buffer = irBuf;
+    reverbSend = ctx.createGain(); reverbSend.gain.value = 0.35;
+    reverb.connect(reverbSend); reverbSend.connect(master);
+    started = true;
+    buildDrone();
+  }
+
+  // every gain ramp in this module goes through this — cancel-then-set-
+  // then-ramp, verbatim idiom from iridescentcosmology.html:5129-5134 /
+  // sigilchain.html:1384-1389. This is the ONLY function that schedules a
+  // ramp; droneTick's per-frame writes below always use direct assignment.
+  function rampGain(param, target, seconds){
+    const t = ctx.currentTime;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(target, t+seconds);
+  }
+
+  // shared two-oscillator sine bell — verbatim idiom from
+  // sigilchain.html:1390-1406 / wardfall.html:1586-1602. Every stinger in
+  // this module (plain-match clink, area-bomb chord, tier-up fanfare)
+  // composes THIS one primitive, not a new synthesis voice per moment.
+  function bell(freq, dur, vol){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol||0.22, t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+(dur||1.0));
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=freq;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=freq*2.01;
+    const g2 = ctx.createGain(); g2.gain.value=0.28;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    const wet = ctx.createGain(); wet.gain.value=0.45;
+    g.connect(wet); wet.connect(reverb);
+    o1.start(t); o2.start(t);
+    o1.stop(t+(dur||1.0)+0.05); o2.stop(t+(dur||1.0)+0.05);
+  }
+
+  // filtered-noise-burst helper — same pattern as playHat/playClap in
+  // iridescentcosmology.html:5273-5316 (exponential-decay envelope baked
+  // straight into the buffer, then shaped further by a biquad downstream).
+  function makeNoiseBuffer(lenSeconds, decayExp){
+    const len = Math.max(1, Math.floor(ctx.sampleRate*lenSeconds));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/len, decayExp);
+    return buf;
+  }
+
+  // reach-for-genuinely-unused-technique #1 (capability audit, §6 last
+  // paragraph): spatial PannerNode mapped to grid column, replacing the
+  // static StereoPannerNode width trick every other cue in this portfolio
+  // uses. A chain sweeping across the board now actually pans with it.
+  function makeColumnPanner(col){
+    const p = ctx.createPanner();
+    p.panningModel = 'equalpower';
+    const x = ((col==null ? (BOARD_SIZE-1)/2 : col) / (BOARD_SIZE-1)) * 2 - 1; // -1..1 across the 8 columns
+    if(p.positionX){ p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = 0; }
+    else if(p.setPosition){ p.setPosition(x, 0, 0); } // older-engine fallback, same effective position
+    return p;
+  }
+
+  // reach-for-genuinely-unused-technique #2: setValueCurveAtTime for a
+  // non-monotonic crack-rebound-decay envelope — a sharp crack, a small
+  // rebound back up, then settle, which a plain exponential decay can't
+  // express. One-shot automation (matches the skill's rule: a fixed-
+  // duration shape gets ONE scheduled call, never touched again).
+  const SHATTER_CURVE_SHAPE = [0, 1, 0.32, 0.6, 0.16, 0.28, 0.05, 0.0001];
+  function applyShatterEnvelope(gainParam, t, dur, peak){
+    const curve = new Float32Array(SHATTER_CURVE_SHAPE.length);
+    for(let i=0;i<curve.length;i++) curve[i] = Math.max(0.00001, SHATTER_CURVE_SHAPE[i]*peak);
+    gainParam.cancelScheduledValues(t);
+    gainParam.setValueCurveAtTime(curve, t, dur);
+  }
+
+  // ---- drone — the continuous mood engine ----
+  // Root chosen distinct from Sigil Chain's A2 (110Hz) and Wardfall's 60Hz
+  // pair, giving Runeshatter its own low end. Interval math: root+fifth is
+  // the audible tier-4 baseline; b7 (minor 7th) layers in at tier 5, the
+  // tritone at tier 6 — each an added "color tone" per §6, not a key
+  // change, so the drone gets more dissonant/arcane rather than modulating.
+  const DRONE_ROOT = 130.81; // C3
+  function makeDroneVoice(freq, baseGain, pan){
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+    const g = ctx.createGain(); g.gain.value = 0; // brought in per-tier by applyTierToDrone, never at creation time
+    const p = ctx.createStereoPanner(); p.pan.value = pan; // per-voice stereo width, same technique as sigilchain.html:1348-1354
+    o.connect(g); g.connect(p); o.start();
+    return { osc:o, gain:g, pan:p, baseGain };
+  }
+  function buildDrone(){
+    const g = ctx.createGain(); g.gain.value = 0;
+    droneFilter = ctx.createBiquadFilter(); droneFilter.type = 'lowpass'; droneFilter.frequency.value = 260; droneFilter.Q.value = 0.7;
+    g.connect(droneFilter); droneFilter.connect(musicGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.22; droneFilter.connect(wet); wet.connect(reverb);
+    droneVoices = {
+      root:    makeDroneVoice(DRONE_ROOT,                       0.6,  -0.22),
+      fifth:   makeDroneVoice(DRONE_ROOT*1.5,                   0.4,   0.22),
+      b7:      makeDroneVoice(DRONE_ROOT*Math.pow(2,10/12),     0.30, -0.34),
+      tritone: makeDroneVoice(DRONE_ROOT*Math.pow(2,6/12),      0.26,  0.34),
+    };
+    for(const v of Object.values(droneVoices)) v.pan.connect(g);
+    drone = { gain: g };
+  }
+  // tier changes are discrete/rare — a ONE-SHOT ramp per voice, not a
+  // per-frame write (the exact distinction the adaptive-game-audio skill
+  // names as the single most common real bug in this codebase's history).
+  // snap=true is used on run start/resume to set the correct tier
+  // immediately instead of audibly ramping up from a tier-4 baseline.
+  function applyTierToDrone(tierCount, snap){
+    if(!droneVoices) return;
+    const dur = snap ? 0.05 : 1.3;
+    rampGain(droneVoices.b7.gain.gain,      tierCount>=5 ? droneVoices.b7.baseGain      : 0, dur);
+    rampGain(droneVoices.tritone.gain.gain, tierCount>=6 ? droneVoices.tritone.baseGain : 0, dur);
+    if(snap){
+      rampGain(droneVoices.root.gain.gain,  droneVoices.root.baseGain,  0.05);
+      rampGain(droneVoices.fifth.gain.gain, droneVoices.fifth.baseGain, 0.05);
+    }
+  }
+
+  function clamp01(v){ return v<0?0:v>1?1:v; }
+
+  // mode-specific urgency — Sigil Chain's exact `(10-remaining)/10` idiom
+  // (sigilchain.html:1370), reused verbatim for Timed/Levels; Endless has
+  // no natural "remaining" counter (per §6) so it instead mirrors
+  // iridescentcosmology.html:5533-5539's own elapsed-time squared-easing
+  // build. JUDGMENT CALL (flagged in build report): the "marker" (time to
+  // reach max urgency) shortens as tierCount rises, which is this game's
+  // own reading of "elapsed-run-time-VS-CURRENT-TIER" — Iridescent
+  // Cosmology's marker is a fixed wall-clock point, Runeshatter's is
+  // tier-relative since Endless has no boss/stage marker to build toward.
+  function computeUrgency(st){
+    if(st.mode === 'timed'){
+      return st.timeRemaining <= 10 ? (10-st.timeRemaining)/10 : 0;
+    }
+    if(st.mode === 'levels' && st.levelDef){
+      const remaining = st.levelDef.moveCap - st.movesUsed;
+      return remaining <= 10 ? clamp01((10-remaining)/10) : 0;
+    }
+    if(st.mode === 'endless'){
+      const marker = Math.max(30, 180 - (st.tierCount-4)*45);
+      const progress = clamp01(st.elapsedSeconds/marker);
+      return progress*progress;
+    }
+    return 0;
+  }
+
+  // per-frame mood tick — heat decays and urgency/tier are recomputed and
+  // SET DIRECTLY every frame (never ramped here — see module header).
+  function droneTick(){
+    requestAnimationFrame(droneTick);
+    if(!ctx || !drone) return;
+    const dtSec = 1/60; // rAF-frame approximation, matches this codebase's existing per-frame decay idioms (no separate timestamp plumbing needed for a decay this slow)
+    heat *= Math.pow(1-HEAT_DECAY_PER_SEC, dtSec);
+    if(heat < 0.002) heat = 0;
+    // `Game` is a top-level `const` defined earlier in this same script, not
+    // a `window` property — it's already in scope by the time this function
+    // is even reachable (droneTick's own requestAnimationFrame(droneTick)
+    // call above only fires after the whole script, including `Game`'s own
+    // definition, has finished executing once), so no existence guard is
+    // needed here, matching sigilchain.html/wardfall.html's own droneTick.
+    if(!Game.isRunning() || Game.isPaused()){
+      drone.gain.gain.value = 0;
+      setDistortionAmount(0);
+      return;
+    }
+    const st = Game.getState();
+    const urgency = computeUrgency(st);
+    lastUrgency = urgency;
+    const tierBrightness = clamp01((st.tierCount-4)/2); // 0 at 4 tiles, 1 at 6 tiles
+
+    const pulseRate = 2 + heat*7; // heat also speeds up the pulse — the "something big is happening" read
+    const pulse = heat>0.02 ? (0.5+0.5*Math.sin(ctx.currentTime*Math.PI*2*pulseRate)) : 0;
+
+    drone.gain.gain.value = 0.045 + tierBrightness*0.02 + heat*0.15*(0.55+0.45*pulse) + urgency*0.05;
+    droneFilter.frequency.value = 260 + tierBrightness*520 + heat*1450 + urgency*420;
+    droneFilter.Q.value = 0.7 + urgency*2.6; // urgency's own fingerprint — resonance, not just brightness
+    setDistortionAmount(clamp01(heat*0.42 + urgency*0.12));
+  }
+  requestAnimationFrame(droneTick);
+
+  // ---- new synthesized SFX (GAME_7_PILLARS.md §6) ----
+
+  // bomb-charge — rising ~200->900Hz sweep through a sweeping bandpass,
+  // layered filtered noise underneath for texture, panned to the column
+  // the bomb actually formed in.
+  function bombChargeSweep(col){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const dur = 0.32;
+    const panner = makeColumnPanner(col); panner.connect(sfxGain);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=6;
+    bp.frequency.setValueAtTime(200, t);
+    bp.frequency.exponentialRampToValueAtTime(900, t+dur);
+    const o = ctx.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(200, t);
+    o.frequency.exponentialRampToValueAtTime(900, t+dur);
+    o.connect(bp); bp.connect(g);
+
+    const nbuf = makeNoiseBuffer(dur, 1.4);
+    const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+    const nbp = ctx.createBiquadFilter(); nbp.type='bandpass'; nbp.Q.value=4;
+    nbp.frequency.setValueAtTime(220, t);
+    nbp.frequency.exponentialRampToValueAtTime(950, t+dur);
+    const ng = ctx.createGain(); ng.gain.value = 0.16;
+    nsrc.connect(nbp); nbp.connect(ng);
+
+    g.connect(panner); ng.connect(panner);
+    o.start(t); o.stop(t+dur+0.03);
+    nsrc.start(t);
+  }
+
+  // detonation — line bombs: noise burst through a fast-closing lowpass
+  // envelope (bright crack collapsing to a dull thud) + a pitch-swept sine
+  // thump 150->50Hz. Area bombs: a wider/longer burst + a 3-note bell
+  // chord through reverb (reuses bell()'s own triad idiom, sigilchain.html
+  // circleChord). Both route their noise burst through the shatter-impact
+  // setValueCurveAtTime envelope and a column-mapped spatial PannerNode.
+  function playDetonation(kind, col){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const panner = makeColumnPanner(col); panner.connect(sfxGain);
+    const wet = ctx.createGain(); wet.gain.value = kind==='area' ? 0.5 : 0.3;
+    panner.connect(wet); wet.connect(reverb);
+
+    if(kind === 'line'){
+      const dur = 0.42;
+      const nbuf = makeNoiseBuffer(dur, 2.2);
+      const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+      const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.Q.value=0.9;
+      lp.frequency.setValueAtTime(5200, t);
+      lp.frequency.exponentialRampToValueAtTime(180, t+dur);
+      const ng = ctx.createGain();
+      applyShatterEnvelope(ng.gain, t, dur, 0.32);
+      nsrc.connect(lp); lp.connect(ng); ng.connect(panner);
+      nsrc.start(t);
+
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.34, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t+0.28);
+      const o = ctx.createOscillator(); o.type='sine';
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(50, t+0.22);
+      o.connect(og); og.connect(panner);
+      o.start(t); o.stop(t+0.3);
+    } else {
+      const dur = 0.6;
+      const nbuf = makeNoiseBuffer(dur, 1.5);
+      const nsrc = ctx.createBufferSource(); nsrc.buffer = nbuf;
+      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400; bp.Q.value=0.7;
+      const ng = ctx.createGain();
+      applyShatterEnvelope(ng.gain, t, dur, 0.34);
+      nsrc.connect(bp); bp.connect(ng); ng.connect(panner);
+      nsrc.start(t);
+
+      const root = 220;
+      bell(root, 0.9, 0.2);
+      bell(root*Math.pow(2,4/12), 0.9, 0.17);
+      bell(root*Math.pow(2,7/12), 0.9, 0.15);
+    }
+  }
+
+  // chain escalation — extends Wardfall's comboBell step-up idiom
+  // (wardfall.html:1616-1621: pitch climbs one step per streak length) per
+  // detonation within a chain window. Reach-for-genuinely-unused-technique
+  // #3: a 'notch' BiquadFilterNode (zero uses anywhere in this portfolio
+  // before now, per §6's capability audit) swept upward through the tone
+  // as it decays — a "zap" color a plain bell can't produce. Distortion is
+  // deliberately NOT set here: it's already driven continuously from the
+  // shared `heat` variable in droneTick, and this cue shares the same
+  // master bus, so it inherits the same climax coloration automatically.
+  function chainEscalationTick(step){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const cappedStep = Math.min(step, 10);
+    const freq = 260 * Math.pow(2, cappedStep/12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.14 + cappedStep*0.012, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.4);
+    const notch = ctx.createBiquadFilter();
+    notch.type = 'notch'; notch.Q.value = 9;
+    notch.frequency.setValueAtTime(freq*0.5, t);
+    notch.frequency.exponentialRampToValueAtTime(freq*3.2, t+0.36);
+    const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value=freq;
+    o.connect(notch); notch.connect(g); g.connect(sfxGain);
+    const wet = ctx.createGain(); wet.gain.value = 0.3; g.connect(wet); wet.connect(reverb);
+    o.start(t); o.stop(t+0.42);
+  }
+
+  // tier-up fanfare — Runeshatter's OWN 4-note ascending motif (root,
+  // major 2nd, major 3rd, perfect 5th) landing on a bright open fifth-
+  // above-the-octave chord, an original signature per §6 ("not a reused
+  // motif from another game") — distinct from Iridescent Cosmology's halo
+  // motif and Sigil Chain's circleChord triad in both interval choice and
+  // rhythm. Composed from repeated bell() calls, same idiom as Wonderland's
+  // playVictoryPhrase()/sigilchain's circleChord (a moment is a composed
+  // sequence of the one shared primitive, not a new synthesis voice).
+  function tierUpFanfare(tierCount){
+    if(!ctx || muted) return;
+    const root = 220 * Math.pow(2, (tierCount-4)/2); // each tier-up lands a whole step higher than the last, so tier 5 and tier 6 are audibly distinct events
+    const steps = [1, 9/8, 5/4, 3/2];
+    steps.forEach((ratio, i) => {
+      setTimeout(() => { if(!muted && ctx) bell(root*ratio, 0.34, 0.16+i*0.02); }, i*110);
+    });
+    setTimeout(() => {
+      if(muted || !ctx) return;
+      bell(root*2, 0.9, 0.24);
+      bell(root*3, 0.7, 0.16);
+    }, steps.length*110 + 40);
+  }
+
+  // ordinary (non-bomb) match — the game's baseline feedback moment, a
+  // light shard-clink using the shared bell() primitive, pitch nudged up
+  // slightly with cleared-tile count so a bigger plain match still reads
+  // as marginally brighter than a minimum 3-match.
+  function plainMatchClink(cleared){
+    if(!ctx || muted) return;
+    const freq = 480 + Math.min(cleared||3, 12)*14;
+    bell(freq, 0.26, 0.11);
+  }
+
+  function toggleMute(){
+    muted = !muted;
+    if(master) rampGain(master.gain, muted?0:0.5, 0.15);
+    return muted;
+  }
+  function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
+  function setSfxVolume(v){ if(sfxGain) sfxGain.gain.value = v; }
+
+  // ---- event wiring ----
+  Events.on('tier:up', (p) => { applyTierToDrone(p.tierCount, false); tierUpFanfare(p.tierCount); });
+  Events.on('nav:change', (e) => {
+    // a fresh run start or a resumed session both land on 'game' — snap
+    // the drone's harmonic layer to the CURRENT tier immediately (a
+    // resumed tier-6 session shouldn't audibly ramp up from a tier-4
+    // baseline), and clear any leftover heat from a previous run.
+    if(e.to === 'game' && ctx){
+      heat = 0;
+      applyTierToDrone(Game.getState().tierCount, true);
+    }
+  });
+  Events.on('bomb:charge', (p) => {
+    const cols = p.cols || [];
+    for(let i=0;i<(p.count||1);i++){
+      const col = cols[i];
+      setTimeout(() => { if(!muted) bombChargeSweep(col); }, i*70);
+    }
+  });
+  Events.on('bomb:detonate', (p) => {
+    heat = clamp01(heat + 0.22*(p.count||1));
+    const kinds = p.byKind || {};
+    const cols = p.cols || [];
+    let idx = 0;
+    for(let i=0;i<(kinds.line||0);i++){ const c=cols[idx]; const d=idx; setTimeout(()=>{ if(!muted) playDetonation('line', c); }, d*90); idx++; }
+    for(let i=0;i<(kinds.area||0);i++){ const c=cols[idx]; const d=idx; setTimeout(()=>{ if(!muted) playDetonation('area', c); }, d*90); idx++; }
+    // chain-escalation step-up cue, once per detonation beyond the first —
+    // staggered ~80-120ms apart, mirroring the visual "flash-primes for one
+    // beat before its own detonation fires ~80-120ms later" cadence from
+    // GAME_7_PILLARS.md §5, applied here to audio instead of the sprite.
+    for(let s=1;s<(p.count||1);s++){
+      const step = s;
+      setTimeout(() => { if(!muted) chainEscalationTick(step); }, step*100);
+    }
+  });
+  Events.on('match:plain', (p) => plainMatchClink(p.cleared));
+
+  return {
+    ensureCtx, toggleMute, setMusicVolume, setSfxVolume,
+    _test: {
+      isMuted: () => muted,
+      isStarted: () => started,
+      droneGain: () => drone ? drone.gain.gain.value : null,
+      droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+      droneFilterQ: () => droneFilter ? droneFilter.Q.value : null,
+      droneVoiceGain: (name) => droneVoices && droneVoices[name] ? droneVoices[name].gain.gain.value : null,
+      musicGainValue: () => musicGain ? musicGain.gain.value : null,
+      sfxGainValue: () => sfxGain ? sfxGain.gain.value : null,
+      masterGainValue: () => master ? master.gain.value : null,
+      distortionAmount: () => lastDistortionAmount,
+      heatValue: () => heat,
+      urgencyValue: () => lastUrgency,
+    },
+  };
+})();
+
+/* =====================================================================
+   VISUAL IDENTITY — real art pass per GAME_7_PILLARS.md §5, replacing the
+   v0.2.0 gray-box render. Third rune/orb tile-clearing game in this
+   portfolio (after Sigil Chain's drag-chain runes, Wardfall's click-pop
+   orbs) — distinctness from both is a checkable requirement, not taste:
+
+     - Shape idiom: faceted-gem base (this studio's proven shadeHex +
+       alternating-facet technique, `shadeHex`/`handVerts` copied verbatim
+       from sigilchain.html:437-455/493-494 per the faceted-gem-rendering
+       skill's "reuse the technique, hand-author the shape" rule) with a
+       RUNE-LINE OVERLAY stroked on top — a third silhouette language,
+       distinct from Sigil Chain's single silhouette and Wardfall's
+       orb+pip. Every element below is its own hand-authored asymmetric
+       {a,m} vertex list, never a Math.cos(i*2π/sides) generator — the
+       exact mistake this skill documents shipping twice already.
+     - Motion signature: idle-pulse (slow breathing glow) on every element
+       EXCEPT lightning, which snap-flickers instead — a deliberate, named
+       exception (GAME_7_PILLARS.md §5), not an inconsistency.
+     - Particle signature: directional shatter-shards along the real match
+       axis (from Board's timeline, GAME_7_PILLARS.md §7/§5) for plain
+       clears — distinct from Sigil Chain's radial flares and Wardfall's
+       ring shockwaves. Area-bomb detonation reuses Wardfall's own
+       ring+iris shockwave verbatim (wardfall.html:1506-1516) per §5's own
+       instruction ("reuse it rather than reinvent it"); line-bomb
+       detonation adapts it into a linear sweep along the blast axis.
+       Bomb-chain detonations flash-prime one beat (~90ms) before firing,
+       via Board's `timeline` chainOrder/pass fields — state resolves
+       instantly (§7); only playback is staggered here.
+     - Reach techniques (capability-audit gaps, GAME_7_PILLARS.md §5, zero
+       uses anywhere in this portfolio before this pass): ctx.clip() for a
+       bomb-creation mana-drain reveal wipe; ctx.createPattern() for the
+       board backdrop (replacing the v0.2.0 flat rgba fill); ctx.
+       createConicGradient() used INSIDE real gameplay (previously only in
+       portal/menu chrome) for the area-bomb's mana-surge detonation sweep.
+
+   Verification requirement per §5 is NOT satisfied by this commit alone —
+   a real screenshot/video comparison against Sigil Chain's and Wardfall's
+   tiles at actual render size still needs a human/producer look before
+   this is called done; see the changelog line and build report.
+===================================================================== */
+const TILE_COLORS = {
+  fire: '#e8542a', frost: '#2ec4d6', verdant: '#4caf6b',
+  lightning: '#c9e8ff', void: '#140a1f', light: '#f0eaff',
+};
+// shared "rune-forged" dark base every bomb glyph sits on, regardless of
+// element — the point is "this is a primed explosive, not a plain tile of
+// this color," so the base must NOT be the element's own hue (that's what
+// a plain tile already looks like). Echoes wardfall.html's BOMB_OBSIDIAN
+// idiom (dark base + colored ember accent) but the accent is the tile's
+// OWN element instead of a fixed ember hue, so a bomb still visibly
+// belongs to the element that created it.
+const BOMB_BASE = '#1c1030';
+
+function shadeHex(hex, dLight, dSat){ // verbatim, sigilchain.html:437-455
+  dSat = dSat || 0;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max+min)/2;
+  if(max===min){ h=s=0; }
+  else {
+    const d = max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d+(g<b?6:0); break;
+      case g: h=(b-r)/d+2; break;
+      case b: h=(r-g)/d+4; break;
+    }
+    h/=6;
+  }
+  h*=360; s = clamp(s*100+dSat,0,100); l = clamp(l*100+dLight,0,100);
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+}
+function handVerts(cx, cy, r, defs){ // verbatim, sigilchain.html:493-494
+  return defs.map(d => ({ x:cx+Math.cos(d.a*Math.PI*2)*r*d.m, y:cy+Math.sin(d.a*Math.PI*2)*r*d.m }));
+}
+
+// Hand-authored asymmetric silhouettes — same {a:angle-in-turns, m:radius
+// multiplier} data shape as RAMIEL_VERTS/RUNE_VERT_DEFS/BOMB_VERTS. Every
+// list below was picked by hand for a distinct outline, not generated.
+const ELEMENT_VERTS = {
+  fire: [ // multi-spiked jagged crown — busier than Sigil Chain's single
+          // pinched tongue, since fire sharing a hue family across games is
+          // a deliberate feature (§5) but the SHAPE still needs to differ.
+    {a:0.00,m:1.25},{a:0.10,m:0.48},{a:0.22,m:1.05},{a:0.34,m:0.42},
+    {a:0.48,m:1.20},{a:0.60,m:0.46},{a:0.74,m:0.95},{a:0.88,m:0.60},
+  ],
+  frost: [ // crystalline hexagonal facets, gently irregular (never a
+           // uniform ngon per the skill's own rule)
+    {a:0.02,m:1.00},{a:0.17,m:0.85},{a:0.33,m:1.08},{a:0.50,m:0.90},
+    {a:0.66,m:1.05},{a:0.83,m:0.88},
+  ],
+  verdant: [ // organic curved / leaf-notch, no sharp symmetric points
+    {a:0.00,m:1.15},{a:0.16,m:0.75},{a:0.30,m:1.00},{a:0.46,m:0.60},
+    {a:0.58,m:0.95},{a:0.72,m:0.70},{a:0.88,m:1.05},
+  ],
+  lightning: [ // angular zigzag — pairs with the no-idle-pulse motion
+               // exception below to read as genuinely discontinuous
+    {a:0.00,m:1.30},{a:0.08,m:0.40},{a:0.20,m:0.95},{a:0.30,m:0.35},
+    {a:0.45,m:1.15},{a:0.58,m:0.45},{a:0.72,m:0.85},{a:0.84,m:0.38},
+  ],
+  void: [ // inward-notched near-black body, one deep bite — echoes
+          // Wardfall's STONE_VERTS "chunk with a crack bitten out"
+          // grammar on purpose (hazard-adjacent concept), hue kept off
+          // the purple family entirely (see the cyan rim below) to avoid
+          // a third #b98aff-adjacent collision in this portfolio.
+    {a:0.00,m:1.05},{a:0.15,m:0.95},{a:0.30,m:1.08},{a:0.44,m:0.35},
+    {a:0.58,m:0.98},{a:0.72,m:0.90},{a:0.88,m:1.02},
+  ],
+  light: [ // radiant starburst, busiest silhouette (capstone element) —
+           // outward ray strokes beyond this outline are added separately
+    {a:0.00,m:1.20},{a:0.09,m:0.50},{a:0.20,m:1.10},{a:0.29,m:0.48},
+    {a:0.40,m:1.15},{a:0.50,m:0.46},{a:0.62,m:1.10},{a:0.71,m:0.50},
+    {a:0.83,m:1.05},{a:0.92,m:0.52},
+  ],
+};
+const LINE_BOMB_VERTS = [ // elongated double-point glyph along one axis,
+  // idle-rotated slowly to read as "primed" — distinct from every tile
+  // silhouette and from the area bomb's near-round rune-circle.
+  {a:0.00,m:1.50},{a:0.10,m:0.45},{a:0.25,m:0.70},
+  {a:0.50,m:1.50},{a:0.75,m:0.70},{a:0.90,m:0.45},
+];
+const AREA_BOMB_VERTS = [ // scalloped rune-circle — a magic-circle idiom
+  // reads as intentionally geometric rather than "lazy ngon," backed by
+  // orbiting satellite shards drawn separately for further distinction.
+  {a:0.02,m:1.02},{a:0.14,m:0.82},{a:0.27,m:1.05},{a:0.39,m:0.80},
+  {a:0.52,m:1.00},{a:0.64,m:0.84},{a:0.78,m:1.03},{a:0.90,m:0.81},
+];
+
+// rune sigil line-drawing overlay per element — the SECOND half of the
+// "paired-glyph" idiom (gem base + rune line), stroked in a bright
+// translucent tint over the facet-shaded base. Deliberately simple line
+// art, not another filled shape, so it reads as an inscription ON the
+// gem rather than a second silhouette competing with the first.
+const RUNE_OVERLAYS = {
+  fire: (c2,cx,cy,r) => {
+    c2.beginPath();
+    c2.moveTo(cx, cy-r*0.55); c2.lineTo(cx-r*0.22, cy+r*0.15); c2.lineTo(cx, cy+r*0.02); c2.lineTo(cx+r*0.22, cy+r*0.15);
+    c2.closePath();
+  },
+  frost: (c2,cx,cy,r) => {
+    for(let i=0;i<3;i++){
+      const ang = i*Math.PI/3;
+      c2.moveTo(cx-Math.cos(ang)*r*0.45, cy-Math.sin(ang)*r*0.45);
+      c2.lineTo(cx+Math.cos(ang)*r*0.45, cy+Math.sin(ang)*r*0.45);
+    }
+  },
+  verdant: (c2,cx,cy,r) => {
+    c2.moveTo(cx, cy+r*0.5);
+    c2.quadraticCurveTo(cx-r*0.35, cy, cx, cy-r*0.5);
+    c2.quadraticCurveTo(cx+r*0.15, cy, cx, cy+r*0.5);
+  },
+  lightning: (c2,cx,cy,r) => {
+    c2.moveTo(cx-r*0.12, cy-r*0.5); c2.lineTo(cx+r*0.14, cy-r*0.05);
+    c2.lineTo(cx-r*0.06, cy+r*0.05); c2.lineTo(cx+r*0.12, cy+r*0.5);
+  },
+  void: (c2,cx,cy,r) => {
+    c2.arc(cx, cy, r*0.4, 0.35*Math.PI*2, 0.85*Math.PI*2);
+  },
+  light: (c2,cx,cy,r) => {
+    c2.moveTo(cx-r*0.4, cy); c2.lineTo(cx+r*0.4, cy);
+    c2.moveTo(cx, cy-r*0.4); c2.lineTo(cx, cy+r*0.4);
+  },
+};
+
+const SPRITE_SIZE = 72;
+function buildFacetSprite(verts, baseColor, strokeColor, overlayFn, extra){
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.38;
+  const pts = handVerts(cx, cy, r, verts);
+  c2.shadowColor = baseColor; c2.shadowBlur = 12;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.fillStyle = baseColor; c2.fill();
+  c2.shadowBlur = 0;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const lit = i % 2 === 0;
+    c2.fillStyle = shadeHex(baseColor, lit ? 16 : -14, lit ? 8 : -6);
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(a.x,a.y); c2.lineTo(b.x,b.y); c2.closePath(); c2.fill();
+  }
+  c2.fillStyle = 'rgba(255,255,255,0.35)';
+  c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(pts[0].x,pts[0].y); c2.lineTo(pts[pts.length-1].x,pts[pts.length-1].y); c2.closePath(); c2.fill();
+  c2.strokeStyle = strokeColor || 'rgba(255,255,255,0.5)'; c2.lineWidth = 1.2;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.stroke();
+  if(overlayFn){
+    c2.beginPath(); overlayFn(c2, cx, cy, r);
+    c2.strokeStyle = 'rgba(255,255,255,0.65)'; c2.lineWidth = 1.6;
+    c2.lineCap = 'round'; c2.stroke();
+  }
+  if(extra) extra(c2, cx, cy, r);
+  return cvs;
+}
+const ELEMENT_SPRITES = {};
+for(const key of TILE_TYPE_POOL){
+  const strokeColor = key==='void' ? '#4fe6ff' : (key==='light' ? '#fff8e0' : undefined);
+  const extra = key==='light' ? (c2,cx,cy,r) => { // outward ray strokes
+      // BEYOND the silhouette — reads as distinct from Sigil Chain's own
+      // light rune, which only varies point length INSIDE one silhouette.
+      c2.strokeStyle = 'rgba(255,248,224,0.55)'; c2.lineWidth = 1;
+      for(let i=0;i<8;i++){
+        const ang = i*Math.PI/4;
+        c2.beginPath();
+        c2.moveTo(cx+Math.cos(ang)*r*1.05, cy+Math.sin(ang)*r*1.05);
+        c2.lineTo(cx+Math.cos(ang)*r*1.35, cy+Math.sin(ang)*r*1.35);
+        c2.stroke();
+      }
+    } : null;
+  ELEMENT_SPRITES[key] = buildFacetSprite(ELEMENT_VERTS[key], TILE_COLORS[key], strokeColor, RUNE_OVERLAYS[key], extra);
+}
+const BOMB_SPRITES = { line:{}, area:{} };
+function bombSpriteFor(kind, elementType){
+  const cache = BOMB_SPRITES[kind];
+  if(cache[elementType]) return cache[elementType];
+  const accent = TILE_COLORS[elementType] || '#ffcb5c';
+  const verts = kind==='area' ? AREA_BOMB_VERTS : LINE_BOMB_VERTS;
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.38;
+  const pts = handVerts(cx, cy, r, verts);
+  c2.shadowColor = accent; c2.shadowBlur = 16;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.fillStyle = BOMB_BASE; c2.fill();
+  c2.shadowBlur = 0;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const lit = i % 2 === 0;
+    c2.fillStyle = lit ? shadeHex(accent, 6, 0) : shadeHex(BOMB_BASE, -8, -4);
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(a.x,a.y); c2.lineTo(b.x,b.y); c2.closePath(); c2.fill();
+  }
+  c2.strokeStyle = accent; c2.lineWidth = 1.4;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.stroke();
+  if(kind==='area'){
+    // rune-circle ring + 3 orbiting satellite shards (drawn at t=0; live
+    // orbit rotation happens per-frame in drawTile, this bakes the ring)
+    c2.strokeStyle = shadeHex(accent, 20, 10); c2.lineWidth = 1;
+    c2.beginPath(); c2.arc(cx, cy, r*1.15, 0, Math.PI*2); c2.stroke();
+  } else {
+    // directional arrow-facet along the bomb's own long axis (baked
+    // pointing along a=0/a=0.5 — drawTile rotates the whole sprite to the
+    // tile's real row/col axis)
+    c2.fillStyle = 'rgba(255,255,255,0.85)';
+    c2.beginPath();
+    c2.moveTo(cx+r*0.85, cy-r*0.13); c2.lineTo(cx+r*1.05, cy); c2.lineTo(cx+r*0.85, cy+r*0.13);
+    c2.closePath(); c2.fill();
+  }
+  cache[elementType] = cvs;
+  return cvs;
+}
+
+// board backdrop texture — createPattern(), zero uses anywhere in this
+// portfolio before this pass (GAME_7_PILLARS.md §5's capability-audit
+// gap). Subtle cracked-stone/arcane-parchment texture, distinct from
+// Sigil Chain's flat panel board background.
+function buildBoardPattern(ctx0){
+  const t = document.createElement('canvas'); t.width=48; t.height=48;
+  const tc = t.getContext('2d');
+  tc.fillStyle = 'rgba(255,255,255,0.02)'; tc.fillRect(0,0,48,48);
+  tc.strokeStyle = 'rgba(255,255,255,0.05)'; tc.lineWidth = 1;
+  tc.beginPath();
+  tc.moveTo(4,6); tc.lineTo(20,10); tc.lineTo(14,26); tc.lineTo(30,20); tc.lineTo(44,40);
+  tc.stroke();
+  tc.fillStyle = 'rgba(255,255,255,0.04)';
+  for(let i=0;i<6;i++){ tc.beginPath(); tc.arc((i*13+5)%48, (i*19+9)%48, 0.8, 0, Math.PI*2); tc.fill(); }
+  return ctx0.createPattern(t, 'repeat');
+}
+
+const Render = (function(){
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W=0, H=0, dpr=1;
+  let boardX=0, boardY=0, cell=40;
+  const N = BOARD_SIZE;
+  const boardPattern = buildBoardPattern(ctx);
+
+  function layout(){
+    const topPad = 96, sidePad = 16, bottomPad = 24;
+    const availW = W - sidePad*2;
+    const availH = H - topPad - bottomPad;
+    cell = Math.floor(Math.min(availW, availH) / N);
+    cell = clamp(cell, 24, 72);
+    const boardSize = cell*N;
+    boardX = (W-boardSize)/2;
+    boardY = topPad + Math.max(0, (availH-boardSize)/2);
+  }
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio||1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    layout();
+  }
+  window.addEventListener('resize', resize);
+
+  function cellRect(col,row){ return { x: boardX+col*cell, y: boardY+row*cell, w:cell, h:cell }; }
+  function cellCenter(col,row){ return { x: boardX+col*cell+cell/2, y: boardY+row*cell+cell/2 }; }
+  function cellFromPoint(x,y){
+    const col = Math.floor((x-boardX)/cell);
+    const row = Math.floor((y-boardY)/cell);
+    if(col<0||col>=N||row<0||row>=N) return null;
+    return { col, row };
+  }
+
+  function roundedRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  // ---- idle motion: breathing pulse per-element, EXCEPT lightning which
+  // snap-flickers instead (GAME_7_PILLARS.md §5's named exception) ----
+  const PULSE_SPEED = { fire:2.6, frost:1.1, verdant:1.5, void:1.3, light:1.8 };
+  const flickerState = new Map(); // "c,r" -> {next, on}
+  function idleFactor(type, col, row, now){
+    if(type === 'lightning'){
+      const key = col+','+row;
+      let f = flickerState.get(key);
+      if(!f || now >= f.next){
+        f = { on: Math.random() > 0.35, next: now + 70 + Math.random()*130 };
+        flickerState.set(key, f);
+      }
+      return f.on ? 1.08 : 0.88;
+    }
+    const speed = PULSE_SPEED[type] || 1.4;
+    const phase = (col*0.7 + row*1.3);
+    return 1 + Math.sin(now/1000*speed + phase)*0.055;
+  }
+
+  function drawTile(tile, x, y, w, h, isSelected, now){
+    if(!tile) return;
+    const cx = x+w/2, cy = y+h/2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    const pulse = idleFactor(tile.bomb ? 'bomb' : tile.type, Math.round(x/w), Math.round(y/h), now);
+    if(tile.bomb){
+      const sprite = bombSpriteFor(tile.bomb, tile.type);
+      const scale = (w*0.92)/SPRITE_SIZE;
+      if(tile.bomb === 'line'){
+        const rot = tile.axis === 'row' ? 0 : Math.PI/2;
+        ctx.rotate(rot + now/1000*0.6); // idle-rotate, "primed" per §5
+      } else {
+        ctx.rotate(now/1000*0.35); // rune-circle slow rotation
+        // orbiting satellite shards, drawn live (not baked) so they orbit
+        const accent = TILE_COLORS[tile.type] || '#ffcb5c';
+        for(let i=0;i<3;i++){
+          const ang = now/700 + i*(Math.PI*2/3);
+          const orx = Math.cos(ang)*w*0.44, ory = Math.sin(ang)*w*0.44;
+          ctx.fillStyle = shadeHex(accent, 10, 5);
+          ctx.beginPath(); ctx.arc(orx, ory, Math.max(1.5,w*0.045), 0, Math.PI*2); ctx.fill();
+        }
+      }
+      ctx.scale(scale, scale);
+      ctx.drawImage(sprite, -SPRITE_SIZE/2, -SPRITE_SIZE/2);
+    } else {
+      const sprite = ELEMENT_SPRITES[tile.type];
+      if(sprite){
+        ctx.scale(pulse, pulse);
+        ctx.globalAlpha = 1;
+        const scale = (w*0.86)/SPRITE_SIZE;
+        ctx.scale(scale, scale);
+        ctx.drawImage(sprite, -SPRITE_SIZE/2, -SPRITE_SIZE/2);
+      }
+    }
+    ctx.restore();
+    if(isSelected){
+      ctx.save();
+      roundedRect(x+2, y+2, w-4, h-4, Math.min(w,h)*0.22);
+      ctx.lineWidth = Math.max(2, w*0.06);
+      ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--neon') || '#ffcb5c';
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // ---- particles: shatter-shards (plain clears), ring shockwave
+  // (area-bomb, ported verbatim from wardfall.html:1506-1516 per §5's own
+  // "reuse it rather than reinvent it"), linear sweep (line-bomb), and a
+  // mana-drain ctx.clip() reveal wipe (bomb creation) ----
+  let shards = [], rings = [], sweeps = [], reveals = [];
+  let pending = []; // {fireAt, run}
+
+  // qa-playtest finding: frame() bails out early whenever the screen isn't
+  // 'game' (below), which freezes `pending`'s real-time drain but NOT wall
+  // clock time — so a chain queued right as a run ended (Levels' final
+  // move, a mid-chain quit-to-menu) sat frozen past its fireAt, then fired
+  // as one batch of stale rings/sweeps/reveals on the very first frame of
+  // the NEXT run. Reset on every return to the 'game' screen (fresh start,
+  // Play Again, or a different mode) — never on pause/resume, which
+  // doesn't fire nav:change and SHOULD let a mid-chain animation resume
+  // where it left off.
+  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; }
+  Events.on('nav:change', (e) => { if(e.to === 'game') resetParticles(); });
+
+  function spawnShardBurst(cells, axis, elementType){
+    const color = TILE_COLORS[elementType] || '#fff';
+    const along = axis === 'row' ? {x:1,y:0} : {x:0,y:1};
+    for(const c of cells){
+      const p = cellCenter(c.col, c.row);
+      for(let i=0;i<4;i++){
+        const dir = i%2===0 ? 1 : -1;
+        const jitter = (Math.random()-0.5)*0.6;
+        shards.push({
+          x:p.x, y:p.y,
+          vx: along.x*dir*(90+Math.random()*60) + along.y*jitter*40,
+          vy: along.y*dir*(90+Math.random()*60) + along.x*jitter*40,
+          rot: Math.random()*Math.PI*2, vrot:(Math.random()-0.5)*10,
+          life:0, maxLife:0.38+Math.random()*0.1, color, size: cell*0.14,
+        });
+      }
+    }
+  }
+  function spawnAreaDetonation(col,row,elementType){
+    const p = cellCenter(col,row);
+    rings.push({ x:p.x, y:p.y, t:0, dur:0.42, color: TILE_COLORS[elementType]||'#fff' });
+    reveals.push({ x:p.x, y:p.y, t:0, dur:0.5, kind:'conic', color: TILE_COLORS[elementType]||'#fff' });
+  }
+  function spawnLineDetonation(col,row,axis,elementType){
+    const p = cellCenter(col,row);
+    const x1 = axis==='row' ? boardX : p.x, y1 = axis==='row' ? p.y : boardY;
+    const x2 = axis==='row' ? boardX+cell*N : p.x, y2 = axis==='row' ? p.y : boardY+cell*N;
+    sweeps.push({ x1,y1,x2,y2, axis, t:0, dur:0.3, color: TILE_COLORS[elementType]||'#fff' });
+  }
+  function spawnFlashPrime(col,row){
+    reveals.push({ x:cellCenter(col,row).x, y:cellCenter(col,row).y, t:0, dur:0.16, kind:'flash', color:'#ffffff' });
+  }
+  function spawnCreateReveal(col,row,elementType){
+    const p = cellCenter(col,row);
+    reveals.push({ x:p.x, y:p.y, t:0, dur:0.4, kind:'clip', color: TILE_COLORS[elementType]||'#fff' });
+  }
+
+  function schedule(delayMs, fn){ pending.push({ fireAt: performance.now()+delayMs, run: fn }); }
+
+  // Board's timeline (GAME_7_PILLARS.md §7's "state resolves instantly,
+  // playback catches up" split) drives all of the above, staggered by
+  // pass + chainOrder rather than played back all at once.
+  Events.on('board:resolved', (e) => {
+    const stats = e.stats;
+    if(!stats || !stats.timeline) return;
+    for(const ev of stats.timeline){
+      const passDelay = (ev.pass-1)*150;
+      if(ev.type === 'clear'){
+        schedule(passDelay, () => spawnShardBurst(ev.cells, ev.axis, ev.elementType));
+      } else if(ev.type === 'bombCreate'){
+        schedule(passDelay, () => spawnCreateReveal(ev.col, ev.row, ev.elementType));
+      } else if(ev.type === 'bombDetonate'){
+        const chainDelay = passDelay + ev.chainOrder*100;
+        schedule(Math.max(0,chainDelay-90), () => spawnFlashPrime(ev.col, ev.row));
+        schedule(chainDelay, () => {
+          if(ev.kind === 'area') spawnAreaDetonation(ev.col, ev.row, ev.elementType);
+          else spawnLineDetonation(ev.col, ev.row, ev.axis, ev.elementType);
+        });
+      }
+    }
+  });
+
+  function updateParticles(dt){
+    const now = performance.now();
+    for(let i=pending.length-1;i>=0;i--){ if(now >= pending[i].fireAt){ pending[i].run(); pending.splice(i,1); } }
+    for(const s of shards){ s.x+=s.vx*dt; s.y+=s.vy*dt; s.vx*=0.94; s.vy*=0.94; s.rot+=s.vrot*dt; s.life+=dt; }
+    shards = shards.filter(s => s.life < s.maxLife);
+    for(const r of rings) r.t += dt;
+    rings = rings.filter(r => r.t < r.dur);
+    for(const s of sweeps) s.t += dt;
+    sweeps = sweeps.filter(s => s.t < s.dur);
+    for(const r of reveals) r.t += dt;
+    reveals = reveals.filter(r => r.t < r.dur);
+  }
+
+  function drawParticles(){
+    for(const s of shards){
+      const t = s.life/s.maxLife;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.translate(s.x, s.y); ctx.rotate(s.rot);
+      ctx.fillStyle = shadeHex(s.color, 30, 10);
+      ctx.beginPath(); ctx.moveTo(0,-s.size); ctx.lineTo(s.size*0.6,s.size*0.5); ctx.lineTo(-s.size*0.6,s.size*0.5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // ring shockwave — ported verbatim from wardfall.html:1506-1516
+    for(const s of rings){
+      const t = s.t/s.dur;
+      const r = (t*t*(3-2*t)) * cell*2.6; // smoothstep, close to Ease.easeOutCubic's feel
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.strokeStyle = s.color; ctx.lineWidth = 4*(1-t)+1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = `rgba(22,16,34,${0.5*(1-t)})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r*0.55, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    for(const s of sweeps){
+      const t = s.t/s.dur;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.max(0, 1-t)*0.9;
+      ctx.strokeStyle = s.color; ctx.lineWidth = cell*0.5*(1-t*0.6);
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+      ctx.restore();
+    }
+    for(const r of reveals){
+      const t = r.t/r.dur;
+      ctx.save();
+      if(r.kind === 'clip'){
+        // mana-drain reveal wipe — ctx.clip() on a growing circle, zero
+        // uses anywhere in this portfolio before this pass. A bright ring
+        // sits right at the clip edge so the wipe itself is visible.
+        const rad = t*cell*0.8;
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.clip();
+        ctx.fillStyle = shadeHex(r.color, 40, 20);
+        ctx.globalAlpha = Math.max(0,1-t)*0.6;
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.fill();
+        ctx.restore(); ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2*(1-t);
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.stroke();
+      } else if(r.kind === 'conic'){
+        // area-bomb "mana surge" sweep — createConicGradient() used
+        // INSIDE real gameplay for the first time in this portfolio
+        // (previously portal/menu chrome only, GAME_7_PILLARS.md §5).
+        const grad = ctx.createConicGradient(t*Math.PI*2, r.x, r.y);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.08, shadeHex(r.color, 40, 15));
+        grad.addColorStop(0.16, 'rgba(255,255,255,0)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0,1-t);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(r.x, r.y, cell*2.4, 0, Math.PI*2); ctx.fill();
+      } else { // flash-prime — brief bright pulse right before a chained
+               // bomb detonates, per §5's "flash-primes for one beat"
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0,1-t*1.4);
+        ctx.fillStyle = r.color;
+        ctx.beginPath(); ctx.arc(r.x, r.y, cell*0.5*(0.6+t), 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  let lastFrameNow = 0;
+  function frame(){
+    const now = performance.now();
+    const dt = lastFrameNow ? Math.min(0.05,(now-lastFrameNow)/1000) : 0;
+    lastFrameNow = now;
+    ctx.clearRect(0,0,W,H);
+    if(Nav.currentScreen() !== 'game') return;
+    ctx.fillStyle = boardPattern;
+    ctx.fillRect(boardX, boardY, cell*N, cell*N);
+    const selected = Game.getSelected();
+    for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      const t = Board.at(c,r);
+      const rect = cellRect(c,r);
+      const isSel = selected && selected.col===c && selected.row===r;
+      drawTile(t, rect.x, rect.y, rect.w, rect.h, isSel, now);
+    }
+    updateParticles(dt);
+    drawParticles();
+  }
+
+  // ---- input: tap-to-select, tap-adjacent-to-swap ----
+  let dragStart = null;
+  canvas.addEventListener('pointerdown', (e) => {
+    if(Nav.currentScreen() !== 'game' || Game.isPaused() || !Game.isRunning()) return;
+    const cell0 = cellFromPoint(e.clientX, e.clientY);
+    if(!cell0) return;
+    dragStart = { cell: cell0, x:e.clientX, y:e.clientY };
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    if(!dragStart) return;
+    const start = dragStart; dragStart = null;
+    if(Nav.currentScreen() !== 'game' || Game.isPaused() || !Game.isRunning()) return;
+    const dx = e.clientX-start.x, dy = e.clientY-start.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist > cell*0.35){
+      // drag-swap: pick the neighbor in the dominant drag direction
+      let target;
+      if(Math.abs(dx) > Math.abs(dy)) target = { col: start.cell.col + (dx>0?1:-1), row: start.cell.row };
+      else target = { col: start.cell.col, row: start.cell.row + (dy>0?1:-1) };
+      Game.handlePointerCell(start.cell);
+      Game.handlePointerCell(target);
+    } else {
+      Game.handlePointerCell(start.cell);
+    }
+  });
+
+  resize();
+  return { frame, resize, _test: { cellFromPoint, cellRect, layoutInfo: () => ({ boardX, boardY, cell }),
+    particleCounts: () => ({ shards: shards.length, rings: rings.length, sweeps: sweeps.length, reveals: reveals.length, pending: pending.length }) } };
+})();
+
+renderModeSelectScoresOnLoad();
+function renderModeSelectScoresOnLoad(){ Game.renderModeSelectScores(); }
+
+/* =====================================================================
+   BUGREP — copied verbatim from infall.html's own Bugrep module (this
+   studio's proven, shipped pattern) per the bug-report-widget skill's own
+   "don't rewrite the functions per project" rule. Only the storage key
+   and exported document id changed (runeshatter_v1), and open() pauses
+   through Game's real API instead of infall's Game.state check.
+===================================================================== */
+const Bugrep = (function(){
+  const KEY = 'bugreports-runeshatter_v1';
+  let selCat = 'Bug';
+  function loadAll(){
+    try{ return JSON.parse(localStorage.getItem(KEY) || '[]'); }catch(e){ return []; }
+  }
+  function store(l){ try{ localStorage.setItem(KEY, JSON.stringify(l)); }catch(e){} }
+  function badge(){
+    const l = loadAll();
+    const b = document.getElementById('bugBadge');
+    b.style.display = l.length ? 'flex' : 'none';
+    b.textContent = l.length;
+  }
+  // qa-playtest finding: opening mid-run silently paused the game (the
+  // real pause overlay sits underneath this one, same z-index, later in
+  // DOM order so it's hidden but still active) and closing never resumed
+  // it — a player who never asked to pause landed on the pause menu after
+  // just filing a report. pausedByThis tracks whether OPEN was the one
+  // that paused, so CLOSE only un-pauses what it itself paused.
+  let pausedByThis = false;
+  function open(){
+    pausedByThis = Game.isRunning() && !Game.isPaused();
+    if(pausedByThis) Game.togglePause();
+    renderList();
+    document.getElementById('bugOverlay').classList.add('show');
+  }
+  function close(){
+    document.getElementById('bugOverlay').classList.remove('show');
+    if(pausedByThis && Game.isRunning() && Game.isPaused()) Game.togglePause();
+    pausedByThis = false;
+  }
+  function cat(btn){
+    document.querySelectorAll('.bugcat .btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    selCat = btn.dataset.cat;
+  }
+  function save(){
+    const title = document.getElementById('bugTitle').value.trim();
+    const details = document.getElementById('bugDetails').value.trim();
+    if(!title && !details){ alert('Add a title or details first.'); return; }
+    const l = loadAll();
+    l.push({ category:selCat, title:title||'(no title)', details, document:'runeshatter_v1', timestamp:new Date().toISOString() });
+    store(l);
+    document.getElementById('bugTitle').value = '';
+    document.getElementById('bugDetails').value = '';
+    renderList(); badge();
+  }
+  function renderList(){
+    const l = loadAll();
+    document.getElementById('bugList').innerHTML = l.map((r,i) => `
+      <div class="bug-item"><span class="del" onclick="Bugrep.del(${i})">remove</span>
+        <div class="cat">${escapeHtml(r.category)}</div><strong>${escapeHtml(r.title)}</strong>
+        ${r.details ? `<div style="opacity:.75;margin-top:2px;">${escapeHtml(r.details)}</div>` : ''}
+      </div>`).join('');
+    document.getElementById('bugExportBtn').style.display = l.length ? 'block' : 'none';
+  }
+  function del(i){ const l = loadAll(); l.splice(i,1); store(l); renderList(); badge(); }
+  function exportAll(){
+    const l = loadAll();
+    if(!l.length) return;
+    const blob = new Blob([JSON.stringify({exportedFrom:'runeshatter_v1', exportedAt:new Date().toISOString(), reports:l}, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bugreports_runeshatter_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  }
+  badge();
+  return { open, close, cat, save, del, exportAll };
+})();
+
+requestAnimationFrame((ts) => { Game.tick(ts); });
+</script>
+
+</body>
+</html>
