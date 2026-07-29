@@ -116,8 +116,25 @@ body.reduced-motion .panel{animation:none!important;}
    real existing pattern rather than inventing a new one for this game. ---- */
 .icon-btn{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
   background:var(--panel);color:var(--ink-soft);font-size:12px;cursor:pointer;opacity:.7;
-  display:flex;align-items:center;justify-content:center;}
+  display:flex;align-items:center;justify-content:center;position:relative;}
 .icon-btn:hover{opacity:1;color:var(--neon);border-color:var(--neon);}
+
+/* ---- bug reporter — copied verbatim from infall.html's own Bugrep
+   widget/CSS (studio's own proven pattern, not the generic skill's raw
+   default palette) so it matches this game's real tokens automatically. */
+.bugrep-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;
+  font-size:9px;border-radius:50%;width:14px;height:14px;display:flex;align-items:center;justify-content:center;}
+.bugrep-badge:empty,.bugrep-badge[data-zero]{display:none;}
+.bugcat{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.bugcat .btn{width:auto;flex:1;padding:.5rem;font-size:.78rem;margin-bottom:0;}
+.bugcat .btn.sel{border-color:var(--neon2);color:var(--neon2);}
+.form-input{width:100%;padding:.7rem;border-radius:8px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-family:inherit;font-size:.85rem;margin-bottom:10px;}
+textarea.form-input{min-height:70px;resize:vertical;}
+.bug-item{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;
+  margin-bottom:8px;font-size:.8rem;position:relative;}
+.bug-item .del{position:absolute;top:6px;right:8px;color:var(--danger);font-size:.7rem;cursor:pointer;opacity:.7;}
+.bug-item .cat{font-family:var(--mono);font-size:.65rem;color:var(--neon2);text-transform:uppercase;margin-bottom:2px;}
 
 @media (max-width:480px){
   .panel{padding:20px 18px;}
@@ -201,9 +218,30 @@ body.reduced-motion .panel{animation:none!important;}
   </div>
 </div>
 
+<!-- BUG REPORTER — copied verbatim from infall.html's own Bugrep widget
+     markup (this studio's proven pattern) -->
+<div class="overlay" id="bugOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
+    <h2>REPORT ISSUE</h2>
+    <div class="bugcat">
+      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+    </div>
+    <input class="form-input" id="bugTitle" placeholder="Short title">
+    <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
+    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <div id="bugList"></div>
+    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+  </div>
+</div>
+
 <div class="meta-row">
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.4.0</div>
+  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.5.0</div>
 </div>
 
 <script>
@@ -211,6 +249,18 @@ body.reduced-motion .panel{animation:none!important;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.5.0 — 2026-07-29 — Bug-report widget, ported verbatim from
+                          infall.html's own Bugrep module/CSS/markup
+                          (this studio's proven shipped pattern) per the
+                          bug-report-widget skill's "don't rewrite the
+                          functions per project" rule — only the storage
+                          key/exported-document id changed
+                          ('runeshatter_v1'), and open() pauses through
+                          this game's own Game.isRunning()/isPaused()/
+                          togglePause() API instead of infall's Game.state
+                          check. Flag icon + badge added to the existing
+                          meta-row alongside the mute button.
 
    v0.4.0 — 2026-07-29 — Real visual art pass (§5), replacing v0.2.0's
                           gray-box render. Faceted-gem tiles (shadeHex +
@@ -393,6 +443,7 @@ const Persist = (function(){
    UTILS
 ===================================================================== */
 function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mulberry32(seed){
   let s = seed >>> 0;
   return function(){
@@ -2241,6 +2292,71 @@ const Render = (function(){
 
 renderModeSelectScoresOnLoad();
 function renderModeSelectScoresOnLoad(){ Game.renderModeSelectScores(); }
+
+/* =====================================================================
+   BUGREP — copied verbatim from infall.html's own Bugrep module (this
+   studio's proven, shipped pattern) per the bug-report-widget skill's own
+   "don't rewrite the functions per project" rule. Only the storage key
+   and exported document id changed (runeshatter_v1), and open() pauses
+   through Game's real API instead of infall's Game.state check.
+===================================================================== */
+const Bugrep = (function(){
+  const KEY = 'bugreports-runeshatter_v1';
+  let selCat = 'Bug';
+  function loadAll(){
+    try{ return JSON.parse(localStorage.getItem(KEY) || '[]'); }catch(e){ return []; }
+  }
+  function store(l){ try{ localStorage.setItem(KEY, JSON.stringify(l)); }catch(e){} }
+  function badge(){
+    const l = loadAll();
+    const b = document.getElementById('bugBadge');
+    b.style.display = l.length ? 'flex' : 'none';
+    b.textContent = l.length;
+  }
+  function open(){
+    if(Game.isRunning() && !Game.isPaused()) Game.togglePause();
+    renderList();
+    document.getElementById('bugOverlay').classList.add('show');
+  }
+  function close(){ document.getElementById('bugOverlay').classList.remove('show'); }
+  function cat(btn){
+    document.querySelectorAll('.bugcat .btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    selCat = btn.dataset.cat;
+  }
+  function save(){
+    const title = document.getElementById('bugTitle').value.trim();
+    const details = document.getElementById('bugDetails').value.trim();
+    if(!title && !details){ alert('Add a title or details first.'); return; }
+    const l = loadAll();
+    l.push({ category:selCat, title:title||'(no title)', details, document:'runeshatter_v1', timestamp:new Date().toISOString() });
+    store(l);
+    document.getElementById('bugTitle').value = '';
+    document.getElementById('bugDetails').value = '';
+    renderList(); badge();
+  }
+  function renderList(){
+    const l = loadAll();
+    document.getElementById('bugList').innerHTML = l.map((r,i) => `
+      <div class="bug-item"><span class="del" onclick="Bugrep.del(${i})">remove</span>
+        <div class="cat">${escapeHtml(r.category)}</div><strong>${escapeHtml(r.title)}</strong>
+        ${r.details ? `<div style="opacity:.75;margin-top:2px;">${escapeHtml(r.details)}</div>` : ''}
+      </div>`).join('');
+    document.getElementById('bugExportBtn').style.display = l.length ? 'block' : 'none';
+  }
+  function del(i){ const l = loadAll(); l.splice(i,1); store(l); renderList(); badge(); }
+  function exportAll(){
+    const l = loadAll();
+    if(!l.length) return;
+    const blob = new Blob([JSON.stringify({exportedFrom:'runeshatter_v1', exportedAt:new Date().toISOString(), reports:l}, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bugreports_runeshatter_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+  }
+  badge();
+  return { open, close, cat, save, del, exportAll };
+})();
 
 requestAnimationFrame((ts) => { Game.tick(ts); });
 </script>
