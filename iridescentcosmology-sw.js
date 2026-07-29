@@ -3,7 +3,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'iridescentcosmology-v11'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.13.0 — three new evolutions (Bulwark's Reply, Widening Gyre, Reprisal), closing the Counter/Fortify/Amplify evolution-coverage gap
+const CACHE_NAME = 'iridescentcosmology-v12'; // bumped (STUDIO_BIBLE.md §13 — same commit as the content change): v2.14.0 — Relics (treasure-chest modifier items) + ground helpers (Gather Pulse, Aegis Flare), plus a Rite of Fortune shop upgrade and an applyBurn() duration bug fix
 const PRECACHE_URLS = ['./iridescentcosmology.html'];
 
 self.addEventListener('install', (e) => {

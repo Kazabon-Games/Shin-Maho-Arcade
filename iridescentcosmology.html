@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.13.0</title>
+<title>IRIDESCENT COSMOLOGY v2.14.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,80 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.14.0 — 2026-07-29 — New system: Relics and ground helpers. Producer
+                          ask: "modifiers in the form of items that interact
+                          with spells, passives and combinations, and little
+                          helpers on the ground — gather all XP orbs,
+                          invincibility." Two genuinely new, deliberately
+                          separate systems rather than one blurred together:
+                          RELICS — per-run modifier items (new ITEMS table),
+                          found in world treasure chests, not the level-up
+                          pool (a chest is its own discovery moment, reuses
+                          the exact same card-choice overlay/pipeline
+                          weapons/passives/evolutions already use via a new
+                          kind:'item' branch, rather than inventing a second
+                          UI). Chests spawn on a periodic timer (~150s,
+                          reduced by the new Rite of Fortune shop upgrade —
+                          the meta-progression half of this system, cross-
+                          run and permanent, same as every existing Rite)
+                          plus one guaranteed the moment stage 2 opens.
+                          Three relics: Wanderer's Boon (+1 level-up choice
+                          per level), Vein of Insight (+50% gem pickup
+                          range, multiplicative with Gather), and Ember Core
+                          (every spell you actually CAST also ignites what
+                          it hits) — reviewed by game-designer before
+                          implementing specifically because "burn on hit"
+                          touching many call sites at once is the exact
+                          shape of the studio's own Drain incident. That
+                          review found and this patch fixes a real,
+                          already-live bug independent of Ember Core:
+                          applyBurn()'s duration was unconditionally
+                          overwritten rather than taking the max like its
+                          own dps term does (like applySlow/applyWeaken
+                          already correctly do) — Mine's weaker burn could
+                          silently truncate a stronger Impose burn already
+                          running. Fixed to the same strongest-flame-wins
+                          rule everywhere, which is also what makes Ember
+                          Core safe by construction: wired only at real-cast
+                          call sites (Pulse/Shardspray bullets via a new
+                          `ember` tag, Nova, Displace, Chain, Mine, Impose's
+                          seed hit), explicitly never at silent/many-times-
+                          per-second ticks (Drain, Root, Sunder, Afflict) or
+                          Counter/Reprisal's retaliation bolts sharing the
+                          same bullet-collision loop, reads dmgMult() only
+                          (never wRes/ampMult/rateMult/the triggering hit's
+                          own damage — an earlier version modeled out to
+                          ~2,145 field DPS from a single chest pick before
+                          this constraint), and carries a per-enemy 0.5s
+                          cooldown as a guard against any future high-cast-
+                          rate weapon.
+                          GROUND HELPERS — a completely separate, simpler
+                          system: small instant-effect pickups, no choice
+                          UI, no pause, periodic spawn (~55s, rarer than
+                          gems, far more common than chests). Gather Pulse
+                          flips every live gem's existing `_orbPull` flag
+                          (Nhül Partikül's own far-pull mechanism, reused
+                          verbatim — zero new physics). Aegis Flare grants
+                          4s of invulnerability via the same
+                          `player.iframes = Math.max(...)` pattern dash and
+                          Second Wind already use.
+                          New visual identity: an amber-bronze accent
+                          (#e8a34d) for chests/relics, not RGB-distance-
+                          audited the way the enemy palette was — named as
+                          a real gap, not presented as already-verified.
+                          Verified: full adversarial suite green, plus new
+                          permanent regression coverage for the chest-choice
+                          flow (including the overlay's dynamic title/
+                          tagline correctly resetting after a chest, not
+                          leaking "THE CHEST OPENS" into the next real
+                          level-up) and both ground helpers. Honest gaps:
+                          none of this has been played by a human, the
+                          spawn cadences (chest 150s, helper 55s) are
+                          reasoned defaults matching the game's existing
+                          elite-timer precedent, not playtest-tuned, and the
+                          new amber-bronze hue wants the same rigorous
+                          audit pass the enemy palette already got.
 
   v2.13.0 — 2026-07-29 — Three new evolutions, closing the coverage gap
                           named by the Grimoire's own audit: three passives
@@ -1644,6 +1718,16 @@ body.reduced-motion .stage-badge{
 .pick-card.evo:hover{border-color:var(--neon2);box-shadow:0 0 24px -6px var(--neon2);}
 .evo-lvl{color:var(--neon2)!important;}
 .resonance-lvl{color:var(--neon2)!important;} /* Resonance rank badge — same treatment as EVOLUTION, both are "past the normal ladder" */
+/* Relics — a new accent (#e8a34d, warm amber-bronze) distinct from every
+   existing token: not --gold/--neon (reserved for reward/currency per
+   STUDIO_BIBLE §11), not --neon2 (evolution/Resonance violet), not any
+   enemy hue. Chosen, not audited to the same RGB-distance rigor the enemy
+   palette got — a real follow-up for a dedicated visual pass, named here
+   rather than presented as already-verified. */
+.pick-card.item{border-color:#e8a34d;background:linear-gradient(135deg,rgba(232,163,77,0.12),rgba(232,163,77,0.05));}
+.pick-card.item:hover{border-color:#e8a34d;box-shadow:0 0 24px -6px #e8a34d;}
+.item-lvl{color:#e8a34d!important;}
+.pick-card.item .pick-icon{color:#e8a34d;}
 .pick-icon{font-size:1.6rem;width:44px;height:44px;border-radius:10px;background:rgba(226,184,85,0.08);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid var(--border);color:var(--neon);}
 .pick-card.evo .pick-icon{color:var(--neon2);}
@@ -1795,8 +1879,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <!-- LEVEL UP -->
 <div class="overlay" id="levelOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Choose a spell">
-    <h2>A NEW PAGE TURNS</h2>
-    <div class="tagline">inscribe one spell</div>
+    <h2 id="pickTitle">A NEW PAGE TURNS</h2>
+    <div class="tagline" id="pickTagline">inscribe one spell</div>
     <div class="pick-cards" id="pickCards"></div>
   </div>
 </div>
@@ -1909,7 +1993,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.13.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.14.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -1947,7 +2031,7 @@ const OLD_SAVE_KEYS = ['wonderland-save-v1', 'drift-save-v1']; // pre-rename sav
 const Persist = (function(){
   let data = {
     shards: 0,
-    upgrades: { vitality:0, output:0, thrusters:0, magnet:0, greed:0, shadow:0, insight:0, revival:0 },
+    upgrades: { vitality:0, output:0, thrusters:0, magnet:0, greed:0, shadow:0, insight:0, revival:0, fortune:0 },
     best: { time:0, kills:0, level:0 },
     totalRuns: 0,
     lifetimeKills: 0, lifetimeEssence: 0, bossesDefeated: 0, boss2Defeats: 0, deaths: 0, revives: 0,
@@ -1976,6 +2060,7 @@ const Persist = (function(){
         if(data.upgrades.shadow === undefined) data.upgrades.shadow = 0;
         if(data.upgrades.insight === undefined) data.upgrades.insight = 0;
         if(data.upgrades.revival === undefined) data.upgrades.revival = 0;
+        if(data.upgrades.fortune === undefined) data.upgrades.fortune = 0;
         if(!data.best) data.best = { time:0, kills:0, level:0 };
         // backfill for saves from before the achievements pass
         if(data.lifetimeKills === undefined) data.lifetimeKills = 0;
@@ -2337,6 +2422,24 @@ const EVOLUTIONS = {
                  desc:()=>`Every successful Banish also fires your retaliation bolt at whatever's nearest once the field is cleared.` },
 };
 
+// Relics — per-run modifier items, found in world treasure chests (not the
+// level-up pool: chests are their own discovery moment, not a fourth thing
+// competing with weapon/passive/evolution cards). Boolean-held, not leveled
+// — `items.<key>` is true or absent, checked directly at each relic's own
+// call site (dmgMult/magnetR/the level-up pool size/Ember's own hitEnemy
+// wrapper), the same "small table for UI, bespoke effect at the call site"
+// shape EVOLUTIONS already uses. Reset to {} each run in start(), same as
+// weapons/passives/evolutions — these are build-crafting, not meta-
+// progression (see SHOP_DEFS' `fortune` Rite below for the permanent half).
+const ITEMS = {
+  embercore: { name:'Ember Core', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C12 3 6 11 6 15.5C6 18.5 8.7 21 12 21C15.3 21 18 18.5 18 15.5C18 11 12 3 12 3Z"/><path d="M12 9C12 9 9.5 13 9.5 15.5C9.5 17 10.6 18 12 18" stroke-dasharray="1.5 2"/></svg>',
+    desc:()=>`Every spell you actually cast also ignites what it hits.` },
+  wanderersboon: { name:"Wanderer's Boon", icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12H20M4 12L9 7M4 12L9 17M20 12L15 7M20 12L15 17"/></svg>',
+    desc:()=>`Every level-up offers one more choice than before.` },
+  veinofinsight: { name:'Vein of Insight', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4H10V13A2 2 0 0 0 14 13V4H17V13A5 5 0 0 1 7 13V4Z"/><circle cx="12" cy="12" r="9" stroke-dasharray="1.5 2"/></svg>',
+    desc:()=>`Pickup range for essence gems is permanently wider this run.` },
+};
+
 // Enemy archetypes. hp/speed/damage scale with elapsed minutes.
 // Colors are governed by STUDIO_BIBLE.md §11 Cross-Game Visual & Color
 // Language: the gold/yellow reward band (--gold/--neon) is reserved for
@@ -2394,8 +2497,24 @@ function applyWeaken(e, mult, duration){
   e._weakUntil = Math.max(e._weakUntil||0, (e._simTime||0) + duration);
 }
 function applyBurn(e, dps, duration){
-  e._burnDps = Math.max(e._burnDps||0, dps);
-  e._burnUntil = (e._simTime||0) + duration;
+  // BUG FIX (found during the relic system's Ember Core review): dps took
+  // the max of the two competing burns like applySlow/applyWeaken two
+  // lines up do, but duration was unconditionally OVERWRITTEN regardless
+  // of which burn was actually stronger — a real, already-live bug: Mine's
+  // weaker/shorter burn (2.5s) landing on an Impose target (4.0s) silently
+  // truncated Impose's own burn early, discarding real damage. Fixed to
+  // the same "strongest flame wins" rule applySlow/applyWeaken already
+  // use: only replace dps+duration together when the new burn is at least
+  // as strong; a weaker burn touches neither field, so it can never
+  // shorten a stronger one already burning. This is also what keeps a
+  // planned "burn on hit" relic safe by construction — a weak, frequent
+  // proc can only ever refresh itself, never extend a genuinely bigger
+  // burn a real cast already applied.
+  const remaining = Math.max(0, (e._burnUntil||0) - (e._simTime||0));
+  if(dps >= (e._burnDps||0)){
+    e._burnDps = dps;
+    e._burnUntil = (e._simTime||0) + Math.max(duration, remaining);
+  }
 }
 function applyKnockback(e, fromX, fromY, power){
   const d = Math.hypot(e.x-fromX, e.y-fromY) || 1;
@@ -2428,6 +2547,15 @@ const MAX_GEMS = 300; // a single AoE kill wave (Nova/Mine on a dense crowd,
   // same scenario MAX_PARTICLES protects against) can drop dozens of gems in
   // one frame; magnet pickup clears them quickly, but the cap stops a
   // pathological pile-up from ever compounding.
+// treasure chests (relics) and ground helpers — both stationary world
+// pickups, low caps since they're periodic-timer spawns, not kill drops;
+// nothing here can pile up the way an AoE kill wave's gems can.
+const MAX_CHESTS = 4;
+const MAX_HELPERS = 3;
+const CHEST_INTERVAL_BASE = 150; // seconds — Rite of Fortune reduces this, see chestInterval() below
+const HELPER_INTERVAL_BASE = 55; // rarer than gems, far more common than chests
+const AEGIS_DURATION = 4; // seconds of invulnerability from an Aegis Flare pickup
+function chestInterval(){ return CHEST_INTERVAL_BASE * (1 - Persist.data.upgrades.fortune*0.12); } // Rite of Fortune, -12%/rank
 function weakMultOf(e){ return e._weakMult || 1; }
 
 // Permanent shop upgrades
@@ -2444,6 +2572,11 @@ const SHOP_DEFS = {
   // undoing the balance pass rather than extending it).
   insight:   { name:'Rite of Insight', desc:'+15% essence gems\' XP value per rank', base:35 },
   revival:   { name:'Rite of the Second Wind', desc:'Survive a lethal hit at 1 rank/run, +2s invulnerable. Capped at 3 — not meant to trivialize death.', base:80, maxRank:3 },
+  // meta-progression half of the relic system (STUDIO_BIBLE-style split:
+  // relics themselves are per-run build-crafting, this Rite is the
+  // permanent lever on top). -12%/rank mirrors Rite of Shadow's existing
+  // per-rank cadence exactly rather than inventing a new curve shape.
+  fortune:   { name:'Rite of Fortune', desc:'-12% treasure chest spawn interval per rank', base:30 },
 };
 const SHOP_MAX_RANK = 5;
 function shopMaxRank(key){ return SHOP_DEFS[key].maxRank || SHOP_MAX_RANK; }
@@ -2488,9 +2621,10 @@ const Game = (function(){
   }
   let elapsed = 0, lastTs = 0;
   let player, enemies = [], bullets = [], gems = [], particles = [], novaRings = [], mines = [], sunderBeams = [];
+  let chests = [], helpers = []; // relic treasure chests, ground-helper pickups (Gather Pulse / Aegis Flare)
   let atmosphereTime = 0; // real-clock time, always advances — drives the idle menu backdrop
   let kills, shardsThisRun, xp, xpNeed, level;
-  let spawnAcc = 0, eliteAcc = 0;
+  let spawnAcc = 0, eliteAcc = 0, chestAcc = 0, helperAcc = 0;
   // Ramiel boss state — kept separate from the generic enemies array since
   // its behavior (phased state machine, absorb mechanic, beam/shard attacks)
   // shares nothing with "chase player, deal contact damage."
@@ -2587,7 +2721,7 @@ const Game = (function(){
   const BOSS2_TRAIL_DMG_PER_TICK = 6;
   let boss2 = null, boss2EntranceTimer = 0, boss2SpawnX = 0, boss2SpawnY = 0, boss2Trails = [];
   let bossEntranceTimer = 0, bossSpawnX = 0, bossSpawnY = 0;
-  let weapons, passives, evolutions;      // { key: level } / { key: level } / { key: true }
+  let weapons, passives, evolutions, items; // { key: level } / { key: level } / { key: true } / { key: true }
   let fireTimers;
   let camX = 0, camY = 0;
   let shakeX = 0, shakeY = 0;
@@ -2817,11 +2951,13 @@ const Game = (function(){
     xp = 0; level = 1; xpNeed = 4;
     player = newPlayer();
     enemies = []; bullets = []; gems = []; particles = []; novaRings = []; mines = []; sunderBeams = [];
+    chests = []; helpers = [];
     weapons = { pulse: 1 };  // start with Pulse lv1
     passives = {};
     evolutions = {};
+    items = {}; // relics are per-run — see ITEMS' own comment for why this doesn't live in Persist.data
     fireTimers = { pulse:0, nova:0, shardspray:0, drain:0, root:0, displace:0, chain:0, mine:0, afflict:0, banish:0, impose:0, sunder:0 };
-    spawnAcc = 0; eliteAcc = 0;
+    spawnAcc = 0; eliteAcc = 0; chestAcc = 0; helperAcc = 0;
     boss = null; bossTriggered = false; bossProjectiles = [];
     stage = 1; boss2Triggered = false; stage2EnteredAt = 0;
     boss2 = null; boss2EntranceTimer = 0; boss2Trails = [];
@@ -2900,7 +3036,11 @@ const Game = (function(){
     const burst = (player._speedBurstUntil && elapsed < player._speedBurstUntil) ? 1.6 : 1;
     return (1 + (passives.speed||0)*0.10) * burst;
   }
-  function magnetR(){ return player.magnetBase * (1 + (passives.magnet||0)*0.35); }
+  function magnetR(){
+    let r = player.magnetBase * (1 + (passives.magnet||0)*0.35);
+    if(items.veinofinsight) r *= 1.5; // relic — multiplicative with Gather, same stacking convention as every other relic/evolution on top of a passive
+    return r;
+  }
 
   /* ── spawning ── */
   // was uncapped (elapsed/60 forever) — real playtest finding: "the stars
@@ -2962,6 +3102,25 @@ const Game = (function(){
       _wobblePhase: type==='shard' ? Math.random()*Math.PI*2 : 0,
     });
   }
+  // Chests/helpers spawn CLOSER than enemies (0.62*max(W,H) would put them
+  // off-screen, fine for a chasing threat, wrong for something stationary
+  // the player is meant to notice and walk to) and don't scale with
+  // difficulty() at all — position only, no stat curve to speak of.
+  function spawnChest(){
+    if(chests.length >= MAX_CHESTS) return;
+    const ang = Math.random()*Math.PI*2, d = rand(280, Math.max(W,H)*0.5);
+    const x = clamp(player.x + Math.cos(ang)*d, -WORLD, WORLD);
+    const y = clamp(player.y + Math.sin(ang)*d, -WORLD, WORLD);
+    chests.push({ x, y, r:16, _spawnT:0 });
+  }
+  function spawnHelper(){
+    if(helpers.length >= MAX_HELPERS) return;
+    const ang = Math.random()*Math.PI*2, d = rand(220, Math.max(W,H)*0.45);
+    const x = clamp(player.x + Math.cos(ang)*d, -WORLD, WORLD);
+    const y = clamp(player.y + Math.sin(ang)*d, -WORLD, WORLD);
+    const kind = Math.random() < 0.5 ? 'gather' : 'aegis';
+    helpers.push({ x, y, r:11, kind, _spawnT:0 });
+  }
   function updateSpawns(dt){
     const m = difficulty();
     // spawns/sec ramps: 1.2 at start → +1.1 per minute, +60% once the boss
@@ -2994,6 +3153,20 @@ const Game = (function(){
         spawnEnemy('elite');
         Events.emit('eliteSpawn', { enemy: enemies[enemies.length-1] });
       }
+    }
+    // treasure chests and ground helpers spawn on their own periodic
+    // timers regardless of boss state — unlike elites they're not a
+    // "main event" that a boss fight should supersede, and a boss fight
+    // is exactly when a spare Aegis Flare or a relic choice matters most.
+    chestAcc += dt;
+    if(chestAcc > chestInterval()){
+      chestAcc = 0;
+      spawnChest();
+    }
+    helperAcc += dt;
+    if(helperAcc > HELPER_INTERVAL_BASE){
+      helperAcc = 0;
+      spawnHelper();
     }
   }
 
@@ -3263,6 +3436,7 @@ const Game = (function(){
     player.hp = Math.min(player.maxhp, player.hp + player.maxhp*STAGE2_BREATHER_HEAL);
     player.iframes = Math.max(player.iframes, STAGE2_BREATHER_IFRAMES);
     if(!weapons.sunder) weapons.sunder = 1;
+    spawnChest(); // one guaranteed relic chest the moment stage 2 opens, same "real payoff, not just a random roll" precedent as Sunder above
   }
 
   // ── Boss 2: the Fracture — fully separate from every Ramiel function
@@ -3434,7 +3608,7 @@ const Game = (function(){
           player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
           const ang = Math.atan2(t.y-player.y, t.x-player.x);
           if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(ang)*520, vy:Math.sin(ang)*520,
-            dmg:(18+wl('pulse')*6)*dmgMult()*wRes('pulse'), r:5, life:1.4, pierce:0, color:'#e2b855' });
+            dmg:(18+wl('pulse')*6)*dmgMult()*wRes('pulse'), r:5, life:1.4, pierce:0, color:'#e2b855', ember:true });
         }
       }
     }
@@ -3450,7 +3624,7 @@ const Game = (function(){
         for(let i=0;i<n;i++){
           const a = baseAng + (i-(n-1)/2)*0.22;
           if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(a)*420, vy:Math.sin(a)*420,
-            dmg:(10+wl('shardspray')*4)*dmgMult()*wRes('shardspray'), r:4, life:1.6, pierce:2, color:'#9d6bff', shape:'shard' });
+            dmg:(10+wl('shardspray')*4)*dmgMult()*wRes('shardspray'), r:4, life:1.6, pierce:2, color:'#9d6bff', shape:'shard', ember:true });
         }
       }
     }
@@ -3470,7 +3644,7 @@ const Game = (function(){
         // query radius pad in queryCircle absorbs sub-cell drift; exact hits
         // still verified against live positions below.
         Grid.queryCircle(player.x, player.y, radius, (e) => {
-          if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){ hitEnemy(e, dmg); hitCount++; }
+          if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){ spellHit(e, dmg); hitCount++; }
           return false;
         });
         // Same uncapped-heal shape as Drain had before its own fix (see
@@ -3612,7 +3786,7 @@ const Game = (function(){
         novaRings.push({ x:player.x, y:player.y, r:0, max:radius, life:0.3, dur:0.3 });
         Grid.queryCircle(player.x, player.y, radius, (e) => {
           if(!e._dead && dist2(player.x,player.y,e.x,e.y) < radius*radius){
-            hitEnemy(e, dmg);
+            spellHit(e, dmg);
             applyKnockback(e, player.x, player.y, 260 + wl('displace')*190);
           }
           return false;
@@ -3632,7 +3806,7 @@ const Game = (function(){
         const hitSet = new Set();
         let jumps = 0;
         while(current && jumps <= maxJumps){
-          hitEnemy(current, dmg);
+          spellHit(current, dmg);
           hitSet.add(current);
           dmg *= 0.78;
           let next = null, bd = 220*220;
@@ -3743,7 +3917,7 @@ const Game = (function(){
         player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
         const t = nearestEnemy();
         if(t){
-          hitEnemy(t, 4*dmgMult());
+          spellHit(t, 4*dmgMult());
           applyBurn(t, (8+wl('impose')*4)*dmgMult()*wRes('impose'), 2+wl('impose')*0.4);
         }
       }
@@ -3813,6 +3987,45 @@ const Game = (function(){
       if(novaRings.length < 40) novaRings.push({ x:e.x, y:e.y, r:0, max: e.r+18, life:0.22, dur:0.22 });
     }
   }
+
+  // Ember Core relic — every real spell CAST (not every tick a silent aura
+  // fires) also ignites the target. Reviewed before implementing (game-
+  // designer pass) specifically because "burn on hit" touching many call
+  // sites at once is exactly the Drain-incident shape. Findings applied:
+  // - Reads dmgMult() ONLY, never wRes/ampMult/rateMult/the hit's own dmg —
+  //   an earlier version keyed off the triggering hit's damage and modeled
+  //   out to ~2,145 field DPS from a single AoE cast at ceiling stats; a
+  //   single flat multiplier keeps this at 15-37dmg/ignite instead.
+  // - Wired at real-cast call sites only (Pulse/Shardspray bullets via the
+  //   `ember` tag below, Nova, Displace, Chain, Mine, Impose's seed hit) —
+  //   NOT Drain/Root/Sunder/Afflict (all silent, many-times-per-second
+  //   ticks — see hitEnemy's own `silent` flag), NOT the burn-tick callback
+  //   itself (would self-refresh forever), NOT Orbitals (already a 2.5Hz
+  //   contact aura, wiring it in would make Ember read as a second aura
+  //   rather than "your spells ignite what they hit"), NOT Counter/
+  //   Reprisal's retaliation bolts (share the bullet-collision loop with
+  //   Pulse/Shardspray, excluded via the `ember` tag rather than `silent`,
+  //   since `silent` means "no hit-flash," not "was this a real cast").
+  // - Reuses applyBurn's now-fixed strongest-flame-wins rule (see its own
+  //   comment) rather than a second burn field, so Ember is a safe no-op
+  //   wherever Impose/Mine's own burn is already stronger — no double-DoT.
+  // - Per-enemy 0.5s cooldown (_emberCd, decremented alongside _hitPunch/
+  //   _atkPunch below) — numerically near-irrelevant today since the
+  //   non-stacking duration already bounds it, but a real guard against
+  //   any future high-cast-rate weapon turning this into a permanent aura.
+  // - Bosses excluded outright: a deliberate scope decision, not a bug —
+  //   burn/status effects in this file are consistently framed as
+  //   something spells do to "Husks" (see every weapon's own desc text),
+  //   and boss objects are never ticked through updateStatuses() the way
+  //   regular enemies are, so a burn set on one would just sit inert.
+  const EMBER_BASE_DPS = 5, EMBER_DURATION = 3.0;
+  function igniteEmber(e){
+    if(!items.emberCore || e === boss || e === boss2) return;
+    if(e._emberCd > 0) return;
+    e._emberCd = 0.5;
+    applyBurn(e, EMBER_BASE_DPS * dmgMult(), EMBER_DURATION);
+  }
+  function spellHit(e, dmg){ hitEnemy(e, dmg); igniteEmber(e); }
 
   // Reflect passive — subscribed once; reads current `passives` via closure each
   // time it fires, so it works across runs without re-subscribing per run.
@@ -3966,6 +4179,7 @@ const Game = (function(){
       if(e.hitFlash > 0) e.hitFlash -= dt;
       if(e._hitPunch > 0) e._hitPunch -= dt;
       if(e._atkPunch > 0) e._atkPunch -= dt;
+      if(e._emberCd > 0) e._emberCd -= dt;
       if(e._spawnT < ENEMY_SPAWN_POP_DUR) e._spawnT += dt;
       // cached for the render-only attack-anticipation lean below — the
       // SAME distance the real contact-damage check re-derives itself a
@@ -4064,6 +4278,7 @@ const Game = (function(){
         const rr = e.r + b.r;
         if(dist2(b.x,b.y,e.x,e.y) < rr*rr){
           hitEnemy(e, b.dmg);
+          if(b.ember) igniteEmber(e); // Ember Core — only bullets tagged at push (Pulse/Shardspray), never Counter/Reprisal's retaliation bolts sharing this same loop
           if(b.pierce > 0){ b.pierce--; return false; }
           b.life = 0;
           return true;
@@ -4081,7 +4296,7 @@ const Game = (function(){
         novaRings.push({ x:m.x, y:m.y, r:0, max:m.r, life:0.25, dur:0.25 });
         Grid.queryCircle(m.x, m.y, m.r+34, (e) => {
           if(!e._dead && dist2(m.x,m.y,e.x,e.y) < m.r*m.r){
-            hitEnemy(e, m.dmg);
+            spellHit(e, m.dmg);
             applyBurn(e, m.dmg*0.15, 2.5);
           }
           return false;
@@ -4163,6 +4378,48 @@ const Game = (function(){
       }
     }
     gems = gems.filter(g=>!g._got);
+
+    // spawn pop-in — same idiom regular enemies use (easeOutBack scale-
+    // from-0), just ticked here since chests/helpers aren't in `enemies`.
+    for(const c of chests){ if(c._spawnT < ENEMY_SPAWN_POP_DUR) c._spawnT += dt; }
+    for(const h of helpers){ if(h._spawnT < ENEMY_SPAWN_POP_DUR) h._spawnT += dt; }
+
+    // chests: no magnet pull — a landmark you walk to, not something that
+    // flies to you, matching "treasure" rather than "currency" as a pickup
+    // idiom. Guarded on !levelChoosing (same shape as the level-up check
+    // below) so touching two chests in one frame can't silently overwrite
+    // the first one's card choice with the second's before it's resolved
+    // — the loop stops at the first live chest and the rest wait for next
+    // frame, once levelChoosing clears.
+    if(!levelChoosing){
+      for(const c of chests){
+        if(dist2(c.x,c.y,player.x,player.y) < (player.r+14)*(player.r+14)){
+          c._got = true;
+          openChestChoice();
+          break;
+        }
+      }
+      chests = chests.filter(c=>!c._got);
+    }
+
+    // ground helpers — instant effect on contact, no choice UI, no pause;
+    // "little helpers," not a second reward system to learn.
+    for(const h of helpers){
+      if(dist2(h.x,h.y,player.x,player.y) < (player.r+12)*(player.r+12)){
+        h._got = true;
+        if(h.kind === 'gather'){
+          // reuses Nhül Partikül's own far-pull flag verbatim — every gem
+          // just starts being pulled in by the SAME magnet code above, no
+          // new physics, no teleport that would read as a cheap shortcut.
+          for(const g of gems) g._orbPull = true;
+          Events.emit('gatherPulse', { x: h.x, y: h.y });
+        } else if(h.kind === 'aegis'){
+          player.iframes = Math.max(player.iframes, AEGIS_DURATION); // same proven pattern as dash/Second Wind
+          Events.emit('aegisFlare', { x: h.x, y: h.y });
+        }
+      }
+    }
+    helpers = helpers.filter(h=>!h._got);
 
     // level up check
     if(xp >= xpNeed && !levelChoosing){
@@ -4677,6 +4934,75 @@ const Game = (function(){
       ctx.restore();
     }
 
+    // treasure chests — a hexagonal faceted gem (the studio's own shared
+    // identity technique, same shadeHex facet-alternation gems/enemies
+    // already use), larger than a gem, in a new amber-bronze accent
+    // (#e8a34d) distinct from every existing hue — see the CSS comment on
+    // .pick-card.item for why this specific color and its honest caveat
+    // (chosen, not RGB-distance-audited the way the enemy palette was).
+    for(const c of chests){
+      const cx = c.x+ox, cy = c.y+oy;
+      if(cx < -30 || cx > W+30 || cy < -30 || cy > H+30) continue;
+      const pop = c._spawnT < ENEMY_SPAWN_POP_DUR ? Math.max(0, Ease.easeOutBack(c._spawnT/ENEMY_SPAWN_POP_DUR)) : 1;
+      const r = c.r * pop;
+      const bob = Math.sin(elapsed*1.6 + cx*0.05)*2; // slow bob so it reads as a landmark, not a static prop
+      const verts = [];
+      for(let i=0;i<6;i++){ const a=i*Math.PI/3; verts.push({ x:cx+Math.cos(a)*r, y:cy+bob+Math.sin(a)*r }); }
+      ctx.save();
+      ctx.shadowColor = '#e8a34d'; ctx.shadowBlur = 14;
+      ctx.beginPath();
+      verts.forEach((v,i)=> i===0?ctx.moveTo(v.x,v.y):ctx.lineTo(v.x,v.y));
+      ctx.closePath(); ctx.fillStyle = '#e8a34d'; ctx.fill();
+      ctx.shadowBlur = 0;
+      for(let i=0;i<verts.length;i++){
+        const a = verts[i], b = verts[(i+1)%verts.length];
+        ctx.fillStyle = shadeHex('#e8a34d', i%2===0?18:-16, 8);
+        ctx.beginPath(); ctx.moveTo(cx,cy+bob); ctx.lineTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      verts.forEach((v,i)=> i===0?ctx.moveTo(v.x,v.y):ctx.lineTo(v.x,v.y));
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
+    // ground helpers — small, simple, deliberately distinct from both gems
+    // (kite/sparkle) and chests (faceted hexagon): a plain glowing ring
+    // whose silhouette differs by kind, so the two are readable at a
+    // glance without needing color alone to carry the distinction.
+    for(const h of helpers){
+      const hx = h.x+ox, hy = h.y+oy;
+      if(hx < -20 || hx > W+20 || hy < -20 || hy > H+20) continue;
+      const pop = h._spawnT < ENEMY_SPAWN_POP_DUR ? Math.max(0, Ease.easeOutBack(h._spawnT/ENEMY_SPAWN_POP_DUR)) : 1;
+      const r = h.r * pop;
+      const pulse = 0.75 + 0.25*Math.sin(elapsed*3 + hx*0.08);
+      const color = h.kind === 'gather' ? '#6ec3ff' : GOLD_COLOR; // Gather Pulse: a new cyan-blue; Aegis Flare: reuses the reward-gold band on purpose, a shield/boon reads as a legitimate positive-reward color already
+      ctx.save();
+      ctx.shadowColor = color; ctx.shadowBlur = 10*pulse;
+      ctx.strokeStyle = color; ctx.lineWidth = 2.4; ctx.globalAlpha = pulse;
+      if(h.kind === 'gather'){
+        // three short inward-pointing ticks around a ring — "things get
+        // pulled toward here"
+        ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI*2); ctx.stroke();
+        for(let i=0;i<3;i++){
+          const a = elapsed*1.5 + i*(Math.PI*2/3);
+          ctx.beginPath();
+          ctx.moveTo(hx+Math.cos(a)*(r+6), hy+Math.sin(a)*(r+6));
+          ctx.lineTo(hx+Math.cos(a)*(r-2), hy+Math.sin(a)*(r-2));
+          ctx.stroke();
+        }
+      } else {
+        // a simple shield silhouette — the same point-down arc shape
+        // Fortify's own UI icon uses, so "protection" reads consistently
+        ctx.beginPath();
+        ctx.moveTo(hx, hy-r); ctx.lineTo(hx+r*0.8, hy-r*0.35); ctx.lineTo(hx+r*0.8, hy+r*0.3);
+        ctx.lineTo(hx, hy+r); ctx.lineTo(hx-r*0.8, hy+r*0.3); ctx.lineTo(hx-r*0.8, hy-r*0.35);
+        ctx.closePath(); ctx.stroke();
+        ctx.globalAlpha = pulse*0.25; ctx.fillStyle = color; ctx.fill();
+      }
+      ctx.restore();
+    }
+
     // nova rings
     for(const nR of novaRings){
       ctx.strokeStyle = `rgba(226,184,85,${clamp(nR.life/nR.dur,0,1)*0.8})`;
@@ -5031,7 +5357,8 @@ const Game = (function(){
     }
     return targets;
   }
-  const LEVEL_CHOICE_COUNT = 4; // was 3 — more coverage per level, paired with the pity system above rather than instead of it
+  const LEVEL_CHOICE_COUNT_BASE = 4; // was 3 — more coverage per level, paired with the pity system above rather than instead of it
+  function levelChoiceCount(){ return LEVEL_CHOICE_COUNT_BASE + (items.wanderersboon ? 1 : 0); } // relic — Wanderer's Boon
   function poolChoices(){
     const slotsFull = activeSpellCount() >= MAX_SPELL_SLOTS;
     const opts = [];
@@ -5046,9 +5373,9 @@ const Game = (function(){
       const cur = passives[k]||0;
       if(cur < resCap(k, false)) opts.push({ kind:'passive', key:k, def, cur }); // Resonance — see resCap()
     }
-    // shuffle, take LEVEL_CHOICE_COUNT
+    // shuffle, take levelChoiceCount() (base 4, +1 with Wanderer's Boon)
     for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [opts[i],opts[j]]=[opts[j],opts[i]]; }
-    let picks = opts.slice(0, LEVEL_CHOICE_COUNT);
+    let picks = opts.slice(0, levelChoiceCount());
     // pity slot — guarantee any in-progress evolution pair's missing half
     // shows up, filling slots that weren't already going to show one
     // naturally. Doesn't touch the evolution slot below; both can appear
@@ -5077,6 +5404,8 @@ const Game = (function(){
     const opts = poolChoices();
     if(!opts.length) return; // everything maxed and no evolutions pending
     levelChoosing = true;
+    document.getElementById('pickTitle').textContent = 'A NEW PAGE TURNS';
+    document.getElementById('pickTagline').textContent = 'inscribe one spell';
     // radiant burst — a real moment, not just a menu appearing
     if(particles.length < MAX_PARTICLES){
       for(let i=0;i<24;i++){
@@ -5085,8 +5414,24 @@ const Game = (function(){
       }
     }
     novaRings.push({ x:player.x, y:player.y, r:0, max:180, life:0.45, dur:0.45 });
+    renderPickCards(opts);
+  }
+  // shared by openLevelChoice and openChestChoice — the same card-choice
+  // pattern (weapon/passive/evolution/Resonance/item), so a relic found in
+  // a chest reads as the same kind of moment a level-up already is, not a
+  // second UI a player has to learn.
+  function renderPickCards(opts){
     const holder = document.getElementById('pickCards');
     holder.innerHTML = opts.map((o,i)=>{
+      if(o.kind === 'item'){
+        return `<button class="pick-card item" onclick="Game.pick(${i})">
+          <div class="pick-icon">${o.def.icon}</div>
+          <div class="pick-info">
+            <div class="pick-name">${o.def.name}<span class="lvl item-lvl">RELIC</span></div>
+            <div class="pick-desc">${o.def.desc()}</div>
+          </div>
+        </button>`;
+      }
       if(o.kind === 'evolution'){
         return `<button class="pick-card evo" onclick="Game.pick(${i})">
           <div class="pick-icon">${o.def.icon}</div>
@@ -5142,10 +5487,51 @@ const Game = (function(){
         Persist.save();
       }
       Events.emit('evolutionUnlocked', { key: o.key });
+    } else if(o.kind==='item'){
+      items[o.key] = true;
+      Events.emit('itemUnlocked', { key: o.key });
     }
     document.getElementById('levelOverlay').classList.remove('show');
     levelChoosing = false;
     lastTs = performance.now();
+  }
+
+  // Relics — chosen from a chest, not the level-up pool (see ITEMS' own
+  // comment for why). Reuses the exact same levelChoosing gate + pending/
+  // pick pipeline as a level-up so it can never collide with one: if a
+  // chest is opened the same frame a level-up would also fire, whichever
+  // sets levelChoosing first wins and the other's own trigger condition
+  // (xp>=xpNeed / touching an unopened chest) is still true next frame,
+  // so it fires right after — same natural queueing the game already
+  // relies on for back-to-back level-ups from one big XP gulp.
+  function itemChoices(){
+    const avail = Object.entries(ITEMS).filter(([k]) => !items[k]);
+    const opts = avail.map(([k,def]) => ({ kind:'item', key:k, def }));
+    for(let i=opts.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [opts[i],opts[j]]=[opts[j],opts[i]]; }
+    return opts.slice(0, 3);
+  }
+  function openChestChoice(){
+    const opts = itemChoices();
+    if(!opts.length){
+      // every relic already held — a chest a player physically walked to
+      // should never just vanish with nothing happening. Same fallback
+      // shape as the Grimoire shop's own currency: a flat essence grant.
+      shardsThisRun += 5;
+      Events.emit('chestOpen', { fallback: true });
+      return;
+    }
+    levelChoosing = true;
+    document.getElementById('pickTitle').textContent = 'THE CHEST OPENS';
+    document.getElementById('pickTagline').textContent = 'claim one relic';
+    if(particles.length < MAX_PARTICLES){
+      for(let i=0;i<24;i++){
+        const a = (Math.PI*2/24)*i;
+        particles.push({ x:player.x, y:player.y, vx:Math.cos(a)*220, vy:Math.sin(a)*220, life:0.5, color:'#e8a34d', size:2.4 });
+      }
+    }
+    novaRings.push({ x:player.x, y:player.y, r:0, max:180, life:0.45, dur:0.45 });
+    renderPickCards(opts);
+    Events.emit('chestOpen', { fallback: false });
   }
 
   /* ── death & flow ── */
@@ -5257,6 +5643,7 @@ const Game = (function(){
       bullets: bullets?bullets.length:0, gems: gems?gems.length:0, mines: mines?mines.length:0,
       weapons: weapons?{...weapons}:null, passives: passives?{...passives}:null,
       evolutions: evolutions?{...evolutions}:null, spellSlots: activeSpellCount(),
+      items: items?{...items}:null, chests: chests?chests.length:0, helpers: helpers?helpers.map(h=>h.kind):[],
       px: player?player.x:null, py: player?player.y:null,
       castFlash: player?player._castFlash:null, hurtFlash: player?player._hurtFlash:null, isMoving: player?player._isMoving:null,
       revivesLeft: player?player._revivesLeft:null,
@@ -5290,6 +5677,9 @@ const Game = (function(){
     forceDefeatBoss2: () => { if(boss2) boss2Defeated(); },
     setPlayerPos: (x,y) => { player.x = x; player.y = y; },
     clearIframes: () => { player.iframes = 0; },
+    spawnChestAt: (dx,dy) => { spawnChest(); const c=chests[chests.length-1]; if(c){ c.x=player.x+dx; c.y=player.y+dy; c._spawnT=ENEMY_SPAWN_POP_DUR; } return c; },
+    spawnHelperAt: (kind,dx,dy) => { spawnHelper(); const h=helpers[helpers.length-1]; if(h){ h.kind=kind; h.x=player.x+dx; h.y=player.y+dy; h._spawnT=ENEMY_SPAWN_POP_DUR; } return h; },
+    setItem: (key, held) => { items[key] = !!held; },
   };
 
   // timeScale accessor for juice systems (hitstop/slow-mo tween it)

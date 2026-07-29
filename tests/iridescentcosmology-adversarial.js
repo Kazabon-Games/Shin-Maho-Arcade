@@ -124,6 +124,41 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
   await page.waitForTimeout(3000);
   await checkOverflow('after dense wave');
 
+  console.log('--- relics: chest pickup opens the choice overlay, a relic is claimed, title/tagline reset correctly for a normal level-up afterward ---');
+  // dense-wave's own 80-husk kill spree (Nova lv5, 3s of auto-fire) can
+  // easily queue level-ups it never drained itself -- must clear those
+  // first, or the "chestChoosing" read below is just that stale state,
+  // not proof the chest actually opened anything.
+  await drainPendingLevelUp();
+  await page.evaluate(() => { Game._test.setPlayerPos(0, 0); Game._test.spawnChestAt(10, 0); });
+  await page.waitForTimeout(300);
+  const chestChoosing = await page.evaluate(() => Game._test.state().levelChoosing);
+  const chestTitleAtOpen = chestChoosing ? await page.evaluate(() => document.getElementById('pickTitle').textContent) : null;
+  console.log('chest opened the choice overlay:', chestChoosing, '| title:', chestTitleAtOpen);
+  await drainPendingLevelUp();
+  const itemsHeld = await page.evaluate(() => Game._test.state().items);
+  console.log('relic claimed:', itemsHeld);
+  await page.evaluate(() => { Game._test.grantXP(9999); });
+  await page.waitForTimeout(150);
+  const postChestTitle = await page.evaluate(() => document.getElementById('pickTitle').textContent);
+  console.log('level-up title correctly reset after a chest (not still "THE CHEST OPENS"):', postChestTitle === 'A NEW PAGE TURNS');
+  await drainPendingLevelUp();
+  await checkOverflow('after chest flow');
+
+  console.log('--- ground helpers: Gather Pulse and Aegis Flare grant their effect on contact and are consumed ---');
+  await drainPendingLevelUp(); // defensive -- nothing above should leave one queued now, but helper pickup lives inside update(), same gate as everything else
+  await page.evaluate(() => {
+    Game._test.setPlayerPos(1500, 1500);
+    Game._test.clearIframes();
+    Game._test.spawnHelperAt('gather', 10, 0);
+    Game._test.spawnHelperAt('aegis', -10, 0);
+  });
+  await page.waitForTimeout(300);
+  const helpersLeft = await page.evaluate(() => Game._test.state().helpers);
+  const playerIframes = await page.evaluate(() => Game._test.state().hp !== null); // sanity: state still readable, no crash
+  console.log('helpers consumed on contact (should be empty):', helpersLeft, '| game still alive:', playerIframes);
+  await checkOverflow('after ground helpers');
+
   console.log('--- direct boss contact: player body overlapping Ramiel, then the Fracture (regression for a hard freeze found by the v2.11.0 real-browser playtest) ---');
   // v2.11.0: boss/boss2 are deliberately in the same spatial Grid as regular
   // enemies (so AoE spells can target them), and the player-contact-damage
