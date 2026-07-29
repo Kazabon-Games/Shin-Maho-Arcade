@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.12.2</title>
+<title>IRIDESCENT COSMOLOGY v2.13.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,58 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.13.0 — 2026-07-29 — Three new evolutions, closing the coverage gap
+                          named by the Grimoire's own audit: three passives
+                          (Counter, Fortify, Amplify) had never once been
+                          the other half of a fusion, out of the original
+                          six. Roster width was deliberately left alone —
+                          the audit found most runs already use well under
+                          half the available picks; the real gap was which
+                          passives ever got included in the reward system,
+                          not how many spells exist.
+                          Bulwark's Reply (Afflict+Fortify) — Afflict's own
+                          aura already covers the player's position (it's
+                          self-centered, so "standing in it" was already
+                          always true), so the actual reward is for holding
+                          ground: fortifyMult() now ramps a SEPARATE -24%
+                          incoming-damage term over 3s of not moving/
+                          dashing (player._holdGroundT, instantly reset by
+                          any movement), gated on Afflict being equipped.
+                          Multiplicative with Fortify's own -30% cap, not
+                          additive — verified floor is 46.8% total
+                          mitigation at both caps, a bounded number.
+                          Widening Gyre (Sunder+Amplify) — the beam's width
+                          now grows from a flat 30px lance to 4x that by
+                          the end of its 1s channel once evolved, times
+                          Amplify's own radius stat (which had never
+                          touched Sunder before this). A single shared
+                          sunderBeamWidth() helper feeds both the collision
+                          check and the render fillRect, so the hitbox and
+                          what's drawn can never desync. Un-evolved Sunder
+                          is completely untouched — the helper only reads
+                          age/ampMult once the evolution flag is set.
+                          Reprisal (Banish+Counter) — a successful Banish
+                          cast now also fires the exact same retaliation
+                          bolt Counter's own playerHurt handler fires
+                          (identical speed/radius/life/color), aimed at
+                          whatever's nearest once the field is cleared.
+                          Reuses Counter's own damage formula rather than
+                          inventing a new one, so "the same bolt" is
+                          literal, not just flavor text.
+                          Verification: Bulwark's Reply and Widening Gyre's
+                          formulas extracted and run against the live
+                          source directly (ramp clamps correctly at 3s, the
+                          evolution requires Afflict actually equipped, the
+                          un-evolved Sunder path is provably untouched);
+                          Reprisal confirmed via real driven gameplay
+                          (bullet count measurably rises after a Banish
+                          cast). All three evolutions verified reachable
+                          and pickable through the real level-up UI. Honest
+                          gap: none of this has been felt in actual play —
+                          the mitigation ramp, the beam bloom, and the
+                          bolt's timing are all verified correct on paper,
+                          not confirmed to feel good.
 
   v2.12.2 — 2026-07-29 — BUG FIX: the double-click-the-Settings-gear soft
                           lock named and deliberately left alone in
@@ -1857,7 +1909,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.12.2</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.13.0</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -2272,6 +2324,17 @@ const EVOLUTIONS = {
                  desc:()=>`Root field reflects contact damage back at anything caught inside it.` },
   rewind:      { name:'Rewind', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4H18L12 12L18 20H6L12 12Z"/></svg>', spell:'nova', passive:'maxhp', archetype:'burstAoEHeal',
                  desc:()=>`Surge now heals you for each Husk caught in the blast.` },
+  // Three additions, closing the gap the Grimoire's own audit named: three
+  // passives (Counter, Fortify, Amplify) had never once been the other
+  // half of a fusion. Each implementation lives inline at its spell's own
+  // call site (fortifyMult/sunderBeamWidth/the Banish block) rather than
+  // here — this table is only ever read for unlock-gating and UI text.
+  bulwarksreply:{ name:"Bulwark's Reply", icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L19 6.5V12C19 16.5 16 19.8 12 21C8 19.8 5 16.5 5 12V6.5Z"/><circle cx="12" cy="12" r="3" stroke-dasharray="1.5 2"/></svg>', spell:'afflict', passive:'fortify', archetype:'auraWeakenFortify',
+                 desc:()=>`Standing your ground inside Afflict's field hardens you further the longer you hold it — any movement resets the bonus.` },
+  wideninggyre:{ name:'Widening Gyre', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12L19 5"/><path d="M4 12L19 19"/><path d="M4 12L21 12" stroke-dasharray="1.5 2"/></svg>', spell:'sunder', passive:'amplify', archetype:'beamPierceBloom',
+                 desc:()=>`Sunder's beam widens the longer it channels — a focused lance that blooms into a room-clearing wall by the end.` },
+  reprisal:    { name:'Reprisal', icon:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3.5A9 9 0 1 0 15 20.5A11 11 0 0 1 15 3.5Z"/><path d="M12 8L9 13H12L11 17L16 11H13L13 8Z" fill="currentColor" stroke="none"/></svg>', spell:'banish', passive:'counter', archetype:'banishRetaliate',
+                 desc:()=>`Every successful Banish also fires your retaliation bolt at whatever's nearest once the field is cleared.` },
 };
 
 // Enemy archetypes. hp/speed/damage scale with elapsed minutes.
@@ -2455,6 +2518,19 @@ const Game = (function(){
   const SUNDER_WIDTH = 30;
   const SUNDER_TICK_INTERVAL = 0.2; // 5 ticks/sec
   const SUNDER_DURATION = 1.0;
+  // Widening Gyre evolution (Sunder+Amplify): a shared helper so the
+  // collision check (tick loop below) and the render fillRect use the
+  // IDENTICAL width every frame — a second hardcoded copy of this number
+  // in only one of the two sites is exactly the render/hitbox-desync bug
+  // class the orbitals code elsewhere in this file already names and
+  // avoids. Un-evolved Sunder is completely untouched: this only reads
+  // ampMult/age once the evolution flag is set, so the base weapon's
+  // existing balance (SUNDER_WIDTH=30, flat) is preserved exactly.
+  function sunderBeamWidth(sb){
+    if(!evolutions.wideninggyre) return SUNDER_WIDTH;
+    const ageFrac = 1 - clamp(sb.life/SUNDER_DURATION, 0, 1); // 0 at cast, 1 at the channel's end
+    return SUNDER_WIDTH * ampMult() * (1 + ageFrac*3); // grows to 4x width (amped) by the end of the 1s channel
+  }
   let boss = null, bossTriggered = false, bossProjectiles = [];
   // Boss 2 ("the Fracture") — deliberately built in fully separate
   // functions/state from Ramiel throughout (spawnBoss2/updateBoss2/
@@ -3110,7 +3186,25 @@ const Game = (function(){
   // full-value Reflect damage off the enemy's un-mitigated hit — an
   // asymmetric free-roll, the same shape as the studio's own Drain
   // incident (two multipliers landing on one event, one not paying its cost).
-  function fortifyMult(){ return 1 - (passives.fortify||0)*0.06; } // maxLvl 5 -> 30% cap
+  function fortifyMult(){
+    let m = 1 - (passives.fortify||0)*0.06; // maxLvl 5 -> 30% cap
+    // Bulwark's Reply evolution (Afflict+Fortify): Afflict's own aura is
+    // already centered on the player (it follows them, so "standing in
+    // it" is trivially always true whenever it's equipped) — the actual
+    // reward here is for holding ground rather than merely owning the
+    // spell. Ramps to a SEPARATE -24% over 3s of not moving/dashing
+    // (player._holdGroundT, reset instantly by any movement), gated on
+    // Afflict actually being equipped. Multiplicative with Fortify's own
+    // term, not additive, so the two independently-capped percentages
+    // can never combine into an unbounded stack — verified: floor is
+    // 1-(1-0.30)*(1-0.24) = 46.8% max mitigation at both caps, a bounded
+    // number, not a runaway one.
+    if(evolutions.bulwarksreply && weapons.afflict){
+      const holdT = Math.min(player._holdGroundT||0, 3);
+      m *= 1 - (holdT/3)*0.24;
+    }
+    return m;
+  }
   // Amplify — scales radius/size ONLY. Applied at exactly six call sites
   // (Nova/Drain/Root/Afflict/Mine/Orbitals radii), each verified
   // individually to touch only the radius term, never the damage term on
@@ -3624,6 +3718,20 @@ const Game = (function(){
           fireTimers.banish = 9 - wl('banish')*0.8;
           player._castFlash = 0.16; // cast tendril + brighten pulse, visual only
           Events.emit('banish', {});
+          // Reprisal evolution (Banish+Counter): fires the SAME retaliation
+          // bolt Counter's own playerHurt handler fires (identical speed/
+          // r/life/pierce/color) at whatever's nearest once the field is
+          // cleared — literally "the same bolt," not a reskinned new
+          // effect. nearestEnemy() already filters _banished targets, so
+          // this can never target something this exact cast just removed.
+          if(evolutions.reprisal && passives.counter){
+            const t = nearestEnemy();
+            if(t){
+              const ang = Math.atan2(t.y-player.y, t.x-player.x);
+              if(bullets.length < MAX_BULLETS) bullets.push({ x:player.x, y:player.y, vx:Math.cos(ang)*560, vy:Math.sin(ang)*560,
+                dmg:(18+passives.counter*8)*dmgMult(), r:5, life:1.2, pierce:0, color:'#e2b855' });
+            }
+          }
         }
       }
     }
@@ -3757,6 +3865,12 @@ const Game = (function(){
       if(player._dashStretch > 0) player._dashStretch = Math.max(0, player._dashStretch - dt*6); // ~0.17s snap-back
     }
     player._isMoving = Math.hypot(ax.x,ax.y) > 0.1 || player._dashActive; // drives Charles's idle-breathing vs lean state
+    // Bulwark's Reply evolution (Afflict+Fortify) reads this: how long the
+    // player has been continuously NOT moving, reset instantly by any
+    // movement or dash. Tracked here rather than inside fortifyMult()
+    // itself since fortifyMult() is called from several separate damage
+    // sites per frame/event and shouldn't each independently derive it.
+    player._holdGroundT = player._isMoving ? 0 : (player._holdGroundT||0) + dt;
     if(player._dashCd > 0) player._dashCd -= dt;
     for(const t of player._trail) t.life -= dt;
     player._trail = player._trail.filter(t=>t.life > 0);
@@ -3991,6 +4105,7 @@ const Game = (function(){
       if(sb.tickTimer <= 0){
         sb.tickTimer += SUNDER_TICK_INTERVAL;
         const dx = Math.cos(sb.angle), dy = Math.sin(sb.angle);
+        const width = sunderBeamWidth(sb); // Widening Gyre evolution — see its own comment; flat SUNDER_WIDTH unless evolved
         // BUG FIX (power-curve audit): boss/boss2 are already members of
         // this same query — the movement/collision block above rebuilds
         // Grid with gridExtra including both bosses every frame — so the
@@ -4007,7 +4122,7 @@ const Game = (function(){
           if(proj > 0 && proj < SUNDER_RANGE){
             const perp = Math.abs(toPx*dy - toPy*dx);
             // silent — channeled beam, same continuous-tick reasoning as burn/Drain.
-            if(perp < SUNDER_WIDTH/2 + e.r) hitEnemy(e, sb.dmgPerTick, true);
+            if(perp < width/2 + e.r) hitEnemy(e, sb.dmgPerTick, true);
           }
           return false;
         });
@@ -4583,13 +4698,14 @@ const Game = (function(){
     // active duration
     for(const sb of sunderBeams){
       const p = clamp(sb.life/SUNDER_DURATION, 0, 1);
+      const width = sunderBeamWidth(sb); // same helper the tick loop's collision check uses — never a second hardcoded copy
       ctx.save();
       ctx.translate(sb.x+ox, sb.y+oy); ctx.rotate(sb.angle);
       const sgrad = ctx.createLinearGradient(0,0,SUNDER_RANGE,0);
       sgrad.addColorStop(0, `rgba(210,190,255,${0.9*p})`);
       sgrad.addColorStop(1, `rgba(185,138,255,${0.08*p})`);
       ctx.fillStyle = sgrad;
-      ctx.fillRect(0, -SUNDER_WIDTH/2, SUNDER_RANGE, SUNDER_WIDTH);
+      ctx.fillRect(0, -width/2, SUNDER_RANGE, width);
       ctx.restore();
     }
 
