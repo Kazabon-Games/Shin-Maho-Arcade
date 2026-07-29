@@ -241,7 +241,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="meta-row">
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
   <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.5.1</div>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.6.0</div>
 </div>
 
 <script>
@@ -249,6 +249,66 @@ textarea.form-input{min-height:70px;resize:vertical;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.6.0 — 2026-07-29 — Three fixes from real player feedback after ship:
+                          (1) Gem movement animation, previously entirely
+                          absent — every swap and every gravity/refill drop
+                          snapped instantly with zero motion (only the
+                          clear/bomb PARTICLE effects were ever animated).
+                          Board.settlePass() now records, per column,
+                          exactly how far each surviving tile is about to
+                          fall and where each freshly-refilled tile enters
+                          from (captured while grid still holds pre-gravity
+                          positions, not guessed from a before/after diff),
+                          pushed into the same timeline the clear/bomb
+                          events already use. Game.attemptSwap() captures
+                          the pre-swap tile snapshot and emits it so the two
+                          swapped tiles visibly slide to trade places before
+                          the cascade plays. State still resolves instantly
+                          per §7 — this only adds POSITION data for
+                          Render's existing "playback catches up" layer.
+                          Verified: fall timeline data is exact (a tile
+                          above a mid-board clear falls exactly 1 row, a
+                          new tile enters from row -1), confirmed visually
+                          via screenshot with a tile genuinely rendered
+                          above the board mid-fall, and confirmed stable
+                          under 40 rapid real-UI swaps fired faster than
+                          any animation's own duration.
+                          (2) Lightning's idle motion read as "overstimu-
+                          lating" — it re-rolled every 70-200ms PER CELL
+                          between two very different scale states (a 20%
+                          size swing), meaning dozens of independent
+                          strobes/second across an 8x8 board. Rebuilt
+                          around "real lightning flashes occasionally, it
+                          doesn't strobe constantly": neutral resting scale
+                          (matching every other element's baseline instead
+                          of sitting dimmed), a 550-1500ms re-roll (vs.
+                          70-200ms), and an 18% chance of the brief bright
+                          snap per roll (vs. 65%). Still a snap, not a
+                          smooth pulse — the named exception in §5 still
+                          holds, it's just rare and calm now.
+                          (3) "I don't hear any music" — ensureCtx() never
+                          called .resume() on a suspended AudioContext,
+                          despite this module's own header claiming every
+                          primitive is copied verbatim from
+                          iridescentcosmology.html/infall.html, which both
+                          do exactly this (infall.html:1777). A context
+                          created synchronously inside a click handler
+                          often auto-runs, but that's a browser-specific
+                          heuristic, not a spec guarantee — real Safari and
+                          some mobile Chrome versions are known to leave it
+                          suspended regardless, which headless Playwright's
+                          own autoplay handling never reproduced (all 41
+                          audio tests passed both before and after this
+                          fix). Now checked on every ensureCtx() call, not
+                          just first creation, so resuming a saved session
+                          or restarting after the tab was backgrounded also
+                          re-resumes it. Verified live: Music._test.
+                          ctxState() reads 'running' after a real button
+                          click, not just gain values that would be
+                          correct-but-silent under a suspended context.
+                          53/53 adversarial + 41/41 audio tests still
+                          passing throughout.
 
    v0.5.1 — 2026-07-29 — Two real bugs fixed, found by a qa-playtest
                           adversarial real-UI pass (not the automated
@@ -683,6 +743,33 @@ const Board = (function(){
     acc.bombsDetonated += bombsDetonated;
     for(const k in clearedByType) acc.clearedByType[k] = (acc.clearedByType[k]||0) + clearedByType[k];
 
+    // player feedback after ship: "can it have the animation of gems
+    // moving" — the board was previously drawn straight from the final
+    // resolved grid every frame, so gravity/refill snapped instantly with
+    // no motion. Fixed by recording, per column, exactly how far each
+    // surviving tile is about to fall and where each freshly-refilled tile
+    // is entering from, captured HERE (grid still holds pre-gravity
+    // positions) so Render can play the real movement back instead of
+    // guessing it from a before/after diff. State itself still resolves
+    // instantly per §7 — only this adds POSITION data to the same
+    // timeline the clear/bomb events already use for staggered playback.
+    for(let c=0;c<SIZE;c++){
+      const survivors = [];
+      for(let r=0;r<SIZE;r++){ if(grid[r][c]) survivors.push(r); }
+      const newCount = SIZE - survivors.length;
+      for(let i=0;i<survivors.length;i++){
+        const toRow = newCount+i, fromRow = survivors[i];
+        if(fromRow !== toRow) acc.timeline.push({ type:'fall', col:c, fromRow, toRow, pass:acc.passes });
+      }
+      // new tiles enter as if queued directly above the board (row -1 is
+      // the cell touching the top edge), same relative order top-to-bottom
+      // as they'll land in — the standard "column collapses, new tiles
+      // drop from a queue above" match-3 read.
+      for(let k=0;k<newCount;k++){
+        acc.timeline.push({ type:'fall', col:c, fromRow:k-newCount, toRow:k, pass:acc.passes });
+      }
+    }
+
     applyGravity();
     refill();
     return true;
@@ -1026,9 +1113,17 @@ const Game = (function(){
 
   function attemptSwap(a,b){
     if(!running || paused) return false;
+    // captured BEFORE trySwap mutates the grid, so Render can play the
+    // actual swap motion (tileA sliding a->b, tileB sliding b->a) instead
+    // of the instant snap every move used to be. Board.trySwap only ever
+    // moves these object references between cells, never mutates them in
+    // place, but a shallow copy costs nothing and doesn't depend on that
+    // invariant holding forever.
+    const preA = Board.at(a.col,a.row), preB = Board.at(b.col,b.row);
     const result = Board.trySwap(a,b);
     if(!result.valid) return false;
     movesUsed++;
+    Events.emit('swap:visual', { a, b, tileA: preA?{...preA}:null, tileB: preB?{...preB}:null });
     const stats = Board.resolveToFixedPoint();
     score += computeScoreDelta(stats);
     for(const t in stats.clearedByType) clearedByType[t] = (clearedByType[t]||0) + stats.clearedByType[t];
@@ -1321,8 +1416,20 @@ const Music = (function(){
   }
 
   function ensureCtx(){
-    if(ctx) return;
+    // real bug (reported: "I don't hear any music"): this function never
+    // called .resume() on a suspended context — iridescentcosmology.html:6093
+    // and infall.html:1777 both do, and this module's own header claims
+    // every primitive here is copied verbatim from those exact reference
+    // implementations. A context created synchronously inside a click
+    // handler often auto-runs, but that's a browser-specific heuristic, not
+    // a spec guarantee — Safari and some mobile Chrome versions are known
+    // to leave it 'suspended' regardless, and a backgrounded-then-resumed
+    // tab can re-suspend an already-created context. Checked on every call
+    // (not just first creation), so resuming a saved session or starting a
+    // second run after the tab was backgrounded also re-resumes it.
+    if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
     ctx = new (window.AudioContext||window.webkitAudioContext)();
+    if(ctx.state === 'suspended') ctx.resume();
     master = ctx.createGain(); master.gain.value = muted?0:0.5;
     distortion = ctx.createWaveShaper(); setDistortionAmount(0);
     compressor = ctx.createDynamicsCompressor();
@@ -1718,6 +1825,7 @@ const Music = (function(){
     _test: {
       isMuted: () => muted,
       isStarted: () => started,
+      ctxState: () => ctx ? ctx.state : null,
       droneGain: () => drone ? drone.gain.gain.value : null,
       droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
       droneFilterQ: () => droneFilter ? droneFilter.Q.value : null,
@@ -2055,6 +2163,18 @@ const Render = (function(){
 
   // ---- idle motion: breathing pulse per-element, EXCEPT lightning which
   // snap-flickers instead (GAME_7_PILLARS.md §5's named exception) ----
+  // Player feedback after ship: lightning read as "overstimulating" — the
+  // original version re-rolled every 70-200ms PER CELL between two very
+  // different scale states (0.88/1.08, a 20% size swing), and with roughly
+  // a quarter of an 8x8 board being lightning at tier 4, that's dozens of
+  // independent strobes per second across the board. Real lightning is
+  // mostly calm with an occasional flash, not a constant flicker — rebuilt
+  // around that read: a neutral resting scale (matching every other
+  // element's baseline instead of sitting dimmed), a much slower re-roll
+  // (0.55-1.5s vs 70-200ms), and a low per-roll chance of the brief bright
+  // snap (18% vs the old 65%). Still a "snap," not a smooth pulse — the
+  // named exception still holds, it's just rare and calm instead of
+  // constant and jarring.
   const PULSE_SPEED = { fire:2.6, frost:1.1, verdant:1.5, void:1.3, light:1.8 };
   const flickerState = new Map(); // "c,r" -> {next, on}
   function idleFactor(type, col, row, now){
@@ -2062,10 +2182,10 @@ const Render = (function(){
       const key = col+','+row;
       let f = flickerState.get(key);
       if(!f || now >= f.next){
-        f = { on: Math.random() > 0.35, next: now + 70 + Math.random()*130 };
+        f = { on: Math.random() > 0.82, next: now + 550 + Math.random()*950 };
         flickerState.set(key, f);
       }
-      return f.on ? 1.08 : 0.88;
+      return f.on ? 1.06 : 1.0;
     }
     const speed = PULSE_SPEED[type] || 1.4;
     const phase = (col*0.7 + row*1.3);
@@ -2125,6 +2245,23 @@ const Render = (function(){
   let shards = [], rings = [], sweeps = [], reveals = [];
   let pending = []; // {fireAt, run}
 
+  // player feedback after ship: "can it have the animation of the gems
+  // moving" — until now the board only ever drew Board.at()'s live state
+  // straight through, so a swap and every gravity/refill drop snapped
+  // instantly with zero motion (only the clear/bomb PARTICLE effects
+  // above were ever animated). Two real, data-driven animations added:
+  // a swap-slide (the two tiles a player actually swapped trade screen
+  // positions) and a fall (gravity/refill playing back the real per-
+  // column movement Board now records in its timeline, not a guessed
+  // before/after diff). Both follow the same "state resolves instantly,
+  // playback catches up" split as the particle system.
+  const SWAP_SLIDE_DURATION = 140, FALL_DURATION = 220;
+  let swapAnim = null; // { a:{col,row}, b:{col,row}, tileA, tileB, start, dur }
+  const fallAnims = new Map(); // "col,row" (FINAL cell) -> { fromRow, toRow, start, dur }
+  Events.on('swap:visual', (e) => {
+    swapAnim = { a:e.a, b:e.b, tileA:e.tileA, tileB:e.tileB, start:performance.now(), dur:SWAP_SLIDE_DURATION };
+  });
+
   // qa-playtest finding: frame() bails out early whenever the screen isn't
   // 'game' (below), which freezes `pending`'s real-time drain but NOT wall
   // clock time — so a chain queued right as a run ended (Levels' final
@@ -2134,7 +2271,7 @@ const Render = (function(){
   // Play Again, or a different mode) — never on pause/resume, which
   // doesn't fire nav:change and SHOULD let a mid-chain animation resume
   // where it left off.
-  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; }
+  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; swapAnim = null; fallAnims.clear(); }
   Events.on('nav:change', (e) => { if(e.to === 'game') resetParticles(); });
 
   function spawnShardBurst(cells, axis, elementType){
@@ -2173,17 +2310,26 @@ const Render = (function(){
     const p = cellCenter(col,row);
     reveals.push({ x:p.x, y:p.y, t:0, dur:0.4, kind:'clip', color: TILE_COLORS[elementType]||'#fff' });
   }
+  function spawnFall(col,fromRow,toRow){
+    fallAnims.set(col+','+toRow, { fromRow, toRow, start: performance.now(), dur: FALL_DURATION });
+  }
 
   function schedule(delayMs, fn){ pending.push({ fireAt: performance.now()+delayMs, run: fn }); }
 
   // Board's timeline (GAME_7_PILLARS.md §7's "state resolves instantly,
   // playback catches up" split) drives all of the above, staggered by
-  // pass + chainOrder rather than played back all at once.
+  // pass + chainOrder rather than played back all at once. Every pass is
+  // additionally offset by SWAP_SLIDE_DURATION — a valid swap ALWAYS
+  // creates an immediate match (Board.trySwap requires it), so pass 1's
+  // effects would otherwise start firing at the exact cells the swap-slide
+  // is still animating into; letting the slide finish first, then playing
+  // the cascade, reads as one continuous motion instead of two competing
+  // ones landing on top of each other.
   Events.on('board:resolved', (e) => {
     const stats = e.stats;
     if(!stats || !stats.timeline) return;
     for(const ev of stats.timeline){
-      const passDelay = (ev.pass-1)*150;
+      const passDelay = SWAP_SLIDE_DURATION + (ev.pass-1)*150;
       if(ev.type === 'clear'){
         schedule(passDelay, () => spawnShardBurst(ev.cells, ev.axis, ev.elementType));
       } else if(ev.type === 'bombCreate'){
@@ -2195,6 +2341,8 @@ const Render = (function(){
           if(ev.kind === 'area') spawnAreaDetonation(ev.col, ev.row, ev.elementType);
           else spawnLineDetonation(ev.col, ev.row, ev.axis, ev.elementType);
         });
+      } else if(ev.type === 'fall'){
+        schedule(passDelay, () => spawnFall(ev.col, ev.fromRow, ev.toRow));
       }
     }
   });
@@ -2294,11 +2442,37 @@ const Render = (function(){
     ctx.fillStyle = boardPattern;
     ctx.fillRect(boardX, boardY, cell*N, cell*N);
     const selected = Game.getSelected();
+    const swapActive = swapAnim && (now - swapAnim.start < swapAnim.dur);
+    if(swapAnim && !swapActive) swapAnim = null;
     for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      // the two cells a real swap is actively animating between are drawn
+      // separately below (interpolated position, snapshot tile) instead
+      // of here — Board's live state at these cells may already reflect
+      // the post-cascade result, which isn't what should be sliding.
+      if(swapActive && ((c===swapAnim.a.col&&r===swapAnim.a.row) || (c===swapAnim.b.col&&r===swapAnim.b.row))) continue;
       const t = Board.at(c,r);
       const rect = cellRect(c,r);
       const isSel = selected && selected.col===c && selected.row===r;
-      drawTile(t, rect.x, rect.y, rect.w, rect.h, isSel, now);
+      const fall = fallAnims.get(c+','+r);
+      let drawY = rect.y;
+      if(fall){
+        if(now - fall.start < fall.dur){
+          const p = clamp((now-fall.start)/fall.dur, 0, 1);
+          const eased = 1-Math.pow(1-p,3); // ease-out — snappy arrival, not a linear drop
+          const visualRow = fall.fromRow + (fall.toRow-fall.fromRow)*eased;
+          drawY = boardY + visualRow*cell;
+        } else {
+          fallAnims.delete(c+','+r);
+        }
+      }
+      drawTile(t, rect.x, drawY, rect.w, rect.h, isSel, now);
+    }
+    if(swapActive){
+      const p = clamp((now-swapAnim.start)/swapAnim.dur, 0, 1);
+      const eased = 1-Math.pow(1-p,3);
+      const posA = cellRect(swapAnim.a.col,swapAnim.a.row), posB = cellRect(swapAnim.b.col,swapAnim.b.row);
+      drawTile(swapAnim.tileA, posA.x+(posB.x-posA.x)*eased, posA.y+(posB.y-posA.y)*eased, cell, cell, false, now);
+      drawTile(swapAnim.tileB, posB.x+(posA.x-posB.x)*eased, posB.y+(posA.y-posB.y)*eased, cell, cell, false, now);
     }
     updateParticles(dt);
     drawParticles();
