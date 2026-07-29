@@ -114,7 +114,6 @@ h1.title{
   box-shadow:0 20px 50px -24px rgba(0,0,0,0.6);
   transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease;
 }
-.card.flagship{grid-column:1 / -1;}
 .card:hover{transform:translateY(-3px);border-color:rgba(255,203,92,0.45);
   box-shadow:0 26px 60px -20px rgba(0,0,0,0.7), 0 0 40px -18px rgba(255,203,92,0.3);}
 
@@ -343,7 +342,7 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
           tightening move budget. The board never stops rewarding a bigger mistake.
         </p>
         <div class="card-actions">
-          <a class="btn" href="runeshatter.html">✦&nbsp; Shatter the Circle</a>
+          <a class="btn" href="runeshatter.html">✦&nbsp; Shatter the Board</a>
           <span class="card-meta">4-to-6 tile tiers · line &amp; area bombs · chain detonation</span>
         </div>
       </div>
@@ -427,8 +426,21 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
   }
 
   const t0 = performance.now();
-  function loop(ts){ draw((ts-t0)/1000); requestAnimationFrame(loop); }
-  requestAnimationFrame(loop);
+  let raf0;
+  function loop(ts){ draw((ts-t0)/1000); raf0 = requestAnimationFrame(loop); }
+  raf0 = requestAnimationFrame(loop);
+  // portal upgrade pass: this was the one rAF loop of six with no
+  // offscreen-pause gating (every card-preview canvas below already uses
+  // this exact IntersectionObserver pattern) — same fix, applied here for
+  // consistency, even though its cost is small (a 120x120 canvas, ~14
+  // draw calls/frame) compared to the card previews.
+  const io0 = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf0){ raf0 = requestAnimationFrame(loop); }
+      else if(!e.isIntersecting && raf0){ cancelAnimationFrame(raf0); raf0 = null; }
+    }
+  }, { threshold: 0.05 });
+  io0.observe(cv);
 })();
 
 // Iridescent Cosmology card art — a quiet preview loop reusing the same cut-gem

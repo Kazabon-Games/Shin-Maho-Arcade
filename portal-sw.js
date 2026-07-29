@@ -11,7 +11,7 @@
 // cache name; it explicitly passes anything outside its own precache list
 // straight to the network instead, so the games' own workers stay the
 // sole owner of their own caches once visited directly.
-const CACHE_NAME = 'portal-v6'; // bumped: added the Runeshatter (Game 7) card + its own card-preview canvas to index.html — see the activate handler below, which is what actually evicts 'portal-v5' from returning visitors' caches
+const CACHE_NAME = 'portal-v7'; // bumped: portal upgrade pass (5-card consistency audit) — fixed Runeshatter's leftover Sigil-Chain CTA copy, gated the hero sigil loop's rAF with the same IntersectionObserver pattern every card preview already uses, removed dead .card.flagship CSS — see the activate handler below, which is what actually evicts 'portal-v6' from returning visitors' caches
 const PORTAL_PATHS = ['/', '/index.html'];
 const PRECACHE_URLS = ['./'];
 
