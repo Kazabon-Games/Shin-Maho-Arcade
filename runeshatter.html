@@ -203,7 +203,7 @@ body.reduced-motion .panel{animation:none!important;}
 
 <div class="meta-row">
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.3.0</div>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.4.0</div>
 </div>
 
 <script>
@@ -211,6 +211,45 @@ body.reduced-motion .panel{animation:none!important;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.4.0 — 2026-07-29 — Real visual art pass (§5), replacing v0.2.0's
+                          gray-box render. Faceted-gem tiles (shadeHex +
+                          alternating-facet technique, verbatim from
+                          sigilchain.html) each with a hand-authored
+                          asymmetric silhouette (never a uniform ngon) and
+                          a rune-line overlay stroked on top — the paired-
+                          glyph idiom. Idle-pulse breathing motion on every
+                          element except lightning, which snap-flickers
+                          instead (a named exception, not an oversight).
+                          Distinct line-bomb/area-bomb glyphs on a shared
+                          dark "rune-forged" base with the tile's own
+                          element as an accent color, plus orbiting
+                          satellite shards on area bombs. Board's
+                          resolveToFixedPoint() now returns a positional
+                          `timeline` (clear/bombCreate/bombDetonate events
+                          with real cell coordinates) so Render can spawn
+                          directional shatter-shard particles along the
+                          real match axis, reuse Wardfall's ring-shockwave
+                          verbatim for area-bomb detonation, a linear sweep
+                          for line-bomb detonation, and stagger bomb-chain
+                          playback ~90-100ms per link — state still
+                          resolves instantly per §7, only playback catches
+                          up. Reaches for three capability-audit gaps used
+                          nowhere else in this portfolio: ctx.clip() for a
+                          mana-drain reveal wipe on bomb creation,
+                          ctx.createPattern() for the board backdrop
+                          texture, ctx.createConicGradient() used inside
+                          real gameplay (previously portal-chrome only) for
+                          the area-bomb's mana-surge detonation sweep.
+                          Verified: 53/53 adversarial + 41/41 audio tests
+                          still passing (no regression), real screenshots
+                          at board render size confirm the six elements and
+                          both bomb kinds read as distinct silhouettes and
+                          that particles actually fire. NOT yet done: the
+                          §5-mandated human/producer side-by-side screenshot
+                          comparison against Sigil Chain's and Wardfall's
+                          own boards — flagged honestly, not skipped
+                          silently.
 
    v0.3.0 — 2026-07-29 — Phase 1.5: the Music mood engine (§6), built in
                           now rather than deferred, per STUDIO_BIBLE.md
@@ -484,9 +523,18 @@ const Board = (function(){
       // call, not a literal port of a swap-position rule.
       const anchor = run.cells[Math.floor((run.cells.length-1)/2)];
       const key = anchor.col+','+anchor.row;
+      const makesBomb = run.cells.length >= 4;
       if(run.cells.length >= 5) bombSpecs.set(key, { kind:'area', type:run.type, col:anchor.col, row:anchor.row });
       else if(run.cells.length === 4) bombSpecs.set(key, { kind:'line', axis:run.axis, type:run.type, col:anchor.col, row:anchor.row });
       for(const cell of run.cells) runCellKeys.add(cell.col+','+cell.row);
+      // visual-signal enrichment (GAME_7_PILLARS.md §5) — a positional
+      // timeline Render can walk to spawn directional shatter-shards along
+      // the real match axis, exactly at the real cleared cells, and to
+      // stagger chain playback below. Pure additional fact, same discipline
+      // as the audio enrichment already on this object (bombsCreatedByKind
+      // etc.) — no new engine behavior, no mode-name branch.
+      const shardCells = makesBomb ? run.cells.filter(c => !(c.col===anchor.col && c.row===anchor.row)) : run.cells;
+      acc.timeline.push({ type:'clear', axis:run.axis, elementType:run.type, cells:shardCells, pass:acc.passes+1 });
     }
 
     const clearSet = new Set();
@@ -514,6 +562,11 @@ const Board = (function(){
       // in, without Board taking on any mode-name branch or new dependency.
       acc.bombsDetonatedByKind[t.bomb] = (acc.bombsDetonatedByKind[t.bomb]||0) + 1;
       acc.detonationCols.push(cell.col);
+      // chainOrder (0-indexed) lets Render stagger each detonation within
+      // this pass by ~80-120ms per GAME_7_PILLARS.md §5's "flash-primes for
+      // one beat before its own detonation fires" spec, even though Board
+      // itself resolves the whole chain synchronously and instantly.
+      acc.timeline.push({ type:'bombDetonate', kind:t.bomb, axis:t.axis||null, elementType:t.type, col:cell.col, row:cell.row, chainOrder:bombsDetonated-1, pass:acc.passes+1 });
       for(const b of computeBlast(cell, t)){
         const bk = b.col+','+b.row;
         if(!clearSet.has(bk)){
@@ -538,6 +591,7 @@ const Board = (function(){
       // be panned toward the column it actually formed in.
       acc.bombsCreatedByKind[spec.kind] = (acc.bombsCreatedByKind[spec.kind]||0) + 1;
       acc.creationCols.push(spec.col);
+      acc.timeline.push({ type:'bombCreate', kind:spec.kind, axis:spec.axis||null, elementType:spec.type, col:spec.col, row:spec.row, pass:acc.passes+1 });
     }
 
     acc.passes += 1;
@@ -598,7 +652,8 @@ const Board = (function(){
     // additional facts about what the engine already computed, not new
     // engine behavior and not a mode-name branch.
     const acc = { passes:0, cleared:0, bombsCreated:0, bombsDetonated:0, clearedByType:{}, reshuffled:false,
-      bombsCreatedByKind:{line:0,area:0}, bombsDetonatedByKind:{line:0,area:0}, creationCols:[], detonationCols:[] };
+      bombsCreatedByKind:{line:0,area:0}, bombsDetonatedByKind:{line:0,area:0}, creationCols:[], detonationCols:[],
+      timeline:[] };
     while(settlePass(acc)){ /* loop until stable */ }
     let reshuffles = 0;
     while(!hasAnyLegalMove() && reshuffles < 50){
@@ -1595,32 +1650,286 @@ const Music = (function(){
 })();
 
 /* =====================================================================
-   RENDER — deliberate gray-box pass (per task brief): flat colored
-   rounded rects per tile type, a visually distinct shape/border for
-   line-bombs vs area-bombs, no animation, no particles. Final
-   faceted-gem/rune-overlay art and juice land in a separate visual-art
-   pass — see GAME_7_PILLARS.md §5's own verification requirement (a real
-   screenshot/video comparison against Sigil Chain/Wardfall), deliberately
-   NOT attempted here.
+   VISUAL IDENTITY — real art pass per GAME_7_PILLARS.md §5, replacing the
+   v0.2.0 gray-box render. Third rune/orb tile-clearing game in this
+   portfolio (after Sigil Chain's drag-chain runes, Wardfall's click-pop
+   orbs) — distinctness from both is a checkable requirement, not taste:
 
-   Colors: fire/frost/verdant are placeholder hues chosen to clear real
-   RGB-distance collisions against Sigil Chain's already-shipped rune
-   colors (sigilchain.html's fire #ff5c3d, water #4ea8ff) and against this
-   portfolio's --gold/--danger/--ok tokens — not final art, just gray-box
-   values picked with the same collision-avoidance discipline the studio
-   already applies elsewhere. Lightning (#c9e8ff) and void's cyan rim
-   (#4fe6ff) are the pillars doc's own exact specified hex values.
+     - Shape idiom: faceted-gem base (this studio's proven shadeHex +
+       alternating-facet technique, `shadeHex`/`handVerts` copied verbatim
+       from sigilchain.html:437-455/493-494 per the faceted-gem-rendering
+       skill's "reuse the technique, hand-author the shape" rule) with a
+       RUNE-LINE OVERLAY stroked on top — a third silhouette language,
+       distinct from Sigil Chain's single silhouette and Wardfall's
+       orb+pip. Every element below is its own hand-authored asymmetric
+       {a,m} vertex list, never a Math.cos(i*2π/sides) generator — the
+       exact mistake this skill documents shipping twice already.
+     - Motion signature: idle-pulse (slow breathing glow) on every element
+       EXCEPT lightning, which snap-flickers instead — a deliberate, named
+       exception (GAME_7_PILLARS.md §5), not an inconsistency.
+     - Particle signature: directional shatter-shards along the real match
+       axis (from Board's timeline, GAME_7_PILLARS.md §7/§5) for plain
+       clears — distinct from Sigil Chain's radial flares and Wardfall's
+       ring shockwaves. Area-bomb detonation reuses Wardfall's own
+       ring+iris shockwave verbatim (wardfall.html:1506-1516) per §5's own
+       instruction ("reuse it rather than reinvent it"); line-bomb
+       detonation adapts it into a linear sweep along the blast axis.
+       Bomb-chain detonations flash-prime one beat (~90ms) before firing,
+       via Board's `timeline` chainOrder/pass fields — state resolves
+       instantly (§7); only playback is staggered here.
+     - Reach techniques (capability-audit gaps, GAME_7_PILLARS.md §5, zero
+       uses anywhere in this portfolio before this pass): ctx.clip() for a
+       bomb-creation mana-drain reveal wipe; ctx.createPattern() for the
+       board backdrop (replacing the v0.2.0 flat rgba fill); ctx.
+       createConicGradient() used INSIDE real gameplay (previously only in
+       portal/menu chrome) for the area-bomb's mana-surge detonation sweep.
+
+   Verification requirement per §5 is NOT satisfied by this commit alone —
+   a real screenshot/video comparison against Sigil Chain's and Wardfall's
+   tiles at actual render size still needs a human/producer look before
+   this is called done; see the changelog line and build report.
 ===================================================================== */
 const TILE_COLORS = {
   fire: '#e8542a', frost: '#2ec4d6', verdant: '#4caf6b',
   lightning: '#c9e8ff', void: '#140a1f', light: '#f0eaff',
 };
+// shared "rune-forged" dark base every bomb glyph sits on, regardless of
+// element — the point is "this is a primed explosive, not a plain tile of
+// this color," so the base must NOT be the element's own hue (that's what
+// a plain tile already looks like). Echoes wardfall.html's BOMB_OBSIDIAN
+// idiom (dark base + colored ember accent) but the accent is the tile's
+// OWN element instead of a fixed ember hue, so a bomb still visibly
+// belongs to the element that created it.
+const BOMB_BASE = '#1c1030';
+
+function shadeHex(hex, dLight, dSat){ // verbatim, sigilchain.html:437-455
+  dSat = dSat || 0;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h, s, l = (max+min)/2;
+  if(max===min){ h=s=0; }
+  else {
+    const d = max-min;
+    s = l>0.5 ? d/(2-max-min) : d/(max+min);
+    switch(max){
+      case r: h=(g-b)/d+(g<b?6:0); break;
+      case g: h=(b-r)/d+2; break;
+      case b: h=(r-g)/d+4; break;
+    }
+    h/=6;
+  }
+  h*=360; s = clamp(s*100+dSat,0,100); l = clamp(l*100+dLight,0,100);
+  return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+}
+function handVerts(cx, cy, r, defs){ // verbatim, sigilchain.html:493-494
+  return defs.map(d => ({ x:cx+Math.cos(d.a*Math.PI*2)*r*d.m, y:cy+Math.sin(d.a*Math.PI*2)*r*d.m }));
+}
+
+// Hand-authored asymmetric silhouettes — same {a:angle-in-turns, m:radius
+// multiplier} data shape as RAMIEL_VERTS/RUNE_VERT_DEFS/BOMB_VERTS. Every
+// list below was picked by hand for a distinct outline, not generated.
+const ELEMENT_VERTS = {
+  fire: [ // multi-spiked jagged crown — busier than Sigil Chain's single
+          // pinched tongue, since fire sharing a hue family across games is
+          // a deliberate feature (§5) but the SHAPE still needs to differ.
+    {a:0.00,m:1.25},{a:0.10,m:0.48},{a:0.22,m:1.05},{a:0.34,m:0.42},
+    {a:0.48,m:1.20},{a:0.60,m:0.46},{a:0.74,m:0.95},{a:0.88,m:0.60},
+  ],
+  frost: [ // crystalline hexagonal facets, gently irregular (never a
+           // uniform ngon per the skill's own rule)
+    {a:0.02,m:1.00},{a:0.17,m:0.85},{a:0.33,m:1.08},{a:0.50,m:0.90},
+    {a:0.66,m:1.05},{a:0.83,m:0.88},
+  ],
+  verdant: [ // organic curved / leaf-notch, no sharp symmetric points
+    {a:0.00,m:1.15},{a:0.16,m:0.75},{a:0.30,m:1.00},{a:0.46,m:0.60},
+    {a:0.58,m:0.95},{a:0.72,m:0.70},{a:0.88,m:1.05},
+  ],
+  lightning: [ // angular zigzag — pairs with the no-idle-pulse motion
+               // exception below to read as genuinely discontinuous
+    {a:0.00,m:1.30},{a:0.08,m:0.40},{a:0.20,m:0.95},{a:0.30,m:0.35},
+    {a:0.45,m:1.15},{a:0.58,m:0.45},{a:0.72,m:0.85},{a:0.84,m:0.38},
+  ],
+  void: [ // inward-notched near-black body, one deep bite — echoes
+          // Wardfall's STONE_VERTS "chunk with a crack bitten out"
+          // grammar on purpose (hazard-adjacent concept), hue kept off
+          // the purple family entirely (see the cyan rim below) to avoid
+          // a third #b98aff-adjacent collision in this portfolio.
+    {a:0.00,m:1.05},{a:0.15,m:0.95},{a:0.30,m:1.08},{a:0.44,m:0.35},
+    {a:0.58,m:0.98},{a:0.72,m:0.90},{a:0.88,m:1.02},
+  ],
+  light: [ // radiant starburst, busiest silhouette (capstone element) —
+           // outward ray strokes beyond this outline are added separately
+    {a:0.00,m:1.20},{a:0.09,m:0.50},{a:0.20,m:1.10},{a:0.29,m:0.48},
+    {a:0.40,m:1.15},{a:0.50,m:0.46},{a:0.62,m:1.10},{a:0.71,m:0.50},
+    {a:0.83,m:1.05},{a:0.92,m:0.52},
+  ],
+};
+const LINE_BOMB_VERTS = [ // elongated double-point glyph along one axis,
+  // idle-rotated slowly to read as "primed" — distinct from every tile
+  // silhouette and from the area bomb's near-round rune-circle.
+  {a:0.00,m:1.50},{a:0.10,m:0.45},{a:0.25,m:0.70},
+  {a:0.50,m:1.50},{a:0.75,m:0.70},{a:0.90,m:0.45},
+];
+const AREA_BOMB_VERTS = [ // scalloped rune-circle — a magic-circle idiom
+  // reads as intentionally geometric rather than "lazy ngon," backed by
+  // orbiting satellite shards drawn separately for further distinction.
+  {a:0.02,m:1.02},{a:0.14,m:0.82},{a:0.27,m:1.05},{a:0.39,m:0.80},
+  {a:0.52,m:1.00},{a:0.64,m:0.84},{a:0.78,m:1.03},{a:0.90,m:0.81},
+];
+
+// rune sigil line-drawing overlay per element — the SECOND half of the
+// "paired-glyph" idiom (gem base + rune line), stroked in a bright
+// translucent tint over the facet-shaded base. Deliberately simple line
+// art, not another filled shape, so it reads as an inscription ON the
+// gem rather than a second silhouette competing with the first.
+const RUNE_OVERLAYS = {
+  fire: (c2,cx,cy,r) => {
+    c2.beginPath();
+    c2.moveTo(cx, cy-r*0.55); c2.lineTo(cx-r*0.22, cy+r*0.15); c2.lineTo(cx, cy+r*0.02); c2.lineTo(cx+r*0.22, cy+r*0.15);
+    c2.closePath();
+  },
+  frost: (c2,cx,cy,r) => {
+    for(let i=0;i<3;i++){
+      const ang = i*Math.PI/3;
+      c2.moveTo(cx-Math.cos(ang)*r*0.45, cy-Math.sin(ang)*r*0.45);
+      c2.lineTo(cx+Math.cos(ang)*r*0.45, cy+Math.sin(ang)*r*0.45);
+    }
+  },
+  verdant: (c2,cx,cy,r) => {
+    c2.moveTo(cx, cy+r*0.5);
+    c2.quadraticCurveTo(cx-r*0.35, cy, cx, cy-r*0.5);
+    c2.quadraticCurveTo(cx+r*0.15, cy, cx, cy+r*0.5);
+  },
+  lightning: (c2,cx,cy,r) => {
+    c2.moveTo(cx-r*0.12, cy-r*0.5); c2.lineTo(cx+r*0.14, cy-r*0.05);
+    c2.lineTo(cx-r*0.06, cy+r*0.05); c2.lineTo(cx+r*0.12, cy+r*0.5);
+  },
+  void: (c2,cx,cy,r) => {
+    c2.arc(cx, cy, r*0.4, 0.35*Math.PI*2, 0.85*Math.PI*2);
+  },
+  light: (c2,cx,cy,r) => {
+    c2.moveTo(cx-r*0.4, cy); c2.lineTo(cx+r*0.4, cy);
+    c2.moveTo(cx, cy-r*0.4); c2.lineTo(cx, cy+r*0.4);
+  },
+};
+
+const SPRITE_SIZE = 72;
+function buildFacetSprite(verts, baseColor, strokeColor, overlayFn, extra){
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.38;
+  const pts = handVerts(cx, cy, r, verts);
+  c2.shadowColor = baseColor; c2.shadowBlur = 12;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.fillStyle = baseColor; c2.fill();
+  c2.shadowBlur = 0;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const lit = i % 2 === 0;
+    c2.fillStyle = shadeHex(baseColor, lit ? 16 : -14, lit ? 8 : -6);
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(a.x,a.y); c2.lineTo(b.x,b.y); c2.closePath(); c2.fill();
+  }
+  c2.fillStyle = 'rgba(255,255,255,0.35)';
+  c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(pts[0].x,pts[0].y); c2.lineTo(pts[pts.length-1].x,pts[pts.length-1].y); c2.closePath(); c2.fill();
+  c2.strokeStyle = strokeColor || 'rgba(255,255,255,0.5)'; c2.lineWidth = 1.2;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.stroke();
+  if(overlayFn){
+    c2.beginPath(); overlayFn(c2, cx, cy, r);
+    c2.strokeStyle = 'rgba(255,255,255,0.65)'; c2.lineWidth = 1.6;
+    c2.lineCap = 'round'; c2.stroke();
+  }
+  if(extra) extra(c2, cx, cy, r);
+  return cvs;
+}
+const ELEMENT_SPRITES = {};
+for(const key of TILE_TYPE_POOL){
+  const strokeColor = key==='void' ? '#4fe6ff' : (key==='light' ? '#fff8e0' : undefined);
+  const extra = key==='light' ? (c2,cx,cy,r) => { // outward ray strokes
+      // BEYOND the silhouette — reads as distinct from Sigil Chain's own
+      // light rune, which only varies point length INSIDE one silhouette.
+      c2.strokeStyle = 'rgba(255,248,224,0.55)'; c2.lineWidth = 1;
+      for(let i=0;i<8;i++){
+        const ang = i*Math.PI/4;
+        c2.beginPath();
+        c2.moveTo(cx+Math.cos(ang)*r*1.05, cy+Math.sin(ang)*r*1.05);
+        c2.lineTo(cx+Math.cos(ang)*r*1.35, cy+Math.sin(ang)*r*1.35);
+        c2.stroke();
+      }
+    } : null;
+  ELEMENT_SPRITES[key] = buildFacetSprite(ELEMENT_VERTS[key], TILE_COLORS[key], strokeColor, RUNE_OVERLAYS[key], extra);
+}
+const BOMB_SPRITES = { line:{}, area:{} };
+function bombSpriteFor(kind, elementType){
+  const cache = BOMB_SPRITES[kind];
+  if(cache[elementType]) return cache[elementType];
+  const accent = TILE_COLORS[elementType] || '#ffcb5c';
+  const verts = kind==='area' ? AREA_BOMB_VERTS : LINE_BOMB_VERTS;
+  const size = SPRITE_SIZE;
+  const cvs = document.createElement('canvas'); cvs.width=size; cvs.height=size;
+  const c2 = cvs.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.38;
+  const pts = handVerts(cx, cy, r, verts);
+  c2.shadowColor = accent; c2.shadowBlur = 16;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.fillStyle = BOMB_BASE; c2.fill();
+  c2.shadowBlur = 0;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const lit = i % 2 === 0;
+    c2.fillStyle = lit ? shadeHex(accent, 6, 0) : shadeHex(BOMB_BASE, -8, -4);
+    c2.beginPath(); c2.moveTo(cx,cy); c2.lineTo(a.x,a.y); c2.lineTo(b.x,b.y); c2.closePath(); c2.fill();
+  }
+  c2.strokeStyle = accent; c2.lineWidth = 1.4;
+  c2.beginPath();
+  pts.forEach((v,i)=> i===0?c2.moveTo(v.x,v.y):c2.lineTo(v.x,v.y));
+  c2.closePath(); c2.stroke();
+  if(kind==='area'){
+    // rune-circle ring + 3 orbiting satellite shards (drawn at t=0; live
+    // orbit rotation happens per-frame in drawTile, this bakes the ring)
+    c2.strokeStyle = shadeHex(accent, 20, 10); c2.lineWidth = 1;
+    c2.beginPath(); c2.arc(cx, cy, r*1.15, 0, Math.PI*2); c2.stroke();
+  } else {
+    // directional arrow-facet along the bomb's own long axis (baked
+    // pointing along a=0/a=0.5 — drawTile rotates the whole sprite to the
+    // tile's real row/col axis)
+    c2.fillStyle = 'rgba(255,255,255,0.85)';
+    c2.beginPath();
+    c2.moveTo(cx+r*0.85, cy-r*0.13); c2.lineTo(cx+r*1.05, cy); c2.lineTo(cx+r*0.85, cy+r*0.13);
+    c2.closePath(); c2.fill();
+  }
+  cache[elementType] = cvs;
+  return cvs;
+}
+
+// board backdrop texture — createPattern(), zero uses anywhere in this
+// portfolio before this pass (GAME_7_PILLARS.md §5's capability-audit
+// gap). Subtle cracked-stone/arcane-parchment texture, distinct from
+// Sigil Chain's flat panel board background.
+function buildBoardPattern(ctx0){
+  const t = document.createElement('canvas'); t.width=48; t.height=48;
+  const tc = t.getContext('2d');
+  tc.fillStyle = 'rgba(255,255,255,0.02)'; tc.fillRect(0,0,48,48);
+  tc.strokeStyle = 'rgba(255,255,255,0.05)'; tc.lineWidth = 1;
+  tc.beginPath();
+  tc.moveTo(4,6); tc.lineTo(20,10); tc.lineTo(14,26); tc.lineTo(30,20); tc.lineTo(44,40);
+  tc.stroke();
+  tc.fillStyle = 'rgba(255,255,255,0.04)';
+  for(let i=0;i<6;i++){ tc.beginPath(); tc.arc((i*13+5)%48, (i*19+9)%48, 0.8, 0, Math.PI*2); tc.fill(); }
+  return ctx0.createPattern(t, 'repeat');
+}
+
 const Render = (function(){
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   let W=0, H=0, dpr=1;
   let boardX=0, boardY=0, cell=40;
   const N = BOARD_SIZE;
+  const boardPattern = buildBoardPattern(ctx);
 
   function layout(){
     const topPad = 96, sidePad = 16, bottomPad = 24;
@@ -1643,6 +1952,7 @@ const Render = (function(){
   window.addEventListener('resize', resize);
 
   function cellRect(col,row){ return { x: boardX+col*cell, y: boardY+row*cell, w:cell, h:cell }; }
+  function cellCenter(col,row){ return { x: boardX+col*cell+cell/2, y: boardY+row*cell+cell/2 }; }
   function cellFromPoint(x,y){
     const col = Math.floor((x-boardX)/cell);
     const row = Math.floor((y-boardY)/cell);
@@ -1660,67 +1970,243 @@ const Render = (function(){
     ctx.closePath();
   }
 
-  function drawTile(tile, x, y, w, h, isSelected){
-    if(!tile) return;
-    const pad = w*0.08;
-    const cx = x+w/2, cy = y+h/2;
-    const color = TILE_COLORS[tile.type] || '#888';
-    ctx.save();
-    if(tile.bomb === 'area'){
-      const rad = (w-pad*2)/2;
-      ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
-      ctx.lineWidth = Math.max(2, w*0.06);
-      ctx.strokeStyle = '#ffffff'; ctx.stroke();
-      ctx.beginPath(); ctx.arc(cx,cy,rad*0.62,0,Math.PI*2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, w*0.035); ctx.stroke();
-    } else if(tile.bomb === 'line'){
-      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.18);
-      ctx.fillStyle = color; ctx.fill();
-      ctx.setLineDash([Math.max(3,w*0.1), Math.max(2,w*0.06)]);
-      ctx.lineWidth = Math.max(2, w*0.07);
-      ctx.strokeStyle = '#ffffff'; ctx.stroke();
-      ctx.setLineDash([]);
-      // directional chevron along the bomb's axis
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.beginPath();
-      if(tile.axis === 'row'){
-        ctx.moveTo(cx-w*0.16, cy-h*0.14); ctx.lineTo(cx+w*0.16, cy); ctx.lineTo(cx-w*0.16, cy+h*0.14);
-      } else {
-        ctx.moveTo(cx-w*0.14, cy-h*0.16); ctx.lineTo(cx, cy+h*0.16); ctx.lineTo(cx+w*0.14, cy-h*0.16);
+  // ---- idle motion: breathing pulse per-element, EXCEPT lightning which
+  // snap-flickers instead (GAME_7_PILLARS.md §5's named exception) ----
+  const PULSE_SPEED = { fire:2.6, frost:1.1, verdant:1.5, void:1.3, light:1.8 };
+  const flickerState = new Map(); // "c,r" -> {next, on}
+  function idleFactor(type, col, row, now){
+    if(type === 'lightning'){
+      const key = col+','+row;
+      let f = flickerState.get(key);
+      if(!f || now >= f.next){
+        f = { on: Math.random() > 0.35, next: now + 70 + Math.random()*130 };
+        flickerState.set(key, f);
       }
-      ctx.closePath(); ctx.fill();
-    } else if(tile.type === 'void'){
-      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.22);
-      ctx.fillStyle = color; ctx.fill();
-      ctx.lineWidth = Math.max(2, w*0.05);
-      ctx.strokeStyle = '#4fe6ff'; ctx.stroke();
-    } else {
-      roundedRect(x+pad, y+pad, w-pad*2, h-pad*2, Math.min(w,h)*0.22);
-      ctx.fillStyle = color; ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.stroke();
+      return f.on ? 1.08 : 0.88;
     }
+    const speed = PULSE_SPEED[type] || 1.4;
+    const phase = (col*0.7 + row*1.3);
+    return 1 + Math.sin(now/1000*speed + phase)*0.055;
+  }
+
+  function drawTile(tile, x, y, w, h, isSelected, now){
+    if(!tile) return;
+    const cx = x+w/2, cy = y+h/2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    const pulse = idleFactor(tile.bomb ? 'bomb' : tile.type, Math.round(x/w), Math.round(y/h), now);
+    if(tile.bomb){
+      const sprite = bombSpriteFor(tile.bomb, tile.type);
+      const scale = (w*0.92)/SPRITE_SIZE;
+      if(tile.bomb === 'line'){
+        const rot = tile.axis === 'row' ? 0 : Math.PI/2;
+        ctx.rotate(rot + now/1000*0.6); // idle-rotate, "primed" per §5
+      } else {
+        ctx.rotate(now/1000*0.35); // rune-circle slow rotation
+        // orbiting satellite shards, drawn live (not baked) so they orbit
+        const accent = TILE_COLORS[tile.type] || '#ffcb5c';
+        for(let i=0;i<3;i++){
+          const ang = now/700 + i*(Math.PI*2/3);
+          const orx = Math.cos(ang)*w*0.44, ory = Math.sin(ang)*w*0.44;
+          ctx.fillStyle = shadeHex(accent, 10, 5);
+          ctx.beginPath(); ctx.arc(orx, ory, Math.max(1.5,w*0.045), 0, Math.PI*2); ctx.fill();
+        }
+      }
+      ctx.scale(scale, scale);
+      ctx.drawImage(sprite, -SPRITE_SIZE/2, -SPRITE_SIZE/2);
+    } else {
+      const sprite = ELEMENT_SPRITES[tile.type];
+      if(sprite){
+        ctx.scale(pulse, pulse);
+        ctx.globalAlpha = 1;
+        const scale = (w*0.86)/SPRITE_SIZE;
+        ctx.scale(scale, scale);
+        ctx.drawImage(sprite, -SPRITE_SIZE/2, -SPRITE_SIZE/2);
+      }
+    }
+    ctx.restore();
     if(isSelected){
+      ctx.save();
       roundedRect(x+2, y+2, w-4, h-4, Math.min(w,h)*0.22);
       ctx.lineWidth = Math.max(2, w*0.06);
       ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--neon') || '#ffcb5c';
       ctx.stroke();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
+  // ---- particles: shatter-shards (plain clears), ring shockwave
+  // (area-bomb, ported verbatim from wardfall.html:1506-1516 per §5's own
+  // "reuse it rather than reinvent it"), linear sweep (line-bomb), and a
+  // mana-drain ctx.clip() reveal wipe (bomb creation) ----
+  let shards = [], rings = [], sweeps = [], reveals = [];
+  let pending = []; // {fireAt, run}
+
+  function spawnShardBurst(cells, axis, elementType){
+    const color = TILE_COLORS[elementType] || '#fff';
+    const along = axis === 'row' ? {x:1,y:0} : {x:0,y:1};
+    for(const c of cells){
+      const p = cellCenter(c.col, c.row);
+      for(let i=0;i<4;i++){
+        const dir = i%2===0 ? 1 : -1;
+        const jitter = (Math.random()-0.5)*0.6;
+        shards.push({
+          x:p.x, y:p.y,
+          vx: along.x*dir*(90+Math.random()*60) + along.y*jitter*40,
+          vy: along.y*dir*(90+Math.random()*60) + along.x*jitter*40,
+          rot: Math.random()*Math.PI*2, vrot:(Math.random()-0.5)*10,
+          life:0, maxLife:0.38+Math.random()*0.1, color, size: cell*0.14,
+        });
+      }
+    }
+  }
+  function spawnAreaDetonation(col,row,elementType){
+    const p = cellCenter(col,row);
+    rings.push({ x:p.x, y:p.y, t:0, dur:0.42, color: TILE_COLORS[elementType]||'#fff' });
+    reveals.push({ x:p.x, y:p.y, t:0, dur:0.5, kind:'conic', color: TILE_COLORS[elementType]||'#fff' });
+  }
+  function spawnLineDetonation(col,row,axis,elementType){
+    const p = cellCenter(col,row);
+    const x1 = axis==='row' ? boardX : p.x, y1 = axis==='row' ? p.y : boardY;
+    const x2 = axis==='row' ? boardX+cell*N : p.x, y2 = axis==='row' ? p.y : boardY+cell*N;
+    sweeps.push({ x1,y1,x2,y2, axis, t:0, dur:0.3, color: TILE_COLORS[elementType]||'#fff' });
+  }
+  function spawnFlashPrime(col,row){
+    reveals.push({ x:cellCenter(col,row).x, y:cellCenter(col,row).y, t:0, dur:0.16, kind:'flash', color:'#ffffff' });
+  }
+  function spawnCreateReveal(col,row,elementType){
+    const p = cellCenter(col,row);
+    reveals.push({ x:p.x, y:p.y, t:0, dur:0.4, kind:'clip', color: TILE_COLORS[elementType]||'#fff' });
+  }
+
+  function schedule(delayMs, fn){ pending.push({ fireAt: performance.now()+delayMs, run: fn }); }
+
+  // Board's timeline (GAME_7_PILLARS.md §7's "state resolves instantly,
+  // playback catches up" split) drives all of the above, staggered by
+  // pass + chainOrder rather than played back all at once.
+  Events.on('board:resolved', (e) => {
+    const stats = e.stats;
+    if(!stats || !stats.timeline) return;
+    for(const ev of stats.timeline){
+      const passDelay = (ev.pass-1)*150;
+      if(ev.type === 'clear'){
+        schedule(passDelay, () => spawnShardBurst(ev.cells, ev.axis, ev.elementType));
+      } else if(ev.type === 'bombCreate'){
+        schedule(passDelay, () => spawnCreateReveal(ev.col, ev.row, ev.elementType));
+      } else if(ev.type === 'bombDetonate'){
+        const chainDelay = passDelay + ev.chainOrder*100;
+        schedule(Math.max(0,chainDelay-90), () => spawnFlashPrime(ev.col, ev.row));
+        schedule(chainDelay, () => {
+          if(ev.kind === 'area') spawnAreaDetonation(ev.col, ev.row, ev.elementType);
+          else spawnLineDetonation(ev.col, ev.row, ev.axis, ev.elementType);
+        });
+      }
+    }
+  });
+
+  function updateParticles(dt){
+    const now = performance.now();
+    for(let i=pending.length-1;i>=0;i--){ if(now >= pending[i].fireAt){ pending[i].run(); pending.splice(i,1); } }
+    for(const s of shards){ s.x+=s.vx*dt; s.y+=s.vy*dt; s.vx*=0.94; s.vy*=0.94; s.rot+=s.vrot*dt; s.life+=dt; }
+    shards = shards.filter(s => s.life < s.maxLife);
+    for(const r of rings) r.t += dt;
+    rings = rings.filter(r => r.t < r.dur);
+    for(const s of sweeps) s.t += dt;
+    sweeps = sweeps.filter(s => s.t < s.dur);
+    for(const r of reveals) r.t += dt;
+    reveals = reveals.filter(r => r.t < r.dur);
+  }
+
+  function drawParticles(){
+    for(const s of shards){
+      const t = s.life/s.maxLife;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.translate(s.x, s.y); ctx.rotate(s.rot);
+      ctx.fillStyle = shadeHex(s.color, 30, 10);
+      ctx.beginPath(); ctx.moveTo(0,-s.size); ctx.lineTo(s.size*0.6,s.size*0.5); ctx.lineTo(-s.size*0.6,s.size*0.5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // ring shockwave — ported verbatim from wardfall.html:1506-1516
+    for(const s of rings){
+      const t = s.t/s.dur;
+      const r = (t*t*(3-2*t)) * cell*2.6; // smoothstep, close to Ease.easeOutCubic's feel
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1-t);
+      ctx.strokeStyle = s.color; ctx.lineWidth = 4*(1-t)+1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = `rgba(22,16,34,${0.5*(1-t)})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r*0.55, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    for(const s of sweeps){
+      const t = s.t/s.dur;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = Math.max(0, 1-t)*0.9;
+      ctx.strokeStyle = s.color; ctx.lineWidth = cell*0.5*(1-t*0.6);
+      ctx.beginPath(); ctx.moveTo(s.x1,s.y1); ctx.lineTo(s.x2,s.y2); ctx.stroke();
+      ctx.restore();
+    }
+    for(const r of reveals){
+      const t = r.t/r.dur;
+      ctx.save();
+      if(r.kind === 'clip'){
+        // mana-drain reveal wipe — ctx.clip() on a growing circle, zero
+        // uses anywhere in this portfolio before this pass. A bright ring
+        // sits right at the clip edge so the wipe itself is visible.
+        const rad = t*cell*0.8;
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.clip();
+        ctx.fillStyle = shadeHex(r.color, 40, 20);
+        ctx.globalAlpha = Math.max(0,1-t)*0.6;
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.fill();
+        ctx.restore(); ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2*(1-t);
+        ctx.beginPath(); ctx.arc(r.x, r.y, rad, 0, Math.PI*2); ctx.stroke();
+      } else if(r.kind === 'conic'){
+        // area-bomb "mana surge" sweep — createConicGradient() used
+        // INSIDE real gameplay for the first time in this portfolio
+        // (previously portal/menu chrome only, GAME_7_PILLARS.md §5).
+        const grad = ctx.createConicGradient(t*Math.PI*2, r.x, r.y);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.08, shadeHex(r.color, 40, 15));
+        grad.addColorStop(0.16, 'rgba(255,255,255,0)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0,1-t);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(r.x, r.y, cell*2.4, 0, Math.PI*2); ctx.fill();
+      } else { // flash-prime — brief bright pulse right before a chained
+               // bomb detonates, per §5's "flash-primes for one beat"
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0,1-t*1.4);
+        ctx.fillStyle = r.color;
+        ctx.beginPath(); ctx.arc(r.x, r.y, cell*0.5*(0.6+t), 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  let lastFrameNow = 0;
   function frame(){
+    const now = performance.now();
+    const dt = lastFrameNow ? Math.min(0.05,(now-lastFrameNow)/1000) : 0;
+    lastFrameNow = now;
     ctx.clearRect(0,0,W,H);
     if(Nav.currentScreen() !== 'game') return;
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fillStyle = boardPattern;
     ctx.fillRect(boardX, boardY, cell*N, cell*N);
     const selected = Game.getSelected();
     for(let r=0;r<N;r++) for(let c=0;c<N;c++){
       const t = Board.at(c,r);
       const rect = cellRect(c,r);
       const isSel = selected && selected.col===c && selected.row===r;
-      drawTile(t, rect.x, rect.y, rect.w, rect.h, isSel);
+      drawTile(t, rect.x, rect.y, rect.w, rect.h, isSel, now);
     }
+    updateParticles(dt);
+    drawParticles();
   }
 
   // ---- input: tap-to-select, tap-adjacent-to-swap ----
