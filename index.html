@@ -327,6 +327,28 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-art">
+        <canvas id="runeshatterArt" width="640" height="280" aria-hidden="true"></canvas>
+        <div class="card-badge">Stage V · Live Now</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Runeshatter</div>
+        <div class="card-genre">Match-3 · Bomb Chain</div>
+        <p class="card-desc">
+          Swap runes across an 8x8 board. A cluster of four shatters into a line-clear bomb;
+          a cluster of five into an area bomb — and a bomb caught in another bomb's blast
+          doesn't wait its turn. Six elemental tiers, three ways to play: chase a score with
+          no ceiling, survive a closing clock, or clear twenty hand-built boards with a
+          tightening move budget. The board never stops rewarding a bigger mistake.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="runeshatter.html">✦&nbsp; Shatter the Circle</a>
+          <span class="card-meta">4-to-6 tile tiers · line &amp; area bombs · chain detonation</span>
+        </div>
+      </div>
+    </div>
+
     <div class="card soon">
       <div class="glyph">✦</div>
       <div class="card-title">More Worlds</div>
@@ -744,6 +766,94 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
     }
   }, { threshold: 0.05 });
   io4.observe(cv);
+})();
+
+// Runeshatter's card preview — the fifth genuinely distinct visual
+// language in this grid. Reuses the real game's own facet-shading
+// technique and hand-authored vertex data verbatim (runeshatter.html's
+// shadeHex/handVerts/ELEMENT_VERTS.fire+frost), not a generic placeholder:
+// a small tableau of idle-pulsing faceted gems that periodically chains a
+// bomb-detonation flash across a run of them, previewing the actual
+// bomb-chain payoff rather than just the tile art alone.
+(function(){
+  const cv = document.getElementById('runeshatterArt');
+  if(!cv) return;
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  function shadeHex(hex, dLight, dSat){
+    dSat = dSat || 0;
+    const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    let h, s, l = (max+min)/2;
+    if(max===min){ h=s=0; }
+    else {
+      const d = max-min;
+      s = l>0.5 ? d/(2-max-min) : d/(max+min);
+      switch(max){ case r: h=(g-b)/d+(g<b?6:0); break; case g: h=(b-r)/d+2; break; case b: h=(r-g)/d+4; break; }
+      h/=6;
+    }
+    h*=360; s = Math.min(100,Math.max(0,s*100+dSat)); l = Math.min(100,Math.max(0,l*100+dLight));
+    return `hsl(${h.toFixed(0)}, ${s.toFixed(0)}%, ${l.toFixed(0)}%)`;
+  }
+  function handVerts(cx, cy, r, defs){ return defs.map(d => ({ x:cx+Math.cos(d.a*Math.PI*2)*r*d.m, y:cy+Math.sin(d.a*Math.PI*2)*r*d.m })); }
+  const FIRE_VERTS = [ {a:0.00,m:1.25},{a:0.10,m:0.48},{a:0.22,m:1.05},{a:0.34,m:0.42},{a:0.48,m:1.20},{a:0.60,m:0.46},{a:0.74,m:0.95},{a:0.88,m:0.60} ];
+  const FROST_VERTS = [ {a:0.02,m:1.00},{a:0.17,m:0.85},{a:0.33,m:1.08},{a:0.50,m:0.90},{a:0.66,m:1.05},{a:0.83,m:0.88} ];
+  function drawGem(cx, cy, r, verts, color, pulse, flash){
+    const pts = handVerts(cx, cy, r*pulse, verts);
+    c.beginPath(); pts.forEach((v,i)=> i===0?c.moveTo(v.x,v.y):c.lineTo(v.x,v.y)); c.closePath();
+    c.fillStyle = color; c.fill();
+    for(let i=0;i<pts.length;i++){
+      const a = pts[i], b = pts[(i+1)%pts.length], lit = i%2===0;
+      c.fillStyle = shadeHex(color, lit?16:-14, lit?8:-6);
+      c.beginPath(); c.moveTo(cx,cy); c.lineTo(a.x,a.y); c.lineTo(b.x,b.y); c.closePath(); c.fill();
+    }
+    if(flash > 0){
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = flash;
+      c.beginPath(); c.arc(cx, cy, r*pulse*1.6, 0, Math.PI*2); c.fillStyle = '#ffffff'; c.fill();
+      c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+    }
+  }
+
+  const COLS = 5, ROWS = 3, cellSize = 46, gap = 8;
+  const gridW = COLS*cellSize + (COLS-1)*gap, gridH = ROWS*cellSize + (ROWS-1)*gap;
+  const originX = (W-gridW)/2, originY = (H-gridH)/2;
+  const tiles = [];
+  for(let r=0;r<ROWS;r++) for(let col=0;col<COLS;col++){
+    tiles.push({ col, row:r, isFire: (col+r)%3===0, phase: Math.random()*Math.PI*2 });
+  }
+  let chainT = -10, chainStart = -10, chainLen = 0;
+
+  function draw(t){
+    c.clearRect(0,0,W,H);
+    if(t > chainStart+3.2){ chainStart = t; chainLen = 3+Math.floor(Math.random()*3); }
+    for(const tile of tiles){
+      const cx = originX + tile.col*(cellSize+gap) + cellSize/2;
+      const cy = originY + tile.row*(cellSize+gap) + cellSize/2;
+      const pulse = 1 + Math.sin(t*1.6 + tile.phase)*0.06;
+      const chainIndex = tile.row*COLS + tile.col;
+      const chainElapsed = t - (chainStart + chainIndex*0.08);
+      const flash = (chainIndex < chainLen && chainElapsed > 0 && chainElapsed < 0.25) ? (1-chainElapsed/0.25) : 0;
+      drawGem(cx, cy, cellSize*0.42, tile.isFire?FIRE_VERTS:FROST_VERTS, tile.isFire?'#e8542a':'#2ec4d6', pulse, flash);
+    }
+  }
+  const t0 = performance.now();
+  let raf, lastTs = null;
+  function loop(ts){
+    if(lastTs === null) lastTs = ts;
+    lastTs = ts;
+    draw((ts-t0)/1000);
+    raf = requestAnimationFrame(loop);
+  }
+  raf = requestAnimationFrame(loop);
+  const io5 = new IntersectionObserver((entries)=>{
+    for(const e of entries){
+      if(e.isIntersecting && !raf){ raf = requestAnimationFrame(loop); }
+      else if(!e.isIntersecting && raf){ cancelAnimationFrame(raf); raf = null; }
+    }
+  }, { threshold: 0.05 });
+  io5.observe(cv);
 })();
 
 // PWA registration — see the pwa-offline-games skill. Root-scoped
