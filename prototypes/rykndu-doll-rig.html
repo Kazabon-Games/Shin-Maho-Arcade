@@ -999,6 +999,28 @@
 -->
 
 <style>
+  /* Shared arcade design-token system (wardfall.html lines 21-37, copied
+     verbatim) -- closes the GAME_5_PILLARS.md §1 gap ("no shared token
+     set... visually unintegrated with the rest of the arcade"). Font
+     tokens are deliberately OMITTED here: Rykndu keeps its own established
+     monospace-only identity (.version-marker/#hint/#debug are already all
+     monospace) rather than pulling in wardfall's Cormorant Garamond/
+     Quicksand fonts -- a bounded scope decision, not a silent deviation. */
+  :root{
+    --bg:#140b30;
+    --panel:#231442;
+    --panel2:#301c58;
+    --ink:#f4ecff;
+    --ink-mid:#c2b3e8;
+    --ink-soft:#8674b8;
+    --neon:#ffcb5c;
+    --neon2:#b98aff;
+    --gold:#ffd76b;
+    --danger:#ff4d70;
+    --ok:#5eff9c;
+    --border:rgba(255,203,92,0.25);
+    --mono:monospace;
+  }
   html, body { margin: 0; padding: 0; background: #12141c; overflow: hidden; height: 100%; }
   #stage { display: block; touch-action: none; }
   /* v0.1.8 feel pass: #debug, #hud, and .version-marker used to all sit in
@@ -1015,17 +1037,23 @@
     pointer-events: none;
   }
   #hint {
+    /* Player-facing control hint (real body text, not a dev marker) --
+       brought into the token system: was a bespoke #666, now the same
+       secondary-ink shade wardfall's own .tagline uses for equivalent
+       muted centered text. */
     position: fixed; bottom: 10px; left: 0; right: 0; text-align: center;
-    color: #666; font-family: monospace; font-size: 12px; pointer-events: none;
+    color: var(--ink-soft); font-family: monospace; font-size: 12px; pointer-events: none;
   }
   #debug {
+    /* Dev-only overlay (?debug=1), not part of the player-facing palette --
+       #5c6 stays independent on purpose, same as .version-marker below. */
     display: none;
     position: fixed; top: 30px; left: 10px; font-size: 11px; color: #5c6;
     font-family: monospace; opacity: 0.7; pointer-events: none; white-space: pre;
   }
   #hud {
     position: fixed; top: 8px; left: 0; right: 0; text-align: center;
-    color: #e8e8f0; font-family: monospace; font-size: 14px; letter-spacing: 0.04em;
+    color: var(--ink); font-family: monospace; font-size: 14px; letter-spacing: 0.04em;
     pointer-events: none; z-index: 40;
   }
   /* Pre-alpha badge: a real, unfinished build may be reachable by direct
@@ -1040,17 +1068,30 @@
      below this one at bottom:10px, so all three bottom overlays now have
      an independent lane. */
   #prealpha-badge {
+    /* background was already the exact --neon hex (#ffcb5c) by coincidence
+       -- now actually wired to the token. Text color (#1a1408) stays a
+       bespoke near-black -- it's a contrast pairing against the gold
+       background, not a body-text color, so it has no token equivalent. */
     position: fixed; bottom: 26px; left: 8px; z-index: 60;
     font-family: monospace; font-size: 11px; font-weight: bold; letter-spacing: 0.06em;
-    color: #1a1408; background: #ffcb5c; padding: 3px 8px; border-radius: 4px;
+    color: #1a1408; background: var(--neon); padding: 3px 8px; border-radius: 4px;
     pointer-events: none;
   }
-  #hud .lives-full { color: #ff4d70; }
+  #hud .lives-full { color: var(--danger); } /* was already the exact --danger hex, now wired to the token */
+  /* .lives-spent (#4a3038) stays independent -- a deliberately dim/desaturated
+     "spent" variant derived FROM danger, not danger itself; there's no
+     --danger-dim token to point it at, and inventing one for a single use
+     site is out of this pass's scope. */
   #hud .lives-spent { color: #4a3038; }
   /* Duel score (Game 5 combat resolution): plain text, no per-player split
      coloring -- P1_COLOR/P2_COLOR are already carried by the two rigs
      themselves on screen, so repeating them here would just be visual
-     noise on a HUD line that already reads fine as one color. */
+     noise on a HUD line that already reads fine as one color.
+     #9aa0b4 stays independent, not tokenized to --ink-mid/--ink-soft: it's
+     a deliberately blue-grey neutral (not purple-toned like the ink
+     tokens -- ~48-68 units of hex distance from the closest of them), a
+     considered choice per its own comment above, not an ad-hoc leftover
+     that happens to be close. */
   #hud .duel-score { color: #9aa0b4; }
   /* Touch controls (v0.1.19): replaces the old zoneL/zoneR full-screen-
      half tap zones, which threw an explicit left/right kick directly --
@@ -1080,7 +1121,7 @@
   .touch-btn {
     position: absolute; width: 58px; height: 58px; border-radius: 50%;
     background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.22);
-    color: #e8e8f0; font-family: monospace; font-size: 10px; font-weight: bold;
+    color: var(--ink); font-family: monospace; font-size: 10px; font-weight: bold;
     display: flex; align-items: center; justify-content: center; text-align: center;
     touch-action: none; user-select: none;
   }
@@ -1092,53 +1133,79 @@
      existing 160x120 #touchButtons box, same diamond arrangement the
      other three already use; no resize of the container needed. */
   #btnPunch { right: 68px; bottom: 0; }
-  /* Title/mode-select overlay (GAME_5_PILLARS.md §3/§4) -- deliberately
-     matches THIS file's own dark/monospace dev-shell aesthetic, not the
-     shared arcade `.overlay`/`.panel`/`.btn` token system every shipped
-     game uses. Integrating the shared visual identity is real, named,
-     deferred scope (see GAME_5_PILLARS.md §1) -- bolting the shared
-     classes onto an otherwise-unstyled prototype page would read as a
-     mismatched patch, not an integration. */
+  /* Title/mode-select overlay (GAME_5_PILLARS.md §3/§4) -- previously a
+     bespoke dark/monospace dev-shell style, disconnected from the shared
+     arcade `.overlay`/`.panel`/`.btn` token system every shipped game
+     uses (GAME_5_PILLARS.md §1's named, deferred integration gap). This
+     is that integration: #menuOverlay/#menuPanel's OWN rules below are
+     now written to be visually identical to wardfall.html's
+     `.overlay`/`.panel` (colors, radii, shadow, entrance animation, all
+     pointed at the shared :root tokens above), kept as id-selectors
+     rather than literally applying the `.overlay`/`.panel` classes so the
+     existing `#menuOverlay.hide{display:none}` toggle in
+     hideRyknduMenu()/window.reopenRyknduMenu() (~line 3778+) keeps
+     working completely unmodified -- same visual result, zero JS risk.
+     Typography stays monospace (var(--mono)) throughout per this file's
+     own established identity -- wardfall's Cormorant Garamond/Quicksand
+     fonts are deliberately not pulled in. */
   #menuOverlay {
     position: fixed; inset: 0; z-index: 200;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(10,11,16,0.82); backdrop-filter: blur(2px);
+    background: rgba(5,6,12,0.86); backdrop-filter: blur(4px);
+    padding: 20px; animation: ovfade .2s ease;
   }
   #menuOverlay.hide { display: none; }
+  @keyframes ovfade { from{opacity:0;} to{opacity:1;} }
+  @keyframes panelPop { 0%{opacity:0;transform:scale(.92) translateY(6px);} 100%{opacity:1;transform:scale(1) translateY(0);} }
   #menuPanel {
     width: min(340px, calc(100vw - 40px));
-    background: rgba(18,20,28,0.96); border: 1px solid rgba(255,255,255,0.14);
-    border-radius: 10px; padding: 28px 24px; text-align: center;
-    color: #e8e8f0; font-family: monospace;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 26px 24px; text-align: center;
+    max-height: 92vh; overflow-y: auto;
+    box-shadow: 0 0 60px -18px rgba(226,184,85,0.22);
+    color: var(--ink); font-family: var(--mono);
+    animation: panelPop .38s cubic-bezier(.2,.9,.3,1.3) both;
   }
   #menuPanel h1 {
-    margin: 0 0 4px; font-size: 22px; letter-spacing: 0.06em; color: #ffcb5c;
+    margin: 0 0 4px; font-size: 2rem; letter-spacing: .18em; text-align: center;
+    color: var(--neon); text-shadow: 0 0 26px rgba(255,203,92,0.55); font-weight: 600;
   }
   #menuPanel .tagline {
-    margin: 0 0 22px; font-size: 12px; color: #888;
+    margin: 0 0 22px; text-align: center; color: var(--ink-soft);
+    font-size: .85rem; font-style: italic;
   }
+  /* .menu-btn matches the shared .btn class (wardfall.html lines 82-86)
+     property-for-property, font-family swapped to var(--mono) per the
+     monospace-identity decision above. The .duel/.gauntlet border-color
+     accents layer on top unchanged -- a real, useful Rykndu-specific
+     distinction the shared system has no equivalent for. */
   .menu-btn {
-    display: block; width: 100%; margin: 0 0 10px; padding: 12px 10px;
-    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 6px; color: #e8e8f0; font-family: monospace; font-size: 14px;
-    font-weight: bold; letter-spacing: 0.03em; cursor: pointer;
+    display: block; width: 100%; padding: .85rem; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel2); color: var(--ink);
+    font-size: .95rem; font-weight: 600; cursor: pointer; margin: 0 0 10px;
+    transition: all .15s; font-family: var(--mono); letter-spacing: .04em;
   }
-  .menu-btn:hover, .menu-btn:focus-visible { background: rgba(255,255,255,0.13); }
-  .menu-btn .sub { display: block; font-size: 10.5px; font-weight: normal; color: #999; margin-top: 3px; letter-spacing: 0.02em; }
+  .menu-btn:hover, .menu-btn:focus-visible { border-color: var(--neon); color: var(--neon); box-shadow: 0 0 18px -6px var(--neon); }
+  .menu-btn:active { transform: scale(.98); }
+  .menu-btn .sub { display: block; font-size: 10.5px; font-weight: normal; color: var(--ink-soft); margin-top: 3px; letter-spacing: 0.02em; }
   .menu-btn.duel { border-color: rgba(107,77,255,0.5); }
   .menu-btn.gauntlet { border-color: rgba(255,77,112,0.4); }
   #menuBackLink {
-    display: block; margin-top: 14px; color: #777; font-size: 11px;
+    display: block; margin-top: 14px; color: var(--ink-soft); font-size: 11px;
     text-decoration: none; letter-spacing: 0.02em;
   }
-  #menuBackLink:hover { color: #aaa; }
+  #menuBackLink:hover { color: var(--neon); }
+  /* Shared .icon-btn-equivalent look (wardfall.html lines 120-123): a
+     semi-transparent panel-colored pill, neon on hover, instead of the
+     old one-off grey chip. */
   #menuReopenBtn {
     position: fixed; top: 8px; right: 10px; z-index: 45;
-    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
-    color: #ccc; font-family: monospace; font-size: 11px; letter-spacing: 0.04em;
-    padding: 4px 9px; border-radius: 5px; cursor: pointer;
+    background: rgba(35,20,66,0.7); border: 1px solid var(--border);
+    color: var(--ink-soft); font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
+    padding: 4px 9px; border-radius: 999px; cursor: pointer; opacity: .85;
+    transition: all .15s;
   }
-  #menuReopenBtn:hover { background: rgba(255,255,255,0.16); }
+  #menuReopenBtn:hover { opacity: 1; color: var(--neon); border-color: var(--neon); background: rgba(35,20,66,0.9); }
 </style>
 </head>
 <body>
@@ -2859,6 +2926,11 @@
   // health-bar boss fight, which the studio explicitly didn't build toward.
   const MAX_MISSES = 5;
   let sessionState = 'playing'; // 'playing' | 'lose'
+  // Timestamp (performance.now()) the moment sessionState flips to 'lose' --
+  // drives the GAME OVER card's easeOutBack entrance (see its render block
+  // below). 0 while playing/reset, same sentinel convention matchOverStartTime
+  // below uses.
+  let loseStartTime = 0;
 
   function resetSession() {
     p1.reset();
@@ -2866,6 +2938,7 @@
     killCount = 0; missedCount = 0;
     particles = []; shakeMag = 0; missFlash = 0;
     sessionState = 'playing';
+    loseStartTime = 0;
   }
 
   function makeEnemy(spawnAt, side) {
@@ -2910,7 +2983,7 @@
         p1.triggerFlinch();
         enemies.splice(i, 1);
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
-        if (missedCount >= MAX_MISSES) sessionState = 'lose';
+        if (missedCount >= MAX_MISSES) { sessionState = 'lose'; loseStartTime = now; }
       }
     }
   }
@@ -3130,18 +3203,25 @@
   // player's next attack/jump input calls resetMatch() via tryRematch().
   let p1Score = 0, p2Score = 0;
   let matchOver = false, matchWinner = null; // matchWinner: 'P1' | 'P2' | null
+  // Timestamp (performance.now()) the moment matchOver flips true -- drives
+  // the match-win card's easeOutBack entrance (see its render block below).
+  // Read via performance.now() rather than threading frame()'s own `now`
+  // through checkRingOuts()'s signature -- sub-millisecond difference,
+  // irrelevant for a ~400ms UI animation, and keeps this function's
+  // existing call site (frame(), no args) untouched.
+  let matchOverStartTime = 0;
   const MATCH_TARGET_SCORE = 3;
   function checkRingOuts() {
     if (matchOver) return;
     if (Math.abs(p1.posX) > ARENA_BOUND) {
       p2Score++;
       Music.ringOutStinger();
-      if (p2Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P2'; Music.matchWinStinger(); }
+      if (p2Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P2'; matchOverStartTime = performance.now(); Music.matchWinStinger(); }
       resetDuelPositions();
     } else if (Math.abs(p2.posX) > ARENA_BOUND) {
       p1Score++;
       Music.ringOutStinger();
-      if (p1Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P1'; Music.matchWinStinger(); }
+      if (p1Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P1'; matchOverStartTime = performance.now(); Music.matchWinStinger(); }
       resetDuelPositions();
     }
   }
@@ -3158,6 +3238,7 @@
   // true forever with no path back to play.
   function resetMatch() {
     p1Score = 0; p2Score = 0; matchOver = false; matchWinner = null;
+    matchOverStartTime = 0;
     resetDuelPositions();
   }
   // Called from every real attack-trigger input path (see handleInput()
@@ -3856,8 +3937,35 @@
       // guarantees legibility regardless of what's underneath it.
       const cardW = Math.min(280, canvas.width - 40), cardH = 120;
       const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 70;
-      ctx.fillStyle = 'rgba(18,20,28,0.92)';
-      ctx.strokeStyle = 'rgba(255,77,112,0.4)';
+
+      // Entrance animation (visual-identity pass): scale+fade the card in
+      // using this file's own easeOutBack (see its definition/comment near
+      // POSES/attackSequence() above -- the same "give it weight" idiom
+      // already used for the attack recovery phase and the kill-flash pop,
+      // reused here for wardfall's panelPop intent -- cubic-bezier(.2,.9,
+      // .3,1.3) is the exact curve family easeOutBack already implements).
+      // A canvas card has no DOM element to run a CSS animation on, so this
+      // is real per-frame transform math: elapsed time since loseStartTime,
+      // fed through easeOutBack(t), drives both scale and alpha. Loss reads
+      // as the more subdued of the two result beats (see the match-win
+      // card below) -- shorter duration, smaller starting scale delta.
+      const LOSE_ENTRANCE_MS = 320;
+      const loseT = Math.min(1, Math.max(0, now - loseStartTime) / LOSE_ENTRANCE_MS);
+      const loseEase = easeOutBack(loseT);
+      const loseScale = 0.90 + 0.10 * loseEase; // starts at 90%, overshoots slightly past 1, settles at 1
+      const loseAlpha = Math.min(1, Math.max(0, now - loseStartTime) / (LOSE_ENTRANCE_MS * 0.7)); // fade completes just ahead of the scale settle
+      ctx.globalAlpha = loseAlpha;
+      ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+      ctx.scale(loseScale, loseScale);
+      ctx.translate(-(cardX + cardW / 2), -(cardY + cardH / 2));
+
+      // Card fill/border/text below are hardcoded hex (canvas draw calls
+      // can't read CSS custom properties) but intentionally mirror the
+      // :root token of the same name -- a future palette change should
+      // update both. rgba(35,20,66,...) === --panel (#231442);
+      // rgba(255,77,112,...) === --danger (#ff4d70).
+      ctx.fillStyle = 'rgba(35,20,66,0.92)'; // mirrors --panel
+      ctx.strokeStyle = 'rgba(255,77,112,0.4)'; // mirrors --danger
       ctx.lineWidth = 1;
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 10); else ctx.rect(cardX, cardY, cardW, cardH);
@@ -3865,13 +3973,13 @@
       ctx.stroke();
 
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#ff4d70';
+      ctx.fillStyle = '#ff4d70'; // mirrors --danger
       ctx.font = 'bold 32px monospace';
       ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
-      ctx.fillStyle = '#e8e8f0';
+      ctx.fillStyle = '#f4ecff'; // mirrors --ink (was an untokenized near-match, #e8e8f0)
       ctx.font = '16px monospace';
       ctx.fillText('Kills: ' + killCount, canvas.width / 2, canvas.height / 2 + 15);
-      ctx.fillStyle = '#888';
+      ctx.fillStyle = '#8674b8'; // mirrors --ink-soft (was an untokenized #888)
       ctx.font = '13px monospace';
       ctx.fillText('tap or press a key to try again', canvas.width / 2, canvas.height / 2 + 45);
       ctx.restore();
@@ -3891,7 +3999,25 @@
       const winnerColor = matchWinner === 'P1' ? P1_COLOR : P2_COLOR;
       const cardW = Math.min(300, canvas.width - 40), cardH = 130;
       const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 75;
-      ctx.fillStyle = 'rgba(18,20,28,0.92)';
+
+      // Entrance animation, same easeOutBack idiom as the GAME OVER card
+      // above -- but a match WIN is the bigger, more triumphant beat, so
+      // it gets a longer duration and a deeper starting-scale dip (more
+      // room to overshoot into) rather than identical treatment for both.
+      const WIN_ENTRANCE_MS = 420;
+      const winT = Math.min(1, Math.max(0, now - matchOverStartTime) / WIN_ENTRANCE_MS);
+      const winEase = easeOutBack(winT);
+      const winScale = 0.78 + 0.22 * winEase; // starts noticeably smaller (78%), bigger pop on the way to settling at 1
+      const winAlpha = Math.min(1, Math.max(0, now - matchOverStartTime) / (WIN_ENTRANCE_MS * 0.6));
+      ctx.globalAlpha = winAlpha;
+      ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+      ctx.scale(winScale, winScale);
+      ctx.translate(-(cardX + cardW / 2), -(cardY + cardH / 2));
+
+      // rgba(35,20,66,...) === --panel (#231442), mirrored the same way as
+      // the GAME OVER card above. winnerColor (P1_COLOR/P2_COLOR) stays
+      // untouched -- Rykndu-specific player identity, not a token.
+      ctx.fillStyle = 'rgba(35,20,66,0.92)'; // mirrors --panel
       ctx.strokeStyle = winnerColor;
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -3903,10 +4029,10 @@
       ctx.fillStyle = winnerColor;
       ctx.font = 'bold 30px monospace';
       ctx.fillText(matchWinner + ' WINS THE MATCH', canvas.width / 2, canvas.height / 2 - 25);
-      ctx.fillStyle = '#e8e8f0';
+      ctx.fillStyle = '#f4ecff'; // mirrors --ink (was an untokenized near-match, #e8e8f0)
       ctx.font = '16px monospace';
       ctx.fillText(p1Score + ' — ' + p2Score, canvas.width / 2, canvas.height / 2 + 10);
-      ctx.fillStyle = '#888';
+      ctx.fillStyle = '#8674b8'; // mirrors --ink-soft (was an untokenized #888)
       ctx.font = '13px monospace';
       ctx.fillText('either player: attack to start a rematch', canvas.width / 2, canvas.height / 2 + 45);
       ctx.restore();
