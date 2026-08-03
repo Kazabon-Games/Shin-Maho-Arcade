@@ -152,12 +152,21 @@ function checkerboardPattern(overrides){
       const pattern=[]; for(let r=0;r<8;r++){ const row=[]; for(let c=0;c<8;c++) row.push((c+r)%2===0?'fire':'frost'); pattern.push(row); }
       for(const [c,r,spec] of overrides) pattern[r][c]=spec; return pattern;
     }
+    // Seeded, not Math.random(): the chained blast clears 13+ cells, and an
+    // unseeded refill occasionally produces an ACCIDENTAL extra match among
+    // the randomly-refilled tiles, inflating bombsDetonated/cleared beyond
+    // this test's exact expectation — a real, observed ~1-in-8 flake this
+    // suite had (mulberry32 is a real top-level function declaration in
+    // runeshatter.html, so it attaches to window and is reachable here; seed
+    // 7 verified clean/minimal — bombsDetonated=2, no incidental cascade).
+    Board.setRng(mulberry32(7));
     const pattern = checkerboardPattern([
       [0,0,'fire'],[1,0,'fire'],[2,0,{type:'fire',bomb:'area'}],
       [2,1,{type:'lightning',bomb:'line',axis:'col'}],
     ]);
     Board._test.setBoard(pattern);
     const stats = Board.resolveToFixedPoint();
+    Board.setRng(null); // back to Math.random() for every test after this one
     return stats;
   });
   ok(chain.bombsDetonated===2, 'both bombs detonated in one resolve (bombsDetonated='+chain.bombsDetonated+')');

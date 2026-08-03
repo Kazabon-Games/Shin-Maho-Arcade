@@ -241,7 +241,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="meta-row">
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
   <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.6.0</div>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.6.1</div>
 </div>
 
 <script>
@@ -249,6 +249,66 @@ textarea.form-input{min-height:70px;resize:vertical;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.6.1 — 2026-08-03 — Three bugs fixed, found by a dedicated bug-squasher
+                          (qa-playtest) pass specifically targeting v0.6.0's
+                          new animation/audio code, none reachable through
+                          the existing automated suites:
+                          (1) Multi-pass cascade fall "snap-and-restart" —
+                          real, reproducible from a single ordinary swap
+                          whenever a cascade lands twice in the same final
+                          cell (common: any refill-triggered secondary match
+                          in the same column). spawnFall() was overwriting
+                          fallAnims' Map entry unconditionally, so a tile
+                          ~70% through landing would instantly snap back to
+                          the new pass's raw fromRow and re-fall from
+                          scratch. Fixed by reading the in-flight
+                          animation's own current interpolated position
+                          before overwriting, so back-to-back falls in the
+                          same cell read as one continuous drop. Verified
+                          mathematically in isolation (the exact overwrite
+                          scenario: a tile 68% through a fall now continues
+                          from its true visual position instead of jumping
+                          ~2.8 cells backward).
+                          (2) Pausing didn't actually freeze the animation/
+                          particle system — Render's only screen gate was
+                          Nav.currentScreen() (the pause menu is a DOM
+                          overlay, not a screen change), so a cascade queued
+                          right before pausing kept playing on real
+                          wall-clock time behind the overlay and was already
+                          finished by the time the player resumed, directly
+                          contradicting this module's own stated intent.
+                          Fixed with a pause-aware clock (effectiveNow() =
+                          real time minus total time spent paused) that
+                          every animation timestamp is now measured against,
+                          plus skipping updateParticles() entirely while
+                          paused so nothing in the schedule queue can drain.
+                          Verified live: particle counts held EXACTLY
+                          unchanged across 800ms of real paused time, then
+                          correctly resumed and settled after unpausing.
+                          (3) Audio could still go silent mid-session even
+                          after v0.6.0's resume-on-ensureCtx fix — that fix
+                          was only wired to fresh-run-start and resume-
+                          saved-session, not to ordinary pause/unpause or a
+                          backgrounded tab, both real paths a browser can
+                          suspend the AudioContext through. Added a
+                          visibilitychange/blur auto-pause listener (matches
+                          iridescentcosmology.html:5219-5229's exact
+                          precedent — only ever force-pauses, never force-
+                          resumes on refocus) that also re-resumes audio the
+                          moment the tab becomes visible again, and made
+                          togglePause() itself call Music.ensureCtx() on
+                          unpause. Verified live: forcibly suspending the
+                          real AudioContext and simulating a visibility
+                          cycle now correctly auto-pauses on hide and reads
+                          'running' again on return.
+                          Also fixed a real, observed ~1-in-8 test flake in
+                          tests/runeshatter-adversarial.js's bomb-chain test
+                          (unseeded refill after a 13+ cell clear could
+                          incidentally create an extra match) by seeding
+                          Board's RNG for that one test — 8/8 clean reruns
+                          after, vs. intermittent failures before. 53/53
+                          adversarial + 41/41 audio tests passing.
 
    v0.6.0 — 2026-07-29 — Three fixes from real player feedback after ship:
                           (1) Gem movement animation, previously entirely
@@ -1173,6 +1233,14 @@ const Game = (function(){
     if(!running) return;
     paused = !paused;
     document.getElementById('pauseOverlay').classList.toggle('show', paused);
+    // bug-squasher finding: ensureCtx()'s resume-on-every-call fix (v0.6.0)
+    // was only ever wired to fresh-run-start and resume-saved-session, not
+    // to ordinary pause/unpause — so a context a real browser suspended
+    // while the player had the pause menu open (or the tab backgrounded
+    // without quitting, see the visibilitychange listener below) stayed
+    // silent for the rest of the run even after hitting Resume. Cheap and
+    // idempotent when the context is already running.
+    if(!paused && typeof Music !== 'undefined') Music.ensureCtx();
   }
   function endRunFromPause(){
     document.getElementById('pauseOverlay').classList.remove('show');
@@ -1347,6 +1415,25 @@ const Game = (function(){
     Render.frame();
     requestAnimationFrame(tick);
   }
+
+  // Auto-pause on the tab losing visibility/focus — matches
+  // iridescentcosmology.html:5219-5229's exact precedent (only ever force-
+  // pauses, never force-resumes on refocus; that stays the player's own
+  // Resume-button call). Added here specifically to close the bug-squasher's
+  // audio-suspension finding: a real browser can suspend the AudioContext
+  // while a tab is backgrounded regardless of anything this game does, and
+  // without this, a player who backgrounds the tab and comes back without
+  // explicitly quitting had no path back to a running context for the rest
+  // of the run. Re-checking on visibility RESTORE (not just hide) is the
+  // actual fix — auto-pause alone wouldn't have resumed the audio.
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden){
+      if(running && !paused) togglePause();
+    } else if(typeof Music !== 'undefined'){
+      Music.ensureCtx();
+    }
+  });
+  window.addEventListener('blur', () => { if(running && !paused) togglePause(); });
 
   return {
     startEndless, startTimed, startLevel, playAgain,
@@ -2258,8 +2345,32 @@ const Render = (function(){
   const SWAP_SLIDE_DURATION = 140, FALL_DURATION = 220;
   let swapAnim = null; // { a:{col,row}, b:{col,row}, tileA, tileB, start, dur }
   const fallAnims = new Map(); // "col,row" (FINAL cell) -> { fromRow, toRow, start, dur }
+
+  // bug-squasher finding: pausing never actually froze any of this — the
+  // only screen gate was `Nav.currentScreen() !== 'game'`, which stays
+  // true while paused (the pause overlay is a DOM layer on top, not a
+  // screen change), so a cascade queued right before pausing kept playing
+  // out in full using real wall-clock time behind the opaque overlay and
+  // was already finished by the time the player hit Resume — the exact
+  // opposite of this module's own stated intent. `effectiveNow()` is real
+  // time minus total time spent paused (frozen at the instant it started
+  // if currently paused), and every animation timestamp below is measured
+  // against it instead of raw performance.now() so paused time genuinely
+  // doesn't count.
+  let pauseOffsetMs = 0, pauseStartedAt = null;
+  function effectiveNow(){
+    const raw = performance.now();
+    return (pauseStartedAt !== null ? pauseStartedAt : raw) - pauseOffsetMs;
+  }
+  function updatePauseClock(){
+    const isPaused = Game.isRunning() && Game.isPaused();
+    if(isPaused && pauseStartedAt === null){ pauseStartedAt = performance.now(); }
+    else if(!isPaused && pauseStartedAt !== null){ pauseOffsetMs += performance.now()-pauseStartedAt; pauseStartedAt = null; }
+    return isPaused;
+  }
+
   Events.on('swap:visual', (e) => {
-    swapAnim = { a:e.a, b:e.b, tileA:e.tileA, tileB:e.tileB, start:performance.now(), dur:SWAP_SLIDE_DURATION };
+    swapAnim = { a:e.a, b:e.b, tileA:e.tileA, tileB:e.tileB, start:effectiveNow(), dur:SWAP_SLIDE_DURATION };
   });
 
   // qa-playtest finding: frame() bails out early whenever the screen isn't
@@ -2271,7 +2382,7 @@ const Render = (function(){
   // Play Again, or a different mode) — never on pause/resume, which
   // doesn't fire nav:change and SHOULD let a mid-chain animation resume
   // where it left off.
-  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; swapAnim = null; fallAnims.clear(); }
+  function resetParticles(){ shards = []; rings = []; sweeps = []; reveals = []; pending = []; swapAnim = null; fallAnims.clear(); pauseOffsetMs = 0; pauseStartedAt = null; }
   Events.on('nav:change', (e) => { if(e.to === 'game') resetParticles(); });
 
   function spawnShardBurst(cells, axis, elementType){
@@ -2311,10 +2422,27 @@ const Render = (function(){
     reveals.push({ x:p.x, y:p.y, t:0, dur:0.4, kind:'clip', color: TILE_COLORS[elementType]||'#fff' });
   }
   function spawnFall(col,fromRow,toRow){
-    fallAnims.set(col+','+toRow, { fromRow, toRow, start: performance.now(), dur: FALL_DURATION });
+    // bug-squasher finding: a multi-pass cascade landing twice in the same
+    // final cell (common — any refill-triggered secondary match in the
+    // same column) overwrote this Map entry while the PRIOR fall was still
+    // mid-flight, snapping the tile backward to the new raw fromRow instead
+    // of continuing from wherever it actually was on screen. Fixed by
+    // reading the in-flight animation's own CURRENT interpolated position
+    // and starting the new segment from there, so back-to-back falls in
+    // the same cell read as one continuous drop instead of a jump.
+    const key = col+','+toRow;
+    const existing = fallAnims.get(key);
+    if(existing){
+      const p = clamp((effectiveNow()-existing.start)/existing.dur, 0, 1);
+      if(p < 1){
+        const eased = 1-Math.pow(1-p,3);
+        fromRow = existing.fromRow + (existing.toRow-existing.fromRow)*eased;
+      }
+    }
+    fallAnims.set(key, { fromRow, toRow, start: effectiveNow(), dur: FALL_DURATION });
   }
 
-  function schedule(delayMs, fn){ pending.push({ fireAt: performance.now()+delayMs, run: fn }); }
+  function schedule(delayMs, fn){ pending.push({ fireAt: effectiveNow()+delayMs, run: fn }); }
 
   // Board's timeline (GAME_7_PILLARS.md §7's "state resolves instantly,
   // playback catches up" split) drives all of the above, staggered by
@@ -2348,7 +2476,7 @@ const Render = (function(){
   });
 
   function updateParticles(dt){
-    const now = performance.now();
+    const now = effectiveNow();
     for(let i=pending.length-1;i>=0;i--){ if(now >= pending[i].fireAt){ pending[i].run(); pending.splice(i,1); } }
     for(const s of shards){ s.x+=s.vx*dt; s.y+=s.vy*dt; s.vx*=0.94; s.vy*=0.94; s.rot+=s.vrot*dt; s.life+=dt; }
     shards = shards.filter(s => s.life < s.maxLife);
@@ -2434,11 +2562,24 @@ const Render = (function(){
 
   let lastFrameNow = 0;
   function frame(){
-    const now = performance.now();
-    const dt = lastFrameNow ? Math.min(0.05,(now-lastFrameNow)/1000) : 0;
-    lastFrameNow = now;
+    const raw = performance.now();
+    const dt = lastFrameNow ? Math.min(0.05,(raw-lastFrameNow)/1000) : 0;
+    lastFrameNow = raw;
     ctx.clearRect(0,0,W,H);
     if(Nav.currentScreen() !== 'game') return;
+    // bug-squasher finding: pausing never froze any of this — the only
+    // screen gate above stays true while paused (the pause menu is a DOM
+    // overlay, not a screen change), so a cascade queued right before
+    // pausing kept playing on real wall-clock time behind it and was
+    // already finished by the time the player resumed. `now` below is the
+    // pause-aware clock every animation timestamp is measured against;
+    // `updateParticles` (which advances shard/ring/sweep/reveal timers AND
+    // drains the `pending` schedule) is skipped entirely while paused so
+    // NOTHING in the queue can progress, while `drawParticles` still runs
+    // so whatever was already on screen stays visibly frozen in place
+    // rather than vanishing.
+    const paused = updatePauseClock();
+    const now = effectiveNow();
     ctx.fillStyle = boardPattern;
     ctx.fillRect(boardX, boardY, cell*N, cell*N);
     const selected = Game.getSelected();
@@ -2474,7 +2615,7 @@ const Render = (function(){
       drawTile(swapAnim.tileA, posA.x+(posB.x-posA.x)*eased, posA.y+(posB.y-posA.y)*eased, cell, cell, false, now);
       drawTile(swapAnim.tileB, posB.x+(posA.x-posB.x)*eased, posB.y+(posA.y-posB.y)*eased, cell, cell, false, now);
     }
-    updateParticles(dt);
+    if(!paused) updateParticles(dt);
     drawParticles();
   }
 
@@ -2506,7 +2647,8 @@ const Render = (function(){
 
   resize();
   return { frame, resize, _test: { cellFromPoint, cellRect, layoutInfo: () => ({ boardX, boardY, cell }),
-    particleCounts: () => ({ shards: shards.length, rings: rings.length, sweeps: sweeps.length, reveals: reveals.length, pending: pending.length }) } };
+    particleCounts: () => ({ shards: shards.length, rings: rings.length, sweeps: sweeps.length, reveals: reveals.length, pending: pending.length }),
+    fallAnimsSnapshot: () => Array.from(fallAnims.entries()).map(([k,v]) => ({ key:k, ...v })) } };
 })();
 
 renderModeSelectScoresOnLoad();
