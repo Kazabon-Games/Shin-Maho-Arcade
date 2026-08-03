@@ -1088,6 +1088,10 @@
   #btnAttack { right: 0; bottom: 0; }
   #btnJump { right: 68px; bottom: 34px; }
   #btnBlock { right: 0; bottom: 68px; }
+  /* Second attack type -- fills the 4th (bottom-left) corner of the
+     existing 160x120 #touchButtons box, same diamond arrangement the
+     other three already use; no resize of the container needed. */
+  #btnPunch { right: 68px; bottom: 0; }
   /* Title/mode-select overlay (GAME_5_PILLARS.md §3/§4) -- deliberately
      matches THIS file's own dark/monospace dev-shell aesthetic, not the
      shared arcade `.overlay`/`.panel`/`.btn` token system every shipped
@@ -1169,6 +1173,7 @@
   <div class="touch-btn" id="btnBlock">BLOCK</div>
   <div class="touch-btn" id="btnJump">JUMP</div>
   <div class="touch-btn" id="btnAttack">ATK</div>
+  <div class="touch-btn" id="btnPunch">PUNCH</div>
 </div>
 
 <script>
@@ -1310,6 +1315,58 @@
       hipR: 0.488, kneeR: 1.19,
       shoulderL: DOWN + 2.1, elbowL: DOWN + 1.8,
       shoulderR: DOWN - 1.3, elbowR: DOWN - 0.9
+    },
+    // Punch (second attack type, added alongside the kick -- see
+    // attackSequence()'s own comment). Uses the FRONT arm (shoulderR/
+    // elbowR -> handR socket), the same "front limb strikes" convention
+    // the kick already uses for the front leg. A punch should read as
+    // arm/shoulder-driven, not a reskinned kick -- legs stay close to
+    // idle/braced here (a small forward weight shift only) instead of
+    // chambering, so the silhouette difference reads instantly.
+    // Windup is a quick cocked-back chamber (fist drawn up toward the
+    // shoulder, back/guard hand stays up near the chin) -- a first-guess
+    // pose like kick_windup was, not IK-solved (nothing needs to reach an
+    // exact target during windup, only strike does -- same reasoning
+    // kick_windup's own lack of IK-solving already follows).
+    punch_windup: {
+      pelvisDX: 4, pelvisDY: 0, spineA: -DOWN + 0.08,
+      hipL: DOWN + 0.30, kneeL: DOWN + 0.28,
+      hipR: DOWN - 0.30, kneeR: DOWN - 0.22,
+      shoulderL: DOWN - 0.75, elbowL: DOWN - 2.3,
+      shoulderR: DOWN - 1.85, elbowR: DOWN - 1.55
+    },
+    // IK-solved with the exact same 2-bone method kick_strike's own
+    // comment uses (verified by first reproducing kick_strike's own
+    // hipR=0.488/kneeR=1.19 from that method before trusting it here --
+    // see the derivation script this comment is transcribed from). Kick
+    // targets `stance` (ankle height, an enemy-dot-height leftover); a
+    // punch aimed at the same low target would look like a downward chop,
+    // not a punch, so this targets the higher `back` socket instead
+    // (solveRig()'s chest joint -- see getSockets()'s reuse note above
+    // checkPvpHit()) -- a real high/low read between the two attacks, not
+    // just a different limb.
+    // Target, from THIS pose's own shoulder (spineA=-DOWN-0.05 puts the
+    // shoulder ~55.9px above the pelvis, vs. idle's defending rig having
+    // its own chest ~61.6px above ITS pelvis -- both rigs assumed at the
+    // same stance height, the same simplifying assumption kick_strike's
+    // own "enemy's fixed screen height" target already makes): dx=70,
+    // dy=-6 (i.e. very slightly ABOVE the attacker's own shoulder, level
+    // with a defender's chest -- verified live against solveRig()'s own
+    // math: handR lands within 0.4px of (dx=70, dy=-6.0) from shoulderR).
+    // upperArm+forearm = 74px max reach; this solves to D=70.26px (95% of
+    // max, deliberately as extended as kick_strike's own 94% -- an
+    // impact-frame pose that looks under-extended doesn't read as a
+    // landed strike). In absolute terms the punch's own reach (70.26px
+    // from its shoulder) is still meaningfully less than the kick's
+    // (92.02px from its hip) simply because arms are shorter than legs
+    // (74 vs 98px max) -- the real "punch has less reach than a kick"
+    // relationship, not a guessed number.
+    punch_strike: {
+      pelvisDX: -4, pelvisDY: 0, spineA: -DOWN - 0.05,
+      hipL: DOWN + 0.28, kneeL: DOWN + 0.20,
+      hipR: DOWN - 0.28, kneeR: DOWN - 0.18,
+      shoulderL: DOWN - 0.85, elbowL: DOWN - 2.35,
+      shoulderR: -0.405, elbowR: 0.234
     }
   };
 
@@ -1379,7 +1436,27 @@
   // but the POSE itself is now the single canonical kick regardless of
   // side; solveRig()'s facing-based mirror is what makes it visually
   // point the right way (see POSES' own comment above).
-  function attackSequence(side) {
+  //
+  // `type` (added for the second attack type, 'kick'|'punch', defaulting
+  // to 'kick' so every existing call site that only ever threw a kick
+  // keeps working unchanged) selects which pose pair/timing to build.
+  // The kick's own numbers (110/70/220) are UNCHANGED -- existing tests
+  // assert on them exactly, per this file's own committed-phase
+  // guarantee. The punch is deliberately faster at every phase (70/50/
+  // 160 vs the kick's 110/70/220 -- roughly 35-40% shorter throughout),
+  // the conventional jab-vs-heavy-kick tempo relationship: a punch reads
+  // as the quick, low-commitment option, the kick as the slower, more
+  // committed one. This is a real design choice with a real cost/benefit
+  // (see resolveDuelHit()'s PUNCH_KNOCKBACK_SPEED comment for the other
+  // half of that tradeoff -- less knockback to go with the faster tempo).
+  function attackSequence(side, type) {
+    if (type === 'punch') {
+      return [
+        { pose: 'punch_windup', dur: 70, ease: easeOutQuad },
+        { pose: 'punch_strike', dur: 50, ease: easeInQuad },
+        { pose: 'idle', dur: 160, ease: easeOutBack }
+      ];
+    }
     return [
       { pose: 'kick_windup', dur: 110, ease: easeOutQuad },
       { pose: 'kick_strike', dur: 70, ease: easeInQuad },
@@ -1484,6 +1561,19 @@
     let fromPose = POSES.idle;
     let queuedSide = null; // one buffered input so a fast tap during the committed phases isn't dropped
     let attackSide = null; // which side the currently-playing (or most recent) attack was on
+    // attackType/queuedType (added for the second attack type) track WHICH
+    // attack ('kick'|'punch') alongside side, through the exact same
+    // buffering/committing machinery queuedSide/attackSide already use --
+    // a buffered follow-up is now a (side, type) pair, not just a side.
+    // Always set together with their side counterpart (see startAttack()/
+    // triggerAttack()/cancelIntoBufferedAttack() below), so a null
+    // queuedSide always implies a null queuedType too -- no case where one
+    // is stale relative to the other. Defaults to 'kick' everywhere a type
+    // isn't explicitly passed, so every pre-existing call site (real
+    // input handlers, every test file that only ever threw a kick) keeps
+    // meaning exactly what it always meant.
+    let attackType = null;
+    let queuedType = null;
     let guarding = false;
     let hasHitThisSwing = false; // one landed rig-vs-rig hit per strike phase -- same "can't double-count" guarantee resolveHits() gets for free by deleting the enemy on contact, needed here since a defender can stay in PVP_HIT_RADIUS for several frames of one strike
     // Hit-reaction pose overlay -- was player-1-only (triggered on a missed
@@ -1544,7 +1634,7 @@
         // survives a BLOCKED hit (handled by the caller never passing
         // blocked=true into this branch), but a landed hit cancels an
         // attack/guard/jump in progress.
-        seq = null; queuedSide = null; guarding = false;
+        seq = null; queuedSide = null; queuedType = null; guarding = false;
         jumping = false; jumpHeight = 0; velY = 0;
         triggerFlinch();
       }
@@ -1600,7 +1690,7 @@
       velY = JUMP_SPEED;
       jumpHeight = 0;
       seq = null;
-      queuedSide = null;
+      queuedSide = null; queuedType = null;
     }
     function updateJump(dt) {
       if (!jumping) return;
@@ -1678,39 +1768,45 @@
         if (!guarding) guardRaisedAt = performance.now(); // only stamp the RAISE, not every frame guard stays held (see isInParryWindow()'s own comment)
         guarding = true;
         seq = null;
-        queuedSide = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
+        queuedSide = null; queuedType = null; // dropping a buffered attack is deliberate: raising guard is choosing not to attack
       } else {
         guarding = false;
       }
     }
 
-    function startAttack(side) {
+    function startAttack(side, type) {
+      // type defaults to 'kick' -- every pre-existing caller that only
+      // ever knew about one attack keeps meaning exactly what it always
+      // meant (see attackType's own declaration comment above).
+      type = type || 'kick';
       // Capture the outgoing pose BEFORE seq/seqIdx/seqStart change —
       // otherwise currentPose() below takes its mid-sequence branch against
       // the new seq (t=0), returning fromPose unchanged instead of the
       // actual current pose.
       fromPose = currentPose();
-      seq = attackSequence(side);
+      seq = attackSequence(side, type);
       seqIdx = 0;
       seqStart = performance.now();
       attackSide = side;
+      attackType = type;
       hasHitThisSwing = false; // a fresh attack gets a fresh chance to land -- see resolveDuelHit()
-      if (opts.onAttackStart) opts.onAttackStart(side);
+      if (opts.onAttackStart) opts.onAttackStart(side, type);
     }
 
     function markHit() { hasHitThisSwing = true; } // called by resolveDuelHit() once this swing has landed, so the same strike can't score twice while the defender lingers in range
 
     function teleportTo(x) { posX = x; velX = 0; } // test/round-reset convenience -- bypasses movement physics for deterministic positioning, the same convenience window.Rig._test.spawnEnemy() already gets for enemy placement
 
-    function triggerAttack(side) {
+    function triggerAttack(side, type) {
+      type = type || 'kick'; // see startAttack()'s own comment -- omitted type always means kick
       if (guarding) return; // must drop guard before attacking -- no attack-while-guarding cancel exists
       if (jumping) return; // no aerial attacks in this pass -- land first
-      if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; return; }
+      if (seq && isCommittedPhase(seqIdx)) { queuedSide = side; queuedType = type; return; }
       // Either idle, or sitting in the (interruptible) recovery phase —
       // start immediately. startAttack() captures currentPose() as
       // fromPose, so an interrupted recovery blends smoothly into the new
       // windup instead of snapping.
-      startAttack(side);
+      startAttack(side, type);
     }
 
     // ---- Combo-cancel (v0.1.26) ----
@@ -1731,11 +1827,21 @@
     // own tempo instead of just the defender's.
     // No-op if nothing was buffered -- safe to call unconditionally on
     // every confirmed hit rather than needing a caller-side check first.
+    //
+    // Second attack type (added alongside the punch): this used to always
+    // re-fire whatever queuedSide held as a same-type follow-up (only one
+    // attack type existed, so "type" wasn't even a concept yet). Now it
+    // fires the buffered attack's actual TYPE too -- a confirmed kick with
+    // a punch buffered cancels into the punch, not a second kick; a kick
+    // buffered behind a kick still cancels into a kick, unchanged. The
+    // buffered type was already carried this far by triggerAttack()/
+    // updateSeq() (see queuedType's own declaration comment); this is just
+    // the last place that used to silently discard it.
     function cancelIntoBufferedAttack() {
       if (!seq || !queuedSide) return;
-      const s = queuedSide;
-      queuedSide = null;
-      startAttack(s);
+      const s = queuedSide, t = queuedType;
+      queuedSide = null; queuedType = null;
+      startAttack(s, t);
     }
 
     function currentPose() {
@@ -1834,9 +1940,9 @@
           // the next step, not after.
           seq = null;
           if (queuedSide) {
-            const s = queuedSide;
-            queuedSide = null;
-            startAttack(s);
+            const s = queuedSide, t = queuedType;
+            queuedSide = null; queuedType = null;
+            startAttack(s, t);
           }
           return;
         }
@@ -1863,9 +1969,9 @@
         // an input was already buffered during windup/strike, don't make
         // the player wait out the full recovery: fire it now instead.
         if (!isCommittedPhase(seqIdx) && queuedSide) {
-          const s = queuedSide;
-          queuedSide = null;
-          startAttack(s);
+          const s = queuedSide, t = queuedType;
+          queuedSide = null; queuedType = null;
+          startAttack(s, t);
         }
       }
     }
@@ -1873,6 +1979,7 @@
     function reset() {
       seq = null; seqIdx = 0; seqStart = 0; fromPose = POSES.idle;
       queuedSide = null; attackSide = null; guarding = false;
+      attackType = null; queuedType = null;
       recoverEnterPose = null; recoverExitVel = null;
       posX = START_X; velX = 0; moveIntent = 0; facing = opts.startFacing || 'R';
       jumping = false; velY = 0; jumpHeight = 0;
@@ -1891,6 +1998,11 @@
       get committed() { return seq ? isCommittedPhase(seqIdx) : false; },
       get queuedSide() { return queuedSide; },
       get attackSide() { return attackSide; },
+      // Second attack type (kick|punch|null) -- see the declaration
+      // comment above for why these are always set/cleared in lockstep
+      // with their side counterparts.
+      get attackType() { return attackType; },
+      get queuedType() { return queuedType; },
       get idle() { return !seq; },
       get posX() { return posX; },
       get velX() { return velX; },
@@ -1935,7 +2047,7 @@
   const P2_COLOR = '#6b4dff'; // indigo-violet -- same verification
   const p2 = createRigController({ startX: 80, startFacing: 'L' }); // duel spawn: right side, facing left toward player 1
 
-  function triggerAttack(side) { SFX.ensureCtx(); p1.triggerAttack(side); } // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
+  function triggerAttack(side, type) { SFX.ensureCtx(); p1.triggerAttack(side, type); } // idempotent safety net — covers the window.Rig._test.trigger() path too, not just real keydown/pointerdown gestures
   function setGuard(active) { p1.setGuard(active); }
   function currentPose() { return p1.currentPose(); }
   function updateSeq(now) { p1.updateSeq(now); }
@@ -2025,6 +2137,13 @@
   // since nothing attached needs one yet (no weapon/skin exists). Add
   // rotation here if/when one does, rather than opening a second lookup
   // path alongside this one.
+  //
+  // hand_r/hand_l went live for the first time with the second attack
+  // type (the punch's own weapon socket, see attackWeaponSocket() near
+  // checkPvpHit()) -- previously schema-ready but unused, per
+  // RYKNDU_RIG_SCHEMA.md. `back` also gained a second use there (reused,
+  // not renamed, as the punch's higher hurtbox target vs. the kick's
+  // ankle-height `stance`) -- see attackHurtboxSocket()'s own comment.
   function getSockets(joints) {
     return {
       hand_r: joints.handR, hand_l: joints.handL,
@@ -2800,7 +2919,21 @@
   // reads the kicking foot's real world position from solveRig(), which is
   // exactly what the v0.1.4 refactor exists to make possible.
   function resolveHits(now, joints) {
-    if (p1.idle || p1.seqIdx !== 1 || !p1.attackSide) return;
+    // Scope decision (second attack type pass): the Gauntlet stays
+    // kick-only. The enemy dots have no separate high/low hurtbox to
+    // punch at -- every design doc only ever describes this mode as "the
+    // same kick, resolveHits()" -- and this pass's punch is explicitly a
+    // Duel showcase of combat depth between two skilled players, not
+    // solo enemy-dot survival (see checkPvpHit()/resolveDuelHit()'s own
+    // comments for the Duel-side implementation). Input isn't gated by
+    // mode (SHOW_GAUNTLET only hides rendering -- GAME_5_PILLARS.md §3),
+    // so a player COULD throw a punch while playing the Gauntlet; this
+    // guard makes that a harmless whiff instead of silently reading the
+    // kick foot socket while a punch pose is actually playing (which
+    // could otherwise coincidentally register a kill if the idle-braced
+    // kicking leg happened to overlap an enemy during a punch's own
+    // strike phase).
+    if (p1.idle || p1.seqIdx !== 1 || !p1.attackSide || p1.attackType === 'punch') return;
     const sockets = getSockets(joints);
     const foot = p1.attackSide === 'R' ? sockets.foot_r : sockets.foot_l;
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -2838,8 +2971,42 @@
   // is unmistakably more forceful than movement itself, not just a faster
   // walk in one direction.
   const PVP_HIT_RADIUS = 50; // generous, matching ENEMY_HIT_RADIUS's own generosity for a kicking foot vs. a whole-body hurtbox
-  const KNOCKBACK_SPEED = 480; // px/sec
+  const KNOCKBACK_SPEED = 480; // px/sec -- the kick's own value, UNCHANGED
+  // Punch's own knockback (second attack type) -- a jab reads as quicker
+  // and less forceful than a full kick, the conventional low/high-
+  // commitment relationship a jab-vs-kick pairing always has (see
+  // attackSequence()'s own comment for the matching tempo difference).
+  // 320 keeps KNOCKBACK_SPEED's own design property (well above
+  // MOVE_MAX_SPEED=220, so a landed hit still reads as unmistakably more
+  // forceful than movement itself -- 320/220 = 1.45x) while staying
+  // meaningfully below the kick's 480 (0.67x) -- a punch still knocks the
+  // defender back, just less than a kick does.
+  const PUNCH_KNOCKBACK_SPEED = 320; // px/sec
   const GUARD_CHIP_SCALE = 0.2; // a blocked hit still pushes the defender back a little
+  // Combo-cancel knockback fix (Part B of the second attack type pass) --
+  // see resolveDuelHit()'s own comment at its call site for what this
+  // fixes and the exact drift math it's solved against.
+  const COMBO_KNOCKBACK_SCALE = 0.4;
+
+  // Attack-type socket selection (second attack type) -- kick keeps
+  // reading foot_r/foot_l exactly as before; punch reads hand_r/hand_l
+  // instead, per the same "query sockets by name" convention getSockets()
+  // itself establishes.
+  function attackWeaponSocket(sockets, side, type) {
+    if (type === 'punch') return side === 'R' ? sockets.hand_r : sockets.hand_l;
+    return side === 'R' ? sockets.foot_r : sockets.foot_l; // kick (also the default for an omitted/undefined type)
+  }
+  // Punch targets a HIGHER hurtbox than the kick's ankle-height `stance`
+  // -- `back` (solveRig()'s chest joint, see getSockets()) is reused here
+  // rather than adding a new socket, the same "position-only, query by
+  // name" reuse `stance` itself set the precedent for. This gives kick
+  // and punch a real high/low read (kick = ankle, punch = chest) -- a
+  // genuine foundation for a future high/low guard mix-up, though guard
+  // itself doesn't yet distinguish high vs low blocks (named here, not
+  // built -- out of this pass's scope).
+  function attackHurtboxSocket(sockets, type) {
+    return type === 'punch' ? sockets.back : sockets.stance;
+  }
 
   // Returns the defender's hurtbox point on a landed hit, or null -- never
   // a bare boolean, so the caller (which needs the exact contact point for
@@ -2849,11 +3016,12 @@
     if (attacker.idle || attacker.seqIdx !== 1 || !attacker.attackSide) return null; // only the strike phase counts -- same convention resolveHits() uses against the enemy dots
     if (attacker.hasHitThisSwing) return null; // one landed hit per strike, not once per frame the strike phase happens to overlap the defender
     const towardDefender = defender.posX >= attacker.posX ? 'R' : 'L';
-    if (attacker.attackSide !== towardDefender) return null; // kicking away from the opponent can't land on them
-    const foot = attacker.attackSide === 'R' ? getSockets(attackerJoints).foot_r : getSockets(attackerJoints).foot_l;
-    const hurtbox = getSockets(defenderJoints).stance; // ankle height, matching where a strike pose actually solves to -- see getSockets()'s own comment
-    const dx = foot.x - hurtbox.x, dy = foot.y - hurtbox.y;
-    // *renderScale (not a bare PVP_HIT_RADIUS pixel comparison): foot/
+    if (attacker.attackSide !== towardDefender) return null; // attacking away from the opponent can't land on them
+    const type = attacker.attackType || 'kick';
+    const weapon = attackWeaponSocket(getSockets(attackerJoints), attacker.attackSide, type);
+    const hurtbox = attackHurtboxSocket(getSockets(defenderJoints), type); // ankle height for a kick, chest height for a punch -- see attackHurtboxSocket()'s own comment
+    const dx = weapon.x - hurtbox.x, dy = weapon.y - hurtbox.y;
+    // *renderScale (not a bare PVP_HIT_RADIUS pixel comparison): weapon/
     // hurtbox are both solveRig() output, scaled by renderScale on a
     // narrow viewport (see resize()'s own comment) -- a fixed pixel
     // threshold would make combat range effectively bigger in world-space
@@ -2872,6 +3040,10 @@
     attacker.markHit();
     const dir = defender.posX >= attacker.posX ? 1 : -1;
     const blocked = defender.guarding;
+    // Type-specific base knockback (second attack type) -- see
+    // PUNCH_KNOCKBACK_SPEED's own comment for why it's lower than the
+    // kick's KNOCKBACK_SPEED, not a copy-pasted number with a new pose.
+    const kbSpeed = attacker.attackType === 'punch' ? PUNCH_KNOCKBACK_SPEED : KNOCKBACK_SPEED;
     // Parry (v0.1.25): a hit landing within the defender's PARRY_WINDOW_MS
     // of the moment guard was raised is NOT a block -- it's a full
     // negation plus a real punish. The defender takes zero knockback and
@@ -2880,9 +3052,11 @@
     // pushed AWAY from the defender (-dir, the opposite of the direction
     // a normal hit would push the defender), interrupting whatever THEY
     // were doing exactly the way applyKnockback()'s unblocked branch
-    // already does for a landed hit.
+    // already does for a landed hit. Uses kbSpeed (not always
+    // KNOCKBACK_SPEED) so a parried punch punishes proportionally to what
+    // was actually thrown, the same as a landed hit already does.
     if (blocked && defender.isInParryWindow()) {
-      attacker.applyKnockback(-dir * KNOCKBACK_SPEED, false);
+      attacker.applyKnockback(-dir * kbSpeed, false);
       SFX.parryChime();
       Music.duck();
       Music.parryStinger();
@@ -2890,15 +3064,42 @@
       shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
       return;
     }
-    defender.applyKnockback(dir * KNOCKBACK_SPEED * (blocked ? GUARD_CHIP_SCALE : 1), blocked);
+    // Combo-cancel knockback fix (Part B) -- a prior review found that at
+    // full knockback, a confirmed kick->kick cancel could carry the
+    // DEFENDER far enough during the buffered follow-up's own windup that
+    // it whiffs even though the cancel is "confirmed": under
+    // MOVE_FRICTION (1800px/s^2) decay from a full KNOCKBACK_SPEED (480)
+    // impulse, the defender drifts 480*0.11 - 0.5*1800*0.11^2 = 41.9px
+    // during just a kick follow-up's own 110ms windup (still accelerating
+    // away the entire time, since 480/1800=267ms > 110ms) -- eating 84% of
+    // the entire 50px PVP_HIT_RADIUS budget before the follow-up's strike
+    // phase even begins, since checkPvpHit()'s closest possible re-check
+    // is the instant strike starts (the defender only moves FARTHER away
+    // after that, not back). COMBO_KNOCKBACK_SCALE=0.4 caps this at a
+    // provably bounded 240^2/(2*1800)=16px (the impulse fully decays to 0
+    // at 240/1800=133ms, so drift can't grow any further once it does),
+    // leaving 34px of margin instead of 8px -- confirmed against the real
+    // physics constants already in this file, not the suggested 0.5
+    // starting point taken on faith (0.5 leaves the impulse still
+    // decaying past the kick follow-up's own windup, an open-ended
+    // drift rather than a hard cap). Only applied on the path that's
+    // actually about to fire cancelIntoBufferedAttack() (unblocked, with
+    // a follow-up buffered) -- a normal landed hit with nothing buffered,
+    // or a blocked hit, keeps its full, unscaled knockback exactly as
+    // before.
+    const willComboCancel = !blocked && attacker.queuedSide !== null;
+    const kbScale = (blocked ? GUARD_CHIP_SCALE : 1) * (willComboCancel ? COMBO_KNOCKBACK_SCALE : 1);
+    defender.applyKnockback(dir * kbSpeed * kbScale, blocked);
     if (blocked) {
       defender.damageGuardMeter(GUARD_BLOCK_HIT_DRAIN); // guard mitigates knockback but isn't free -- a real stamina cost per blocked hit, on top of the continuous drain from just holding guard (see updateGuardMeter())
     } else {
-      // Combo-cancel (v0.1.26): a clean, unblocked connect is a real
-      // confirm, not just a whiff -- if the attacker already buffered a
-      // follow-up during their own committed phase, this fires it
-      // immediately instead of making them wait out the rest of strike
-      // plus the full recovery tail. No-op if nothing was buffered.
+      // Combo-cancel (v0.1.26, second attack type extension in
+      // cancelIntoBufferedAttack() itself): a clean, unblocked connect is
+      // a real confirm, not just a whiff -- if the attacker already
+      // buffered a follow-up during their own committed phase, this fires
+      // it immediately (now carrying its own TYPE, kick or punch, not
+      // just its side) instead of making them wait out the rest of
+      // strike plus the full recovery tail. No-op if nothing was buffered.
       attacker.cancelIntoBufferedAttack();
     }
     SFX.strikeImpact();
@@ -3069,7 +3270,7 @@
   // exactly that, so it's called here rather than at load time. Any input
   // while sessionState is 'lose' restarts instead of attacking — there's
   // nothing to strike at on the game-over screen.
-  function handleInput(side) {
+  function handleInput(side, type) {
     SFX.ensureCtx();
     if (tryRematch()) return; // a decided duel match takes priority -- restart the match, don't also throw a kick
     // SHOW_GAUNTLET-gated (added with the title/mode-select overlay,
@@ -3082,7 +3283,7 @@
     // resetSession() -- which resets p1's position/velocity -- for a
     // loss condition the player never saw and isn't playing toward.
     if (sessionState === 'lose' && SHOW_GAUNTLET) { resetSession(); return; }
-    triggerAttack(side);
+    triggerAttack(side, type);
   }
 
   // Player 1 movement (producer request: "add the game joystick... and
@@ -3118,6 +3319,10 @@
     if (e.key === 'ArrowLeft') moveLeftHeld = true;
     if (e.key === 'ArrowRight') moveRightHeld = true;
     if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); handleInput(p1.facing); } // attack -- facing-based, not an explicit side, now that direction comes from movement
+    // Punch (second attack type) -- its own key, not a modifier on the
+    // kick button, so both attacks are independently reachable (and
+    // bufferable against each other) exactly like the kick already is.
+    if (e.key === 'Shift') { e.preventDefault(); handleInput(p1.facing, 'punch'); }
     if (e.key === 'ArrowUp') { SFX.ensureCtx(); p1.tryJump(); }
     // Guard is a hold, not a tap -- gated on 'playing' the same as attacks
     // effectively are (resetSession() on the 'lose' screen already handles
@@ -3136,7 +3341,10 @@
   // updated to match). Mirrors the keyboard/gamepad scheme exactly --
   // move via a drag joystick, attack throws whichever kick matches
   // p1.facing (not an explicit side), jump and block are their own
-  // buttons -- not a fifth, touch-only control language.
+  // buttons. The second attack type (punch, added later) got its own
+  // 4th button the same way rather than a modifier on ATK -- still the
+  // same tap-a-labeled-button control language every other action here
+  // already uses, not a new interaction model.
   let touchMoveIntent = 0;
   (function setupTouchStick() {
     const stick = document.getElementById('touchStick');
@@ -3183,6 +3391,7 @@
     el.addEventListener('pointercancel', release);
   }
   setupTouchButton('btnAttack', () => handleInput(p1.facing)); // facing-based, same as the space key and gamepad attack button -- not an explicit side
+  setupTouchButton('btnPunch', () => handleInput(p1.facing, 'punch')); // second attack type -- same facing-based convention, its own button rather than a modifier on ATK
   setupTouchButton('btnJump', () => { SFX.ensureCtx(); p1.tryJump(); });
   setupTouchButton('btnBlock',
     () => { SFX.ensureCtx(); if (sessionState === 'playing') setGuard(true); }, // same gating as the keyboard/gamepad guard-raise
@@ -3199,16 +3408,17 @@
   // state of its own -- but DOES route through this small equivalent so
   // player 2's attack input can restart a decided DUEL match too, not
   // just player 1's (see tryRematch()'s own comment).
-  function handleP2Input(side) {
+  function handleP2Input(side, type) {
     SFX.ensureCtx();
     if (tryRematch()) return;
-    p2.triggerAttack(side);
+    p2.triggerAttack(side, type);
   }
   let p2MoveLeftHeld = false, p2MoveRightHeld = false;
   window.addEventListener('keydown', (e) => {
     if (e.key === 'a' || e.key === 'A') p2MoveLeftHeld = true;
     if (e.key === 'd' || e.key === 'D') p2MoveRightHeld = true;
     if (e.key === 'f' || e.key === 'F') handleP2Input(p2.facing);
+    if (e.key === 'g' || e.key === 'G') handleP2Input(p2.facing, 'punch'); // second attack type -- next letter over from 'f', no existing binding collides
     if (e.key === 'w' || e.key === 'W') { SFX.ensureCtx(); p2.tryJump(); }
     if (e.key === 's' || e.key === 'S') { SFX.ensureCtx(); p2.setGuard(true); }
   });
@@ -3257,6 +3467,7 @@
   // a single attack button read via facing, a jump button, and the
   // existing shoulder for guard.
   const BTN_ATTACK = 0, BTN_JUMP = 3, BTN_GUARD = 4; // standard-mapping bottom/top face buttons + shoulder
+  const BTN_PUNCH = 1; // second attack type -- standard-mapping's other bottom-row face button, adjacent to BTN_ATTACK the same way the keyboard's punch key sits next to the kick input
 
   function assignPad(index) {
     if (p1PadIndex === null && p2PadIndex !== index) { p1PadIndex = index; return; }
@@ -3280,28 +3491,35 @@
   // stays held. One shared function for both players (not two hand-copied
   // versions) since the scheme is now identical -- the exact "duplicated
   // logic silently drifts apart" trap this file has already hit before.
-  function pollPlayerPad(padIndex, rig, onAttack, guardGate) {
+  // onPunch (added for the second attack type) follows the exact same
+  // rising-edge/facing-based convention onAttack already uses -- its own
+  // button, not a modifier read on top of BTN_ATTACK, so both attacks are
+  // independently and simultaneously reachable from a pad, matching
+  // keyboard/touch.
+  function pollPlayerPad(padIndex, rig, onAttack, onPunch, guardGate) {
     if (padIndex === null) return;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const gp = pads[padIndex];
     if (!gp) return;
-    const prev = padPrevPressed[padIndex] || { attack: false, jump: false };
+    const prev = padPrevPressed[padIndex] || { attack: false, jump: false, punch: false };
     const nowAttack = !!(gp.buttons[BTN_ATTACK] && gp.buttons[BTN_ATTACK].pressed);
+    const nowPunch = !!(gp.buttons[BTN_PUNCH] && gp.buttons[BTN_PUNCH].pressed);
     const nowJump = !!(gp.buttons[BTN_JUMP] && gp.buttons[BTN_JUMP].pressed);
     if (nowAttack && !prev.attack) onAttack();
+    if (nowPunch && !prev.punch) onPunch();
     if (nowJump && !prev.jump) { SFX.ensureCtx(); rig.tryJump(); }
     const guardHeld = !!(gp.buttons[BTN_GUARD] && gp.buttons[BTN_GUARD].pressed);
     if (!guardGate || guardGate(guardHeld)) rig.setGuard(guardHeld);
-    padPrevPressed[padIndex] = { attack: nowAttack, jump: nowJump };
+    padPrevPressed[padIndex] = { attack: nowAttack, jump: nowJump, punch: nowPunch };
   }
 
   // Called once per frame from inside the main loop (gamepad state has no
   // event model -- it must be polled every tick, per the studio's own
   // named risk for this API), not from an input event handler.
   function pollGamepads() {
-    pollPlayerPad(p1PadIndex, p1, () => handleInput(p1.facing),
+    pollPlayerPad(p1PadIndex, p1, () => handleInput(p1.facing), () => handleInput(p1.facing, 'punch'),
       (guardHeld) => sessionState === 'playing' || !guardHeld); // release always allowed, raise only while playing -- same gating the keyboard guard handler uses
-    pollPlayerPad(p2PadIndex, p2, () => handleP2Input(p2.facing), null); // player 2 has no session state to gate against, but does route through the match-over rematch check
+    pollPlayerPad(p2PadIndex, p2, () => handleP2Input(p2.facing), () => handleP2Input(p2.facing, 'punch'), null); // player 2 has no session state to gate against, but does route through the match-over rematch check
   }
 
   // ---- Test hook (mirrors this studio's Game._test convention) ----
@@ -3320,6 +3538,11 @@
           guarding: p1.guarding,
           queuedSide: p1.queuedSide,
           attackSide: p1.attackSide,
+          // Second attack type -- additive fields, existing ones above
+          // are untouched so a test that only ever threw a kick still
+          // reads exactly what it always read.
+          attackType: p1.attackType,
+          queuedType: p1.queuedType,
           posX: p1.posX,
           velX: p1.velX,
           facing: p1.facing,
@@ -3352,14 +3575,18 @@
       // Routes through handleInput(), the same entry point real keyboard/tap
       // input uses — so a trigger call while sessionState is 'lose' restarts
       // instead of attacking, exactly like a real player's next tap would.
-      trigger: (side) => handleInput(side),
+      // type ('kick'|'punch') is a new, optional 2nd param -- omitted (or
+      // any falsy value) still means kick, so every existing call site
+      // that only ever passed a side keeps its old meaning exactly.
+      trigger: (side, type) => handleInput(side, type),
       attack: () => handleInput(p1.facing), // the real attack button's actual call path -- facing-based, not an explicit side
+      punch: () => handleInput(p1.facing, 'punch'), // the real punch button's actual call path -- same facing-based convention as attack()
       // Bypasses handleInput()'s tryRematch()/sessionState checks entirely
       // -- lets a test verify resolveCombatHits()'s OWN internal
       // `if (matchOver) return` guard directly (defense in depth), since
       // every real input path already refuses to reach this state by
       // routing through tryRematch() first.
-      rawAttack: (side) => triggerAttack(side),
+      rawAttack: (side, type) => triggerAttack(side, type),
       setGuard: (active) => setGuard(active),
       // setMoveIntent/updatePhysics/stepPhysics expose the real physics
       // integrator directly -- a test drives it the same way the real
@@ -3423,6 +3650,8 @@
           guarding: p2.guarding,
           queuedSide: p2.queuedSide,
           attackSide: p2.attackSide,
+          attackType: p2.attackType,
+          queuedType: p2.queuedType,
           posX: p2.posX,
           velX: p2.velX,
           facing: p2.facing,
@@ -3440,7 +3669,8 @@
           sockets: getSockets(joints)
         };
       },
-      trigger: (side) => handleP2Input(side),
+      trigger: (side, type) => handleP2Input(side, type), // type is optional, same 'kick'-by-default convention window.Rig._test.trigger() uses
+      punch: (side) => handleP2Input(side || p2.facing, 'punch'), // symmetry with window.Rig._test.punch()
       setGuard: (active) => p2.setGuard(active),
       reset: () => p2.reset(),
       teleportTo: (x) => p2.teleportTo(x),
@@ -3734,8 +3964,8 @@
       (SHOW_GAUNTLET && SHOW_P2 ? '&nbsp;&nbsp;&nbsp;' : '') +
       (SHOW_P2 ? ('<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2 (first to ' + MATCH_TARGET_SCORE + ')</span>') : '');
 
-    debugEl.textContent = 'state: ' + (!p1.idle ? ('attacking [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
-      (p1.queuedSide ? '\nbuffered: ' + p1.queuedSide : '') +
+    debugEl.textContent = 'state: ' + (!p1.idle ? ((p1.attackType || 'kick') + ' [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
+      (p1.queuedSide ? '\nbuffered: ' + p1.queuedType + ' ' + p1.queuedSide : '') +
       '\nsession: ' + sessionState +
       '\nkills: ' + killCount + '  missed: ' + missedCount +
       (enemies.length ? '\nenemy: ' + enemies[0].side + ' @ ' + enemies[0].x.toFixed(0) : '');

@@ -21,6 +21,33 @@ restructure).
 | `jumping` | jump input from `idle` or `recover` (not `windup`/`strike`, not while `guard`ing) | automatic once integrated height returns to 0 (real gravity, not a timer — see Physics below) | attack and guard inputs are both refused while airborne — no aerial actions in this pass |
 | `flinch` | a miss event (enemy reaches melee range unanswered) **or**, as of v0.1.21, a landed rig-vs-rig hit that wasn't blocked — either way **only visually applied while the idle branch is being evaluated** | 180ms timer, or superseded the instant the idle branch isn't reached (mid-attack) | not a real state in the transition sense — see caveat below |
 
+## Second attack type (punch) — the table above is the KICK's own timing
+
+The `windup`/`strike` durations in the table above (110ms/70ms, 180ms
+total committed) are specifically the KICK's numbers — unchanged by the
+punch's addition, per the constraint that added it (existing tests assert
+on the kick's exact timing). The punch is a genuinely separate, faster
+sequence through the identical five-state shape: `windup` 70ms, `strike`
+50ms (120ms total committed), `recover` 160ms (280ms total) — roughly
+35-40% shorter at every phase, the conventional jab-vs-heavy-kick tempo
+relationship. Every transition rule in the table above (committed-phase
+buffering, `recover`'s interruptibility, hit resolution only during
+`strike`) applies identically to the punch; only the durations differ.
+`attackType` (`'kick'`|`'punch'`, alongside the existing `attackSide`) now
+threads through the whole committed/buffered pipeline
+(`triggerAttack()`/`startAttack()`/`queuedSide`+`queuedType`), defaulting
+to `'kick'` wherever omitted so no pre-existing call site's meaning
+changed. Hit resolution's "attack-side foot socket" (this table's own
+`strike` row, above) now branches on `attackType`: kick still reads
+`foot_r`/`foot_l` against the defender's `stance` (ankle height,
+unchanged); punch reads `hand_r`/`hand_l` against the defender's `back`
+(chest height) — see `RYKNDU_RIG_SCHEMA.md`'s Attachment Sockets section
+and `attackWeaponSocket()`/`attackHurtboxSocket()` in
+`rykndu-doll-rig.html`, next to `checkPvpHit()`. Gauntlet (`resolveHits()`)
+stays kick-only by explicit scope decision, documented in that function's
+own comment — the enemy dots have no separate high/low hurtbox, and this
+pass is a Duel-only combat-depth showcase.
+
 ## The `flinch` caveat — named honestly, not smoothed over
 
 `flinch` is not a state in the same sense as the five above: it's a
@@ -297,10 +324,31 @@ sequence to finish on its own:
   buffered, it's a no-op and the sequence continues exactly as it always
   did (windup → strike → recovery → idle).
 - **Scope**: this is the seam `isCommittedPhase()`/`queuedSide` were
-  always isolated enough to extend, and it only rewards a single
-  attack type re-fired against itself (this rig still only has one kick
-  per side) — a genuinely new second attack type that cancels differently
-  is a further, separate extension, not built here.
+  always isolated enough to extend, and at the time this section was
+  written it only rewarded a single attack type re-fired against itself
+  (this rig had only one kick per side) — a genuinely new second attack
+  type that cancels differently was named here as further, separate,
+  not-yet-built extension.
+- ~~a genuinely new second attack type~~ — **done**: the punch (see
+  "Second attack type" above the flinch caveat, and `RYKNDU_RIG_SCHEMA.md`)
+  shipped combo-linked to the kick. `queuedSide` above is now paired with
+  `queuedType`, threaded through the identical buffer/confirm mechanism —
+  `cancelIntoBufferedAttack()` fires the buffered attack's actual TYPE, not
+  always a same-type re-fire. The concrete reward: a confirmed, unblocked
+  KICK with a PUNCH buffered combo-cancels into the punch — a real
+  kick→punch combo string, not the kick→kick re-fire this section
+  originally (and still, when that's genuinely what's buffered) describes.
+  A companion fix landed in the same pass: `resolveDuelHit()`'s knockback
+  on a hit that's about to combo-cancel is scaled down
+  (`COMBO_KNOCKBACK_SCALE`, applied only on that specific path) — full-speed
+  knockback on a confirmed cancel could carry the defender out of
+  `PVP_HIT_RADIUS` before the follow-up's own strike phase ever got a
+  chance to check it, an already-buildable whiff a design review caught
+  and this fix closes. See `resolveDuelHit()`'s own comment in
+  `rykndu-doll-rig.html` for the exact drift math and
+  `tests/rig-second-attack.js` for the live verification (both the
+  kick→punch string and the knockback fix's before/after drift measured
+  directly, not assumed).
 
 ## Verification
 
@@ -336,4 +384,17 @@ both attack directions. The walk cycle is covered by
 resting pose, a genuine oscillation (not a one-way drift) as the phase
 advances, cadence tracking distance rather than raw time, guard fully
 suppressing the cycle even while still moving underneath, `reset()`
-zeroing the phase, and both players sharing the same behavior.
+zeroing the phase, and both players sharing the same behavior. The second
+attack type (punch) and its knockback-scale combo-cancel fix are covered
+by `tests/rig-second-attack.js` — the punch's own state-machine timing,
+old (kick-only) call sites defaulting correctly, buffered type carried
+through a committed phase, hit detection actually reading `hand_r`/
+`hand_l` (not `foot_r`/`foot_l`, proven by throwing a punch from a
+reliable kick-connect range and confirming it does NOT land there), the
+real kick→punch combo-cancel plus the kick→kick regression, the Gauntlet
+kick-only scope decision (a punch never kills an enemy dot, a kick still
+does, from the same setup), and the `COMBO_KNOCKBACK_SCALE` fix's actual
+knockback value and defender drift measured live and compared directly
+against a solo (uncanceled) hit's own unscaled drift over the identical
+time window — a live measurement of the exact pre-fix behavior, not a
+guess.

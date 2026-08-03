@@ -42,10 +42,12 @@ simultaneously rather than as a real player choice (see §4):
 - Guard/stamina meter, a parry window, combo-cancel on confirmed hits.
 - Rig-vs-rig hit detection with knockback and ring-outs.
 - Gamepad auto-assignment (`assignPad()`/`pollOnePad()`, connection order),
-  keyboard, and touch (virtual joystick + 3 action buttons) input, unified
-  behind one scheme all three input sources share.
-- One kick attack per side; arms (`handL`/`handR`) are schema-ready
-  (`RYKNDU_RIG_SCHEMA.md`) but have no live gameplay use yet.
+  keyboard, and touch (virtual joystick + 4 action buttons, as of the
+  second attack type) input, unified behind one scheme all three input
+  sources share.
+- A kick and a punch per side, combo-linked (kick→punch on a confirmed
+  hit) — arms (`handL`/`handR`) are live as the punch's own weapon socket
+  (was: "schema-ready... no live gameplay use yet", `RYKNDU_RIG_SCHEMA.md`).
 
 **Visual/audio state**: side-profile faceted-gem joint accents (per the
 studio's signature technique); P1/P2 colors independently verified against
@@ -83,8 +85,13 @@ that turns it into one coherent game**, not the mechanics themselves.
   this itself as an open gap).
 
 **Real feature scope, deliberately not attempted this pass:**
-- A second attack type / real combo tree (combo-cancel currently re-fires
-  the same single kick).
+- ~~A second attack type / real combo tree (combo-cancel currently re-fires
+  the same single kick).~~ — **done, separate pass (see
+  `RYKNDU_MOVESET.md`'s "Second attack type" section)**: a real punch
+  shipped, combo-linked kick→punch, Duel-only by explicit scope decision
+  (Gauntlet stays kick-only — the enemy dots have no separate high/low
+  hurtbox). A distinct, further-out "real combo tree" (branching strings
+  beyond a single kick→punch cancel) is still not attempted.
 - Aerial actions — jump currently refuses both attack and guard.
 - A second playable character/moveset (`p1`/`p2` are the same kit).
 - Real hardware mobile testing (`RYKNDU_2PLAYER.md` names this as an open

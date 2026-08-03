@@ -37,14 +37,14 @@ per-pose `mirror()` description entirely.
 | `footL` | `kneeL` | angle `pose.kneeL`, length `LEN.shin` | Leaf joint |
 | `hipR` | `pelvis` | fixed offset (`+LEN.hipW*0.4`, same y) | **The FRONT hip** in canonical facing-right space — same anchor formula as `hipL`, opposite sign, but no longer a left-right mirror in the old sense; see "Mirroring" below |
 | `kneeR` | `hipR` | angle `pose.hipR`, length `LEN.thigh` | Front leg |
-| `footR` | `kneeR` | angle `pose.kneeR`, length `LEN.shin` | Leaf joint — the kick's contact point (the rig's only currently-live attack) |
+| `footR` | `kneeR` | angle `pose.kneeR`, length `LEN.shin` | Leaf joint — the kick's contact point |
 | `chest` | `pelvis` | angle `pose.spineA`, length `LEN.spine` | |
 | `shoulderL` | `chest` | fixed offset (`-LEN.shoulderW*0.5`, `+6y`) | Not angle-driven. **Back arm** (v0.1.28), narrow depth offset like `hipL` |
 | `elbowL` | `shoulderL` | angle `pose.shoulderL`, length `LEN.upperArm` | |
-| `handL` | `elbowL` | angle `pose.elbowL`, length `LEN.forearm` | Leaf joint — no live gameplay use yet |
+| `handL` | `elbowL` | angle `pose.elbowL`, length `LEN.forearm` | Leaf joint — the punch's contact point (second attack type) |
 | `shoulderR` | `chest` | fixed offset (`+LEN.shoulderW*0.5`, `+6y`) | **Front arm** (v0.1.28) |
 | `elbowR` | `shoulderR` | angle `pose.shoulderR`, length `LEN.upperArm` | |
-| `handR` | `elbowR` | angle `pose.elbowR`, length `LEN.forearm` | Leaf joint — no live gameplay use yet |
+| `handR` | `elbowR` | angle `pose.elbowR`, length `LEN.forearm` | Leaf joint — the punch's contact point (second attack type) |
 | `head` | `chest` | fixed offset (`0x`, `-LEN.neck - LEN.headR`) | Not angle-driven — no independent look/aim angle exists today |
 
 This is a **hand-coded FK chain** (each joint a named variable computed via
@@ -159,6 +159,18 @@ testing until caught live and fixed. Real enough a future ground-shadow or
 dust-FX attachment could reuse it too, not a hit-detection-only special
 case.
 
+`hand_r`/`hand_l` went from "schema-ready... no live gameplay use yet" to
+actually live with the second attack type (the punch's own weapon socket,
+mirroring how `foot_r`/`foot_l` are the kick's) — see
+`attackWeaponSocket()` near `checkPvpHit()` in `rykndu-doll-rig.html`.
+`back` also picked up a SECOND use there: reused (not renamed, not
+duplicated) as the punch's own hurtbox target — higher than the kick's
+ankle-height `stance`, matching where a punch's own strike pose is solved
+to land (chest height) — via `attackHurtboxSocket()`, the same function.
+Kick and punch now read genuinely different sockets on both the weapon
+and hurtbox side, a real (if so-far cosmetic-only, since guard doesn't
+yet distinguish high/low blocks) high/low attack distinction.
+
 ## What this schema does not yet have (tracked separately, not gaps in this doc)
 
 This list is now stale in the way it originally described (an explicit
@@ -171,7 +183,14 @@ still missing:
 - **Socket orientation/rotation** — sockets are position-only today; add
   rotation when a weapon/skin actually needs to align to bone direction,
   not preemptively.
-- **Combo-specific poses / a genuine second attack type** — combo-cancel
-  (v0.1.26, see `RYKNDU_MOVESET.md`) chains the SAME canonical kick into
-  itself on a confirmed hit; there is still only one kick pose, not a
-  combo-specific follow-up animation.
+- ~~**Combo-specific poses / a genuine second attack type**~~ — **done**:
+  a real punch (`punch_windup`/`punch_strike`) shipped alongside the kick,
+  using the FRONT arm (`hand_r`/`hand_l` — no longer "schema-ready... no
+  live gameplay use yet" per this doc's own §3 note above, which is now
+  stale in that specific claim) and, for its hurtbox target, the `back`
+  socket (a second, reused purpose for that socket — see its own updated
+  note in §3 above) instead of the kick's ankle-height `stance`. See
+  `RYKNDU_MOVESET.md`'s Combo-cancel section for the actual kick→punch
+  combo string this made possible, and `punch_strike`'s own in-code
+  comment (`rykndu-doll-rig.html`) for the 2-bone IK derivation, worked
+  the same way `kick_strike`'s own comment already documents its numbers.
