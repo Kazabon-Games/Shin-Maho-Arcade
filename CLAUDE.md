@@ -44,11 +44,15 @@ short on purpose.
   Playwright/Chromium, combining internal `_test` hooks (`Game._test`,
   `Music._test`) for fast setup with real UI-driven interaction. Run
   against a locally served copy of the repo root.
-- **`.claude/agents/`** and **`.claude/skills/`** — the studio's full
-  canonical roster (11 agents, 6 skills as of 2026-08-03), kept in sync
-  with `Studio-Internal-`'s copies per that repo's README. If you edit one
-  here, also update the canonical copy in `Studio-Internal-` — don't let
-  this repo's copy become the source of truth by accident.
+- **`.claude/agents/`** and **`.claude/skills/`** — the studio's canonical
+  agent roster (11 agents) plus the 8 skills relevant to this repo (7
+  studio-wide + `cross-game-ui-modules`, this repo's own; `age-of-wonder`
+  additionally carries 2 more that don't apply here — see
+  `STUDIO_BIBLE.md` §12 in `Studio-Internal-` for the full index), kept in
+  sync with `Studio-Internal-`'s canonical copies per that repo's README.
+  If you edit one here, also update the canonical copy in
+  `Studio-Internal-` — don't let this repo's copy become the source of
+  truth by accident.
 
 ## Known gaps, stated plainly (per studio convention)
 
