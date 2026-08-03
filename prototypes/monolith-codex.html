@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monolith Codex — Prototype</title>
+
+<!--
+  MONOLITH CODEX — CHANGE LOG
+  (one line per change, most recent on top — treat git commit messages as
+  the authoritative record of what actually changed; this comment is
+  useful context, not ground truth)
+
+  v0.0.1 — 2026-08-03 — Phase 0 scaffold. Esori/Tulpa creation, Grimoire,
+                          deck-building, equipment, roster, and currency
+                          balances (Stars/Fragments/Favor/Stones) live
+                          here — the "home realm" half of the game's
+                          two-document split, per MONOLITH_RULESET.md and
+                          MONOLITH_ESORI_SCHEMA.md (locked before this file
+                          existed, specifically so the character-creation
+                          flow and the Esori export/import shape don't get
+                          guessed at mid-build). Companion document is
+                          monolith-arena.html — this doc exports a roster
+                          snapshot for Arena to import, and Arena exports
+                          match results back for re-import here. No real
+                          features yet; this commit is the version marker
+                          and changelog block only, nothing else.
+-->
+
+<style>
+  :root {
+    --bg: #16121c;
+    --ink: #f0e9f7;
+    --ink-soft: #a898b8;
+    --accent: #caa24c;
+  }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  a { color: var(--accent); }
+  .version-marker {
+    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+  #prealpha-badge {
+    position: fixed; bottom: 26px; left: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.05em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <h1>Monolith Codex</h1>
+  <p style="color:var(--ink-soft)">Esori &amp; Tulpa creation, Grimoire, and roster.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
+  <p><a href="monolith-arena.html">Monolith Arena →</a> &nbsp;·&nbsp; <a href="../index.html">← Back to the Arcade</a></p>
+</div>
+
+<div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
+<div class="version-marker">Monolith Codex — v0.0.1</div>
+
+</body>
+</html>

@@ -32,7 +32,18 @@ short on purpose.
   (`RYKNDU_RIG_SCHEMA.md`, `RYKNDU_MOVESET.md`, `RYKNDU_2PLAYER.md`) —
   read these before assuming a move/state isn't implemented; they exist
   specifically because the moveset was previously undocumented and that
-  caused real bugs.
+  caused real bugs. Also here, as of 2026-08-03: Game 8, **Monolith: The
+  Esori Chronicles** — the studio's original IP (Wonderland in
+  `age-of-wonder`/Game 6 and Iridescent Cosmology/Game 1 both already
+  borrow its canon; this is the first build of the actual game), a
+  two-document split — `monolith-codex.html` (Esori/Tulpa creation,
+  Grimoire, roster) and `monolith-arena.html` (9x9 grid battle engine) —
+  plus `MONOLITH_RULESET.md` (locked rules, reconciled across nine
+  conflicting source PDFs — read its "Source precedence" section before
+  trusting any one of those PDFs alone) and `MONOLITH_ESORI_SCHEMA.md`
+  (the Esori JSON export/import shape shared by both documents and by the
+  person-to-person Esori-sharing flow). Phase 0 only so far — scaffold
+  and locked docs exist, no real gameplay yet.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

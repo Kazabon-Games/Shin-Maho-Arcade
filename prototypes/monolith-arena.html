@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monolith Arena — Prototype</title>
+
+<!--
+  MONOLITH ARENA — CHANGE LOG
+  (one line per change, most recent on top — treat git commit messages as
+  the authoritative record of what actually changed; this comment is
+  useful context, not ground truth)
+
+  v0.0.1 — 2026-08-03 — Phase 0 scaffold. The 9x9 grid battle engine —
+                          turn order, movement, weapon strikes, ability
+                          resolution — lives here, per MONOLITH_RULESET.md.
+                          Built from the start to run either an AI-
+                          controlled opposing team or local pass-and-play
+                          (two players, one screen), same action-declare
+                          loop with a swappable controller for the second
+                          team, not an AI mode bolted on after a
+                          hotseat-only build. Imports a roster snapshot
+                          exported from monolith-codex.html (schema locked
+                          in MONOLITH_ESORI_SCHEMA.md) and exports match
+                          results back for Codex to re-import. No real
+                          features yet; this commit is the version marker
+                          and changelog block only, nothing else.
+-->
+
+<style>
+  :root {
+    --bg: #16121c;
+    --ink: #f0e9f7;
+    --ink-soft: #a898b8;
+    --accent: #caa24c;
+  }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center;
+  }
+  a { color: var(--accent); }
+  .version-marker {
+    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+  #prealpha-badge {
+    position: fixed; bottom: 26px; left: 10px; font-size: 10px; color: #888;
+    opacity: 0.5; letter-spacing: 0.05em; font-family: monospace; z-index: 50;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <h1>Monolith Arena</h1>
+  <p style="color:var(--ink-soft)">9&times;9 grid tactics battle engine.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
+  <p><a href="monolith-codex.html">← Monolith Codex</a> &nbsp;·&nbsp; <a href="../index.html">← Back to the Arcade</a></p>
+</div>
+
+<div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
+<div class="version-marker">Monolith Arena — v0.0.1</div>
+
+</body>
+</html>
