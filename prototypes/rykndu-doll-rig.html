@@ -1127,11 +1127,22 @@
   }
   .touch-btn.active { background: rgba(255,255,255,0.22); }
   #btnAttack { right: 0; bottom: 0; }
-  #btnJump { right: 68px; bottom: 34px; }
   #btnBlock { right: 0; bottom: 68px; }
-  /* Second attack type -- fills the 4th (bottom-left) corner of the
-     existing 160x120 #touchButtons box, same diamond arrangement the
-     other three already use; no resize of the container needed. */
+  /* Second attack type -- a real 2x2 grid (2 columns x 2 rows), not the
+     old 3-button "diamond" (jump floating at a bottom:34 offset,
+     centered between attack/block's own rows). qa-playtest found that
+     layout put jump (bottom:34, spanning 34-92) and the newly-added
+     punch (bottom:0, spanning 0-58) in the SAME right:68 column with a
+     24px vertical overlap -- a live, boundingBox()-measured defect (a
+     tap in the overlap zone always resolved to punch, since it's later
+     in DOM order and paints on top), not a cosmetic nit. Moving jump to
+     bottom:68 (aligned with block's own row) instead of a mid-offset
+     gives all 4 buttons a genuine non-overlapping grid: attack/punch
+     share the bottom row, block/jump share the top row -- same 68px
+     row/column spacing already proven to leave a clean 10px gap between
+     the two existing columns, just applied to both rows now instead of
+     one. */
+  #btnJump { right: 68px; bottom: 68px; }
   #btnPunch { right: 68px; bottom: 0; }
   /* Title/mode-select overlay (GAME_5_PILLARS.md §3/§4) -- previously a
      bespoke dark/monospace dev-shell style, disconnected from the shared
@@ -3827,14 +3838,32 @@
   // on the first real gameplay input (existing handleInput()/keydown paths
   // already do this), not on the menu choice itself. rig-audio.js asserts
   // audioStarted===false immediately after page load/menu dismissal.
+  // qa-playtest (apex-standard pass) found live: reopening this menu
+  // mid-match and re-clicking the mode you're ALREADY in silently wiped
+  // the running score/session -- these used to call resetSession()/
+  // resetMatch() unconditionally, with no way to tell "the player is
+  // switching modes" apart from "the player is just re-confirming the
+  // one they're already in" (the single most likely reason to tap the
+  // reopen button mid-match: checking/confirming status, not restarting).
+  // switchingMode compares the REQUESTED mode against the CURRENT
+  // SHOW_GAUNTLET/SHOW_P2 state before either gets mutated below -- only
+  // a genuine switch resets progress; re-confirming the active mode is a
+  // no-op past hiding the menu again. The very first call at page load
+  // (SHOW_GAUNTLET/SHOW_P2 both still true, an initial state no real
+  // in-game toggle ever produces) always counts as switchingMode, so
+  // startup behavior -- and every existing tests/rig-*.js file's own
+  // "call startDuel()/startGauntlet() once to dismiss the overlay" setup
+  // -- is unchanged.
   window.startGauntlet = function () {
+    const switchingMode = !SHOW_GAUNTLET || SHOW_P2;
     SHOW_GAUNTLET = true; SHOW_P2 = false;
-    resetSession();
+    if (switchingMode) resetSession();
     hideRyknduMenu();
   };
   window.startDuel = function () {
+    const switchingMode = SHOW_GAUNTLET || !SHOW_P2;
     SHOW_GAUNTLET = false; SHOW_P2 = true;
-    resetMatch();
+    if (switchingMode) resetMatch();
     hideRyknduMenu();
   };
   window.reopenRyknduMenu = function () {
