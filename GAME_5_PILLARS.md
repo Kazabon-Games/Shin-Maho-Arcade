@@ -30,7 +30,7 @@ simultaneously rather than as a real player choice (see §4):
    gamepad/keyboard input, resolved via `resolveCombatHits()`, first to
    `MATCH_TARGET_SCORE` wins (`matchOver`/`matchWinner`).
 
-**Core tech, already mature and test-covered** (12 Playwright suites,
+**Core tech, already mature and test-covered** (13 Playwright suites,
 `tests/rig-*.js`):
 - Real velocity/acceleration/friction/gravity movement physics (both
   players), not the frame-locked pose-swap the rig started as.
@@ -53,12 +53,15 @@ simultaneously rather than as a real player choice (see §4):
 studio's signature technique); P1/P2 colors independently verified against
 the reserved gold/red/green bands (`STUDIO_BIBLE.md` §11); four dry,
 reverb-free one-shot SFX voices (windup, strike, miss, proximity pulse)
-plus, as of 2026-08-03, a real adaptive music bed (see §6) — a continuous
-detuned drone whose intensity tracks live combat state, with sidechain
-ducking on hits. The page itself is still a bare dev-prototype shell:
-monospace HUD, no `:root{}` shared token set, no `.overlay`/`.panel`/
-`.btn` classes this studio's shipped games all share — visually unintegrated
-with the rest of the arcade, not yet a reskin pass away from shipping.
+plus a real adaptive music bed, now at **v2** as of the apex-standard
+showcase pass (see §7) — per-mode identity (Gauntlet vs. Duel genuinely
+sound different, not just louder/quieter), a Duel clash voice, a
+Gauntlet-only heartbeat, and signature-motif stingers on parry/ring-out/
+match-win. The title/mode-select menu, HUD, and result cards now share
+the same `:root{}` token system and `.overlay`/`.panel`/`.btn` visual
+language every other shipped game uses (also §7) — Rykndu is no longer a
+visually standalone dev shell, though the rig's own silhouette is a
+separately-named, still-open gap (see §7's qa/design notes).
 
 ## 1. The actual gap to a shippable Game 5
 
@@ -101,13 +104,20 @@ that turns it into one coherent game**, not the mechanics themselves.
   signal, per-mode motif identity, a signature stinger) is its own
   separately-named remaining scope, tracked in
   `prototypes/rykndu-assets/music/MUSIC_DIRECTION.md`, not re-listed here.
-- A full Visual-Art-Director pass and cross-game visual-identity
+- ~~A full Visual-Art-Director pass and cross-game visual-identity
   integration (the shared token/`.overlay` system, per `STUDIO_BIBLE.md`
-  §11) — today's page is still a standalone dev shell.
-- Meta-progression, persistent stats, real playtest-calibrated balance
-  numbers (guard drain, parry window, knockback speed are all first-pass
-  tuned values, same honesty standard every other game's handover states
-  for its own difficulty numbers — see `difficulty-curve-calibration`).
+  §11) — today's page is still a standalone dev shell.~~ — **the token/
+  `.overlay`/`.panel`/`.btn` integration is done, see §7**; the rig's own
+  silhouette/pose distinctness is a real, separate finding from that same
+  pass, explicitly NOT attempted (flagged for human/producer iteration,
+  not auto-generated — see §7).
+- Meta-progression, persistent stats. Balance numbers (guard drain, parry
+  window, knockback speed) are still first-pass/Estimated, not
+  human-playtest-calibrated — an independent §7 balance review confirmed
+  the new punch/combo numbers are internally consistent (recomputed, not
+  assumed) but explicitly labeled this Estimated, not Measured, same
+  honesty standard every other game's handover states for its own
+  difficulty numbers (see `difficulty-curve-calibration`).
 
 ## 2. Scope decision for this pass
 
@@ -168,21 +178,37 @@ follow-up someone can do to the game file alone.
 
 ## 5. Owner sign-off (retroactive, per this doc's own §0 note)
 
+*Rows below describe the ship-readiness-wrapper pass (§§1-4). See §7's own
+sign-off note for the later apex-standard showcase pass — a second,
+later, separate round of the same five roles, not a correction to this one.*
+
 - **Game Designer**: genre/mode framing above reflects what's actually
   built, not a new design decision — no balance pass included this round
-  (see `difficulty-curve-calibration` for the standing gap).
+  (see `difficulty-curve-calibration` for the standing gap; closed in §7).
 - **Engineer**: the §3 test-suite-coupling finding is the load-bearing
   discovery of this pass — any future work separating the two simulations
   must update `tests/rig-*.js` in the same commit, not after.
 - **Visual-Art-Director**: no pass run this round — flagged in §1 as
-  real, deferred scope, not silently skipped.
-- **Audio-Designer**: a real v1 adaptive-score pass ran 2026-08-03 — see §6.
+  real, deferred scope, not silently skipped (run in §7).
+- **Audio-Designer**: a real v1 adaptive-score pass ran 2026-08-03 — see §6
+  (v2 in §7).
 - **Capability-Auditor**: not run this round — Rykndu's own prototype
   status (still a dev-shell page, no shared visual integration) is
   itself the finding a capability pass would most likely surface first;
-  worth running once the visual-identity integration in §1 happens.
+  worth running once the visual-identity integration in §1 happens (done
+  in §7; a capability-auditor pass is still not run as of §7 either —
+  remains a standing gap).
 
-## 6. Music — v1 adaptive score (2026-08-03)
+## 6. Music — v1 adaptive score (2026-08-03) — superseded by v2, see §7
+
+*This section is the historical record of the v1 pass. v2 (per-mode
+identity, a Duel clash voice, a Gauntlet heartbeat, signature stingers)
+shipped later the same day as part of the apex-standard showcase pass —
+see §7 and `prototypes/rykndu-assets/music/MUSIC_DIRECTION.md` (the
+canonical, kept-current design doc) for the current state. Left
+unedited below rather than rewritten, so this document's own history
+stays legible pass-by-pass, the same convention §§1-5 vs. §7 already
+follow.*
 
 Full design rationale lives in
 `prototypes/rykndu-assets/music/MUSIC_DIRECTION.md` (this studio's first
@@ -220,3 +246,131 @@ layer, not a build dependency). Summary:
   in (0 → 0.27 as travel fraction reached 0.72), settles low on a Gauntlet
   loss (0.087, target 0.08), and settles near the Duel baseline (0.50 and
   rising toward 0.55 after 1.2s, matching the smoothing rate).
+
+## 7. Apex-standard showcase pass (2026-08-03) — an ultra-polished vertical slice
+
+Producer request: a public portfolio/trailer-quality vertical slice of
+Rykndu, both modes equally polished, one new attack/combo added before
+the polish pass. Run through this studio's own established
+"apex-standard pass" process (precedent: Wardfall/Iridescent Cosmology/
+Sigil Chain, e.g. commit `d820ae6`; Rykndu's own v0.1.6 quality pass was
+an earlier instance of the same shape) — a real multi-role team
+consultation producing a scoped, concrete fix list, implementation in
+dependency order with its own commit and full-suite verification per
+sub-step, then an independent `qa-playtest` gate before calling it done.
+Measured against `STUDIO_BIBLE.md` §14's actual apex bar (Art: a 10-second
+first-watch distinctness test; Music: mood as a live input, "describe
+what's happening from the music alone"; Mechanics: every formula
+independently recomputed) — not a vibes-based "make it nicer" pass.
+
+**Team consultation (parallel domain audits, before any code changed)**:
+`game-designer` (the punch/combo design + balance approach),
+`visual-art-director` (the visual-identity integration plan, and a live
+screenshot-based check of the rig against the §14 distinctness test),
+`audio-designer` (the music v2 differentiation plan), `engineer`
+(architecture/risk-ordering check at 3600+ lines, ahead of a new attack
+type + a visual reskin landing on top of 12 already-passing suites).
+
+**What shipped, in the engineer-recommended risk order** (each its own
+commit, each independently full-suite-verified before the next started):
+
+1. **Music v2** — closes all four gaps v1's own `MUSIC_DIRECTION.md`
+   named as deferred: a real Duel intensity signal (proximity + guard-
+   break risk + match-point stakes, replacing v1's flat baseline),
+   per-mode identity (`droneFilterQ` 0.7 Gauntlet / 2.2 Duel, a Duel-only
+   clash voice, a Gauntlet-only heartbeat pulse), a signature open-fifth
+   `bell()` stinger on parry/ring-out/match-win, and a reduced-audio
+   intensity cap. `tests/rig-audio.js` grew from 7 to 15 sections (29
+   assertions). Full design record: `MUSIC_DIRECTION.md`.
+2. **A second attack (punch), combo-linked to the kick** — uses the
+   previously-schema-ready `hand_r`/`hand_l` sockets for the first live
+   gameplay purpose. Attack type now threads through the whole trigger/
+   buffer/committed-phase pipeline, so a confirmed unblocked kick with a
+   punch buffered combo-cancels into the punch (the real kick→punch
+   string), not a second kick. Punch is faster/shorter-reaching/lower-
+   knockback than the kick (70/50/160ms vs. 110/70/220ms,
+   `PUNCH_KNOCKBACK_SPEED=320` vs. `KNOCKBACK_SPEED=480`) and targets a
+   chest-height hurtbox instead of the kick's ankle-height one — a real
+   high/low read between the two attacks. **Duel-only by explicit scope
+   decision** (`resolveHits()`'s own comment) — the Gauntlet's enemy dots
+   have no separate hurtbox to punch at, so the Gauntlet stays kick-only,
+   unchanged. Wired into all four input surfaces (keyboard, touch,
+   gamepad) so it's actually playable, not just testable. Also fixed a
+   real, independently-verified geometry bug in the pre-existing
+   kick→kick combo-cancel: at full knockback, a confirmed cancel could
+   carry the defender far enough during the follow-up's own windup that
+   the "confirmed" cancel actually whiffed (up to 42px of the 50px hit
+   radius). `COMBO_KNOCKBACK_SCALE=0.4` fixes it, derived from the file's
+   own physics constants. New file `tests/rig-second-attack.js` (31
+   assertions).
+3. **Visual identity integration** — the title/mode-select menu, HUD, and
+   canvas-drawn result cards now share the same `:root{}` token system
+   and `.overlay`/`.panel`/`.btn` visual language every other shipped
+   game uses (`wardfall.html`'s tokens, copied verbatim; Rykndu keeps its
+   own established monospace typography rather than importing wardfall's
+   display/body fonts — a deliberate, named scope decision). Hardcoded
+   hex literals that duplicated a token value were rewired to
+   `var(--token)`; deliberately independent colors (dev-only markers, a
+   considered HUD neutral, a derived "spent" shade) were left alone, each
+   with a comment saying why. The GAME OVER and match-win cards gained a
+   real per-frame entrance animation using this file's own existing
+   `easeOutBack()` (a match win gets the bigger, slower, more triumphant
+   pop). **The rig's own silhouette/pose data was deliberately NOT
+   touched** — a live screenshot-based visual-art-director review during
+   the consultation found the rig currently fails the §14 ten-second-
+   distinctness test at real render size, and explicitly recommended
+   flagging this for human/producer iteration rather than auto-generating
+   a fix, citing high design-taste risk. **Named here as the one
+   significant apex-standard gap this pass did not close** — a real
+   finding, not smoothed over.
+4. **Balance review** (read-only, no code changes needed) — every new
+   constant independently recomputed rather than trusted from a comment:
+   confirmed punch's knockback-per-committed-time is exactly equal to the
+   kick's (proportional scale-down, not a hidden efficiency edge), the
+   kick→punch combo saves ~55-62% of the time a fresh second attack would
+   take without being strictly better than optimally-timed solo play, and
+   `COMBO_KNOCKBACK_SCALE`'s margin holds (with *more* margin, as
+   expected) for a punch follow-up's shorter 70ms windup, a case the
+   original fix wasn't specifically verified against. Found and this pass
+   fixed one non-blocking issue: a stale arithmetic error in the
+   `COMBO_KNOCKBACK_SCALE` code comment (used the rejected 0.5-scale
+   number instead of the shipped 0.4-scale one — the code and live
+   behavior were already correct, only the comment's own math was wrong).
+   Go/no-go: **go**, proceed to the qa-playtest gate.
+
+**qa-playtest gate**: an adversarial live-driving pass (real clicks/taps/
+key mashing across both modes and a 390×844 mobile viewport, not just
+`_test`-hook scenarios) across the fully combined build — the first time
+all of the above was exercised together rather than per-feature in
+isolation. Found and this pass fixed two real, non-blocking defects that
+no isolated suite had coverage for:
+- The new PUNCH touch button geometrically overlapped JUMP by ~24px
+  (both in the same column) — a real tap in the overlap zone always
+  resolved to punch. Fixed with a genuine non-overlapping 2×2 touch-
+  button grid.
+- Reopening the reskinned mode-select menu and re-confirming the mode
+  already active silently reset the running match/session score (no
+  warning) — `window.startDuel()`/`startGauntlet()` couldn't previously
+  tell "switching modes" apart from "re-confirming the current one."
+  Fixed: only a genuine mode switch now resets progress.
+
+Verdict after both fixes: **ship with named gaps** — no blocking issues;
+the one meaningful remaining gap (rig silhouette distinctness) is
+explicitly deferred, not silently dropped, per visual-art-director's own
+recommendation above.
+
+**Final verification**: all 13 `tests/rig-*.js` suites (297+ assertions)
+re-run clean after every sub-step and again after the qa-playtest fixes;
+`rig-side-profile.js`'s pre-existing intermittent flake (unrelated to
+anything in this pass — a player-2-facing-mirror geometry assertion, not
+a visual/combat one) reproduced at the same rate as before this pass,
+confirmed via repeat runs rather than assumed.
+
+**Still explicitly deferred, not silently dropped** (in addition to §1's
+own longer-standing list, which this pass didn't otherwise change): the
+rig silhouette/pose distinctness finding above; a `capability-auditor`
+pass (still not run, per §5); real playtest-calibrated balance numbers
+(§7.4's balance review is Estimated, independently-recomputed arithmetic,
+not a human playtest); a `tests/rig-second-attack.js` addition covering
+the punch follow-up's own drift margin live (currently only computed
+analytically in §7.4, not asserted in a test).
