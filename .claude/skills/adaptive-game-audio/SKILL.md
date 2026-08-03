@@ -101,6 +101,31 @@ a new game's audio, default to Sigil Chain's smaller shape and only add a
 piece of the full graph (ducking, distortion, a scheduler) when there's an
 actual in-game reason for it — not because Wonderland has it.
 
+## A node existing is not evidence it's connected
+
+**This has already shipped as a real bug twice, in the same shape both
+times:** a gain node gets created, gets wired to a UI slider that reads and
+writes its value, and every individual line of code looks correct in
+isolation — but nothing ever actually routes a signal into it, so the node
+sits there doing nothing. Sigil Chain's `musicGain` node was exactly this:
+created, connected onward to the master bus, UI-wired to a working slider,
+and never once had an upstream source `.connect()`ed into it — caught by
+`capability-auditor`, not by reading the code, because a code read sees a
+plausible node graph, not a live one. Iridescent Cosmology shipped the same
+failure mode a second time under a different name (fixed as "dead musicGain
+routing" when the continuous mood-engine pad/drone was added) — two
+independent instances of the identical bug class on two different games,
+which is exactly the signal this skill exists to stop from becoming a third.
+
+**The check, not just the reminder:** a node's existence, its `.connect()`
+to a downstream destination, and a UI control that reads/writes its
+`.gain.value` are three separate facts. None of them implies the other two.
+Before calling any bus/node "wired up," trace the signal path in the
+*upstream* direction too — confirm something actually calls `.connect()`
+**into** this node, not just that this node connects onward. A node with a
+working slider and a downstream connection but no upstream source is the
+exact shape both real incidents took.
+
 ## Verification — this is not optional
 
 **Verify live, not by reading the code.** This environment often has no
@@ -110,6 +135,8 @@ patching `AudioContext.prototype.createOscillator` to record actual
 `start()` call times/frequencies and asserting on those — not trusting that
 correct-looking code produces the intended sound. Before restructuring an
 audio graph (splitting a bus, adding a send), grep every `.connect(...)`
-call site first and enumerate them explicitly — a missed connection is a
-silent partial regression (a volume slider that "mostly" works, one voice
-immune to it), not a crash, so it ships unnoticed unless checked.
+call site first and enumerate them explicitly, in **both** directions
+(what does this node connect to, and what connects into it) — a missed
+connection is a silent partial regression (a volume slider that "mostly"
+works, one voice immune to it, or a whole bus like `musicGain` carrying no
+signal at all), not a crash, so it ships unnoticed unless checked.
