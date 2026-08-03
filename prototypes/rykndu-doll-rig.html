@@ -2313,6 +2313,7 @@
       compressor.ratio.value = 4; compressor.attack.value = 0.003; compressor.release.value = 0.22;
       sfx.connect(compressor); compressor.connect(ctx.destination);
       started = true;
+      Music.ensureCtx(); // shares this exact context/compressor -- see rykndu-assets/music/MUSIC_DIRECTION.md
     }
 
     // Windup whoosh — startAttack(): a rising bandpass noise sweep timed to
@@ -2438,7 +2439,92 @@
 
     return {
       ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse, parryChime,
+      getCtx: () => ctx, getBus: () => compressor,
       _test: { isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null }
+    };
+  })();
+
+  // ---- Music: continuous adaptive drone bed ----
+  // See prototypes/rykndu-assets/music/MUSIC_DIRECTION.md for the full
+  // design rationale, most importantly: NO ConvolverNode anywhere in this
+  // module -- tests/rig-audio.js §6 asserts zero across the whole session
+  // (a deliberate, already-tested "stay dry" decision from the v0.1.6
+  // quality pass), so the standard adaptive-game-audio synthesized-reverb
+  // technique is deliberately not used here.
+  const Music = (function () {
+    let ctx, master, duckGain, droneFilter, started = false;
+    let voices = [];
+    let targetIntensity = 0, intensity = 0;
+
+    // cancel-then-set-then-ramp -- the mandatory idiom (adaptive-game-audio)
+    // for every SCHEDULED gain change. Never used for tick()'s per-frame
+    // writes below, which are already smoothed in JS and use direct .value
+    // assignment instead -- mixing the two patterns on the same AudioParam
+    // is the exact "dying sticks the music" bug this rule exists to prevent.
+    // Not a risk here by construction: rampGain only ever touches
+    // duckGain.gain, tick() only ever touches droneFilter.frequency and a
+    // drone voice's own gain -- disjoint AudioParams, not just disjoint timing.
+    function rampGain(param, target, seconds) {
+      const t = ctx.currentTime;
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(param.value, t);
+      param.linearRampToValueAtTime(target, t + seconds);
+    }
+
+    function ensureCtx() {
+      if (started) return;
+      ctx = SFX.getCtx();
+      const bus = SFX.getBus();
+      master = ctx.createGain(); master.gain.value = 0.0001;
+      duckGain = ctx.createGain(); duckGain.gain.value = 1;
+      droneFilter = ctx.createBiquadFilter();
+      droneFilter.type = 'lowpass'; droneFilter.frequency.value = 400;
+      master.connect(duckGain); duckGain.connect(droneFilter); droneFilter.connect(bus);
+      // Three detuned low voices -- root (~C2), a near-unison detune (tension
+      // shimmer once the second voice fades in via tick(), see below), and a
+      // fifth (~G2). Frequencies picked deliberately clear of every SFX
+      // voice's own magic numbers (240/55/200/206/400/550/750/880/1320Hz) so
+      // this drone can never be mistaken for an SFX oscillator by
+      // tests/rig-audio.js's type/frequency filters.
+      const roots = [65.41, 65.74, 98.0];
+      voices = roots.map((f, i) => {
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+        const g = ctx.createGain(); g.gain.value = i === 1 ? 0.0001 : (i === 2 ? 0.16 : 0.24);
+        o.connect(g); g.connect(master);
+        o.start();
+        return { o, g };
+      });
+      started = true;
+      rampGain(master.gain, 0.13, 1.4); // fade in on real audio start, not an instant on/off
+    }
+
+    // Continuous per-frame smoothing -- called from frame() every tick,
+    // NOT event-gated. Direct .value writes only, per the rule above.
+    function tick() {
+      if (!started) return;
+      intensity += (targetIntensity - intensity) * 0.03;
+      droneFilter.frequency.value = 380 + intensity * 1500;
+      voices[1].g.gain.value = 0.10 + intensity * 0.20;
+    }
+
+    // 0..1, set every frame by the caller from real combat state (see
+    // GAME_5_PILLARS.md-adjacent callers in frame() below) -- the actual
+    // "mood as a live input" mechanism, not a fixed track swap.
+    function setIntensity(v) { targetIntensity = Math.max(0, Math.min(1, v)); }
+
+    // Sidechain-style duck on a punctuating hit (strike connect, parry) --
+    // the one genuinely one-shot, SCHEDULED event in this module, so it
+    // correctly uses rampGain (the dip) + setTargetAtTime (the recovery),
+    // never tick()'s continuous-write pattern.
+    function duck() {
+      if (!started) return;
+      rampGain(duckGain.gain, 0.35, 0.03);
+      duckGain.gain.setTargetAtTime(1, ctx.currentTime + 0.05, 0.12);
+    }
+
+    return {
+      ensureCtx, tick, setIntensity, duck,
+      _test: { isStarted: () => started, intensityValue: () => intensity, targetIntensityValue: () => targetIntensity }
     };
   })();
   const PULSE_THRESHOLDS = [0.4, 0.7, 0.9]; // fraction of ENEMY_TRAVEL_MS at which each proximityPulse stage fires
@@ -2626,6 +2712,7 @@
         e.dying = true; e.deathT = 0;
         killCount++;
         SFX.strikeImpact();
+        Music.duck();
         spawnBurst(e.x, e.y);
         shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
         nextSpawnAt = now + ENEMY_SPAWN_GAP_MS;
@@ -2694,6 +2781,7 @@
     if (blocked && defender.isInParryWindow()) {
       attacker.applyKnockback(-dir * KNOCKBACK_SPEED, false);
       SFX.parryChime();
+      Music.duck();
       spawnBurst(hurtbox.x, hurtbox.y);
       shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
       return;
@@ -2710,6 +2798,7 @@
       attacker.cancelIntoBufferedAttack();
     }
     SFX.strikeImpact();
+    Music.duck();
     spawnBurst(hurtbox.x, hurtbox.y);
     shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6) * (blocked ? 0.4 : 1));
   }
@@ -3144,6 +3233,8 @@
           killCount,
           missedCount,
           audioStarted: SFX._test.isStarted(),
+          musicStarted: Music._test.isStarted(),
+          musicIntensity: Music._test.intensityValue(),
           particleCount: particles.length,
           shakeMag,
           missFlash,
@@ -3280,6 +3371,15 @@
       resetPositions: () => resetDuelPositions(),
       resetMatch: () => resetMatch(),
       tryRematch: () => tryRematch()
+    }
+  };
+  // Matches every shipped game's window.Music._test convention -- see
+  // rykndu-assets/music/MUSIC_DIRECTION.md for the design.
+  window.Music = {
+    _test: {
+      isStarted: () => Music._test.isStarted(),
+      intensityValue: () => Music._test.intensityValue(),
+      targetIntensityValue: () => Music._test.targetIntensityValue()
     }
   };
 
@@ -3466,6 +3566,24 @@
       ctx.fillText('either player: attack to start a rematch', canvas.width / 2, canvas.height / 2 + 45);
       ctx.restore();
     }
+
+    // Music intensity (rykndu-assets/music/MUSIC_DIRECTION.md) -- the same
+    // "mode isn't gated in the simulation, only in what's shown" shape as
+    // the HUD just below: whichever mode isn't the visible one still
+    // contributes 0 here rather than being read at all, so a background
+    // Gauntlet loss can't leak tension into an active Duel's bed or vice
+    // versa (the same isolation §3's SHOW_GAUNTLET-gated handleInput()
+    // guard already established for gameplay consequences, applied here to
+    // the score too).
+    let musicIntensity = 0;
+    if (SHOW_GAUNTLET) {
+      if (sessionState === 'lose') musicIntensity = 0.08;
+      else if (enemies.length) musicIntensity = Math.max(...enemies.map(e => e.dying ? 0 : e.t)) * 0.85 + missedCount / MAX_MISSES * 0.15;
+    } else if (SHOW_P2) {
+      musicIntensity = matchOver ? 0.1 : 0.55;
+    }
+    Music.setIntensity(musicIntensity);
+    Music.tick();
 
     // Mode-gated (title/mode-select overlay, GAME_5_PILLARS.md §3): the two
     // halves used to always concatenate regardless of which mode the

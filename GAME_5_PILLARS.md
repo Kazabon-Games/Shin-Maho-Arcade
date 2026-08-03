@@ -50,9 +50,11 @@ simultaneously rather than as a real player choice (see §4):
 **Visual/audio state**: side-profile faceted-gem joint accents (per the
 studio's signature technique); P1/P2 colors independently verified against
 the reserved gold/red/green bands (`STUDIO_BIBLE.md` §11); four dry,
-reverb-free one-shot SFX voices (windup, strike, miss, proximity pulse) —
-no music, no adaptive score. The page itself is still a bare dev-prototype
-shell: monospace HUD, no `:root{}` shared token set, no `.overlay`/`.panel`/
+reverb-free one-shot SFX voices (windup, strike, miss, proximity pulse)
+plus, as of 2026-08-03, a real adaptive music bed (see §6) — a continuous
+detuned drone whose intensity tracks live combat state, with sidechain
+ducking on hits. The page itself is still a bare dev-prototype shell:
+monospace HUD, no `:root{}` shared token set, no `.overlay`/`.panel`/
 `.btn` classes this studio's shipped games all share — visually unintegrated
 with the rest of the arcade, not yet a reskin pass away from shipping.
 
@@ -87,7 +89,11 @@ that turns it into one coherent game**, not the mechanics themselves.
 - A second playable character/moveset (`p1`/`p2` are the same kit).
 - Real hardware mobile testing (`RYKNDU_2PLAYER.md` names this as an open
   gap; only Playwright device emulation has been done).
-- An adaptive score via `adaptive-game-audio` (currently four dry one-shots).
+- ~~An adaptive score via `adaptive-game-audio`~~ — **done at v1 scope,
+  2026-08-03**, see §6. Deeper v2 work (a real Duel-specific intensity
+  signal, per-mode motif identity, a signature stinger) is its own
+  separately-named remaining scope, tracked in
+  `prototypes/rykndu-assets/music/MUSIC_DIRECTION.md`, not re-listed here.
 - A full Visual-Art-Director pass and cross-game visual-identity
   integration (the shared token/`.overlay` system, per `STUDIO_BIBLE.md`
   §11) — today's page is still a standalone dev shell.
@@ -161,9 +167,49 @@ follow-up someone can do to the game file alone.
 - **Engineer**: the §3 test-suite-coupling finding is the load-bearing
   discovery of this pass — any future work separating the two simulations
   must update `tests/rig-*.js` in the same commit, not after.
-- **Visual-Art-Director / Audio-Designer**: no pass run this round —
-  flagged in §1 as real, deferred scope, not silently skipped.
+- **Visual-Art-Director**: no pass run this round — flagged in §1 as
+  real, deferred scope, not silently skipped.
+- **Audio-Designer**: a real v1 adaptive-score pass ran 2026-08-03 — see §6.
 - **Capability-Auditor**: not run this round — Rykndu's own prototype
-  status (still a dev-shell page, no shared visual/audio integration) is
+  status (still a dev-shell page, no shared visual integration) is
   itself the finding a capability pass would most likely surface first;
   worth running once the visual-identity integration in §1 happens.
+
+## 6. Music — v1 adaptive score (2026-08-03)
+
+Full design rationale lives in
+`prototypes/rykndu-assets/music/MUSIC_DIRECTION.md` (this studio's first
+asset folder — every other game stays single-file with zero exceptions
+but PWA; Music's canonical logic still lives inline in
+`rykndu-doll-rig.html`, the folder is a design-brief-plus-staged-reference
+layer, not a build dependency). Summary:
+
+- A continuous 3-voice detuned drone bed (sawtooth, low register) through
+  a lowpass filter, both cutoff and a second-voice level tracking a
+  per-frame-smoothed `intensity` value — the actual "mood as a live
+  input" mechanism `STUDIO_BIBLE.md` §14 names as the apex-standard bar,
+  scoped down to what a still-prototype game needs rather than the full
+  mood-engine complexity a shipping title would warrant.
+- Intensity is driven by real combat state: closest enemy's travel
+  fraction in the Gauntlet, a flat elevated baseline while a Duel is live,
+  easing toward a low settled value once either mode resolves
+  (`sessionState==='lose'` / `matchOver`).
+- Sidechain-style ducking on strike/parry connects (both the Gauntlet kill
+  path and the Duel `resolveDuelHit()` path).
+- **Deliberately no reverb** — `tests/rig-audio.js` §6 already asserted
+  zero `ConvolverNode`s across the whole session, a real tested decision
+  from the v0.1.6 quality pass (dry mix keeps SFX transients sharp). The
+  standard `adaptive-game-audio` synthesized-reverb technique was
+  deliberately not used here rather than silently breaking that
+  invariant — see `MUSIC_DIRECTION.md`'s own section on this.
+- Shares `SFX`'s `AudioContext`/compressor bus (`Music.ensureCtx()` is
+  called from inside `SFX.ensureCtx()`) rather than a second,
+  uncoordinated signal path.
+- **Verified live** (not read and judged plausible): `tests/rig-audio.js`
+  re-run in full, 14/14 still passing including the zero-convolver
+  assertion; all other 10 stable `rig-*.js` suites re-run clean (239
+  assertions, `rig-side-profile.js`'s pre-existing flake excluded); and a
+  direct live check confirming intensity actually rises as an enemy closes
+  in (0 → 0.27 as travel fraction reached 0.72), settles low on a Gauntlet
+  loss (0.087, target 0.08), and settles near the Duel baseline (0.50 and
+  rising toward 0.55 after 1.2s, matching the smoothing rate).
