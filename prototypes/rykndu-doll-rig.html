@@ -3148,18 +3148,25 @@
     // the entire 50px PVP_HIT_RADIUS budget before the follow-up's strike
     // phase even begins, since checkPvpHit()'s closest possible re-check
     // is the instant strike starts (the defender only moves FARTHER away
-    // after that, not back). COMBO_KNOCKBACK_SCALE=0.4 caps this at a
-    // provably bounded 240^2/(2*1800)=16px (the impulse fully decays to 0
-    // at 240/1800=133ms, so drift can't grow any further once it does),
-    // leaving 34px of margin instead of 8px -- confirmed against the real
-    // physics constants already in this file, not the suggested 0.5
-    // starting point taken on faith (0.5 leaves the impulse still
-    // decaying past the kick follow-up's own windup, an open-ended
-    // drift rather than a hard cap). Only applied on the path that's
-    // actually about to fire cancelIntoBufferedAttack() (unblocked, with
-    // a follow-up buffered) -- a normal landed hit with nothing buffered,
-    // or a blocked hit, keeps its full, unscaled knockback exactly as
-    // before.
+    // after that, not back). COMBO_KNOCKBACK_SCALE=0.4 applies a scaled
+    // impulse of 480*0.4=192px/s, provably bounded at 192^2/(2*1800)=
+    // 10.24px (the impulse fully decays to 0 at 192/1800=106.7ms, so
+    // drift can't grow any further once it does), leaving ~40px of
+    // margin instead of 8px -- confirmed against the real physics
+    // constants already in this file (and live-measured at ~8.7px in
+    // tests/rig-second-attack.js §8, the gap from the closed-form 10.24px
+    // explained by frame discretization/polling latency), not the
+    // suggested 0.5 starting point taken on faith (0.5 -> 240px/s would
+    // still be decaying past the kick follow-up's own windup, an
+    // open-ended drift rather than a hard cap). A punch follow-up's own
+    // shorter 70ms windup is even safer under the same 192px/s impulse
+    // (still decaying the whole window: 192*0.07-0.5*1800*0.07^2=9.03px,
+    // ~41px of margin) -- not separately covered by a live test today,
+    // worth adding if this block is touched again. Only applied on the
+    // path that's actually about to fire cancelIntoBufferedAttack()
+    // (unblocked, with a follow-up buffered) -- a normal landed hit with
+    // nothing buffered, or a blocked hit, keeps its full, unscaled
+    // knockback exactly as before.
     const willComboCancel = !blocked && attacker.queuedSide !== null;
     const kbScale = (blocked ? GUARD_CHIP_SCALE : 1) * (willComboCancel ? COMBO_KNOCKBACK_SCALE : 1);
     defender.applyKnockback(dir * kbSpeed * kbScale, blocked);
