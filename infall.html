@@ -435,7 +435,7 @@ const Events = (function(){
 /* =====================================================================
    INPUT — keyboard + touch joystick, continuous thrust axis.
    Reused near-verbatim from this studio's own proven Input module
-   (iridescentcosmology.html:1560-1641) — same WASD/arrow + joystick +
+   (iridescentcosmology.html:2209-2260) — same WASD/arrow + joystick +
    gamepad-axis precedent, gamepad dash-button logic removed (Infall has
    no dash, the well-launch is the discrete action and lives on its own
    pointer-drag input below, not on this module).
@@ -449,7 +449,21 @@ const Input = (function(){
 
   window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
-    if(e.key === 'Escape' || e.key.toLowerCase() === 'p') Game.togglePause();
+    if(e.key === 'Escape' || e.key.toLowerCase() === 'p') {
+      // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+      // 2026-08-03): this used to call Game.togglePause() unconditionally,
+      // with no idea a secondary overlay (Settings/Bug Report, both
+      // reachable mid-run via the always-on-top meta-row) might be stacked
+      // on top of an already-open pause screen. Escape/P then silently
+      // RESUMED the game live underneath whichever panel stayed visually
+      // on top — close the topmost secondary overlay first if one is open,
+      // through its own close() (now pausedByThis-aware, see Settings/
+      // Bugrep above), and only fall through to the raw pause toggle once
+      // neither is showing.
+      if(document.getElementById('settingsOverlay').classList.contains('show')) Settings.close();
+      else if(document.getElementById('bugOverlay').classList.contains('show')) Bugrep.close();
+      else Game.togglePause();
+    }
     if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(e.key.toLowerCase())) e.preventDefault();
   });
   window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -1628,7 +1642,7 @@ const Music = (function(){
     // without spreading them across the stereo field makes them thicker in
     // theory but not wider in practice — both were fighting for the same
     // point in the image. Same StereoPannerNode widening technique as
-    // iridescentcosmology.html:5125-5130's supersaw lead voices.
+    // iridescentcosmology.html:6641-6675's supersaw lead voices.
     droneOscs = [ROOT, ROOT*1.5].map((f, i) => {
       const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
       const og = ctx.createGain(); og.gain.value = f === ROOT ? 0.6 : 0.35;
@@ -1831,10 +1845,23 @@ const Settings = (function(){
   }
   function applyReducedMotionClass(){ document.body.classList.toggle('reduced-motion', reducedMotion()); }
   let openedFromMenu = false;
+  // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+  // 2026-08-03; runeshatter's own Bugrep module already carries this exact
+  // fix): opening Settings mid-run only auto-paused "if(Game.state ===
+  // 'playing')" — if the game was ALREADY paused (pauseOverlay already
+  // showing, reachable via the always-on-top meta-row gear), that check
+  // was false, so open() correctly skipped re-pausing, but close() had no
+  // way to know that and could still resume a pause it didn't cause.
+  // pausedByThis tracks whether THIS open() call was the one that paused,
+  // so close() only ever undoes what it itself did.
+  let pausedByThis = false;
   function open(){
     openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
-    if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
-    else if(Game.state === 'playing') Game.togglePause();
+    if(openedFromMenu) { document.getElementById('menuOverlay').classList.remove('show'); pausedByThis = false; }
+    else {
+      pausedByThis = Game.state === 'playing';
+      if(pausedByThis) Game.togglePause();
+    }
     document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
     document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
     document.getElementById('reducedMotionToggle').checked = reducedMotion();
@@ -1843,6 +1870,8 @@ const Settings = (function(){
   function close(){
     document.getElementById('settingsOverlay').classList.remove('show');
     if(openedFromMenu) document.getElementById('menuOverlay').classList.add('show');
+    else if(pausedByThis && Game.state === 'paused') Game.togglePause();
+    pausedByThis = false;
   }
   function setMusicVol(v){ Music.setMusicVol(v); }
   function setSfxVol(v){ Music.setSfxVol(v); }
@@ -1989,7 +2018,7 @@ const FullscreenCtrl = (function(){
 })();
 
 /* =====================================================================
-   BUG REPORTER — same shape as iridescentcosmology.html:5116-5184.
+   BUG REPORTER — same shape as iridescentcosmology.html:8026-8096.
    No prior-name migration needed (Infall is a new game, not a rename).
    escapeHtml() on every rendered field (title/details are user-typed).
 ===================================================================== */
@@ -2006,12 +2035,26 @@ const Bugrep = (function(){
     b.style.display = l.length ? 'flex' : 'none';
     b.textContent = l.length;
   }
+  // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+  // 2026-08-03; runeshatter's own Bugrep module already carries this exact
+  // fix): opening the report form mid-run auto-paused, but close() was a
+  // bare classList.remove() with no resume logic at all — a player who
+  // filed a report mid-run was silently dropped onto (and stuck on) the
+  // pause screen once they closed the report. pausedByThis tracks whether
+  // THIS open() call was the one that paused, so close() only ever undoes
+  // what it itself did.
+  let pausedByThis = false;
   function open(){
-    if(Game.state === 'playing') Game.togglePause();
+    pausedByThis = Game.state === 'playing';
+    if(pausedByThis) Game.togglePause();
     renderList();
     document.getElementById('bugOverlay').classList.add('show');
   }
-  function close(){ document.getElementById('bugOverlay').classList.remove('show'); }
+  function close(){
+    document.getElementById('bugOverlay').classList.remove('show');
+    if(pausedByThis && Game.state === 'paused') Game.togglePause();
+    pausedByThis = false;
+  }
   function cat(btn){
     document.querySelectorAll('.bugcat .btn').forEach(b => b.classList.remove('sel'));
     btn.classList.add('sel');

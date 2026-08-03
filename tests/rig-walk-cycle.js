@@ -43,6 +43,9 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined' && typeof window.Rig2 !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) --
+  // mirrors wardfall.html's tests calling Game.startRound() directly.
+  await page.evaluate(() => window.startDuel());
 
   console.log('1. At rest, the pose matches the plain idle pose -- no leg swing, no knee lift');
   await page.evaluate(() => window.Rig._test.resetSession());

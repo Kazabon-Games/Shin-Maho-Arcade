@@ -78,6 +78,9 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) --
+  // mirrors wardfall.html's tests calling Game.startRound() directly.
+  await page.evaluate(() => window.startDuel());
 
   console.log('1. AudioContext lifecycle');
   let state = await page.evaluate(() => window.Rig._test.state());

@@ -33,6 +33,13 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined' && typeof window.Rig2 !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) so it
+  // doesn't intercept clicks/taps meant for the canvas/touch controls below
+  // -- mirrors wardfall.html's own tests calling Game.startRound() directly
+  // via page.evaluate() rather than clicking the menu button. Which mode is
+  // chosen doesn't matter for _test-hook purposes: both Rig and Rig2/Duel
+  // keep simulating regardless of the overlay's choice.
+  await page.evaluate(() => window.startDuel());
 
   console.log('1. Both rigs exist and start independent/idle');
   await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); window.Rig2._test.reset(); });

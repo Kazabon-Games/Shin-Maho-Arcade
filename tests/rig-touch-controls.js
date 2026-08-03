@@ -32,6 +32,9 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) so it
+  // doesn't intercept the page.mouse drag/tap interactions below.
+  await page.evaluate(() => window.startDuel());
 
   console.log('1. Virtual joystick drives real movement physics, same as keyboard/gamepad');
   await page.evaluate(() => window.Rig._test.resetSession());

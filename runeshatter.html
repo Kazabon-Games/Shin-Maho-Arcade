@@ -293,7 +293,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
                           backgrounded tab, both real paths a browser can
                           suspend the AudioContext through. Added a
                           visibilitychange/blur auto-pause listener (matches
-                          iridescentcosmology.html:5219-5229's exact
+                          iridescentcosmology.html:5610-5620's exact
                           precedent — only ever force-pauses, never force-
                           resumes on refocus) that also re-resumes audio the
                           moment the tab becomes visible again, and made
@@ -1417,7 +1417,7 @@ const Game = (function(){
   }
 
   // Auto-pause on the tab losing visibility/focus — matches
-  // iridescentcosmology.html:5219-5229's exact precedent (only ever force-
+  // iridescentcosmology.html:5610-5620's exact precedent (only ever force-
   // pauses, never force-resumes on refocus; that stays the player's own
   // Resume-button call). Added here specifically to close the bug-squasher's
   // audio-suspension finding: a real browser can suspend the AudioContext
@@ -1494,7 +1494,7 @@ const Music = (function(){
   // new, per the skill's "don't invent a new synthesis approach" rule. ----
 
   // standard soft-clip waveshaper curve, amount 0 = transparent — verbatim
-  // from iridescentcosmology.html:5113-5118 / sigilchain.html:1303-1308.
+  // from iridescentcosmology.html:6527-6529 / sigilchain.html:1305-1310.
   function setDistortionAmount(amount){
     lastDistortionAmount = amount;
     const n = 256, curve = new Float32Array(n), k = amount*40;
@@ -1504,7 +1504,7 @@ const Music = (function(){
 
   function ensureCtx(){
     // real bug (reported: "I don't hear any music"): this function never
-    // called .resume() on a suspended context — iridescentcosmology.html:6093
+    // called .resume() on a suspended context — iridescentcosmology.html:6483
     // and infall.html:1777 both do, and this module's own header claims
     // every primitive here is copied verbatim from those exact reference
     // implementations. A context created synchronously inside a click
@@ -1528,7 +1528,7 @@ const Music = (function(){
     // synthesized convolution reverb — no audio file, a short burst of
     // exponentially-decaying stereo noise, generated once here. Buffer-
     // generation loop copied verbatim from sigilchain.html:1320-1326 /
-    // iridescentcosmology.html:5091-5100 per the skill's explicit "copy
+    // iridescentcosmology.html:6459-6467 per the skill's explicit "copy
     // the buffer-generation loop verbatim" instruction.
     reverb = ctx.createConvolver();
     const irLen = Math.floor(ctx.sampleRate*0.9);
@@ -1542,8 +1542,8 @@ const Music = (function(){
   }
 
   // every gain ramp in this module goes through this — cancel-then-set-
-  // then-ramp, verbatim idiom from iridescentcosmology.html:5129-5134 /
-  // sigilchain.html:1384-1389. This is the ONLY function that schedules a
+  // then-ramp, verbatim idiom from iridescentcosmology.html:6543-6549 /
+  // sigilchain.html:1386-1391. This is the ONLY function that schedules a
   // ramp; droneTick's per-frame writes below always use direct assignment.
   function rampGain(param, target, seconds){
     const t = ctx.currentTime;
@@ -1575,7 +1575,7 @@ const Music = (function(){
   }
 
   // filtered-noise-burst helper — same pattern as playHat/playClap in
-  // iridescentcosmology.html:5273-5316 (exponential-decay envelope baked
+  // iridescentcosmology.html:6697-6719 (exponential-decay envelope baked
   // straight into the buffer, then shaped further by a biquad downstream).
   function makeNoiseBuffer(lenSeconds, decayExp){
     const len = Math.max(1, Math.floor(ctx.sampleRate*lenSeconds));
@@ -1660,7 +1660,7 @@ const Music = (function(){
   // mode-specific urgency — Sigil Chain's exact `(10-remaining)/10` idiom
   // (sigilchain.html:1370), reused verbatim for Timed/Levels; Endless has
   // no natural "remaining" counter (per §6) so it instead mirrors
-  // iridescentcosmology.html:5533-5539's own elapsed-time squared-easing
+  // iridescentcosmology.html:7282-7283's own elapsed-time squared-easing
   // build. JUDGMENT CALL (flagged in build report): the "marker" (time to
   // reach max urgency) shortens as tierCount rises, which is this game's
   // own reading of "elapsed-run-time-VS-CURRENT-TIER" — Iridescent

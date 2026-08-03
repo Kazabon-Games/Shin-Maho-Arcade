@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rykndu Doll Rig — Prototype</title>
+<link rel="manifest" href="rykndu.webmanifest">
 
 <!--
   RYKNDU DOLL RIG — CHANGE LOG
@@ -1087,12 +1088,79 @@
   #btnAttack { right: 0; bottom: 0; }
   #btnJump { right: 68px; bottom: 34px; }
   #btnBlock { right: 0; bottom: 68px; }
+  /* Title/mode-select overlay (GAME_5_PILLARS.md §3/§4) -- deliberately
+     matches THIS file's own dark/monospace dev-shell aesthetic, not the
+     shared arcade `.overlay`/`.panel`/`.btn` token system every shipped
+     game uses. Integrating the shared visual identity is real, named,
+     deferred scope (see GAME_5_PILLARS.md §1) -- bolting the shared
+     classes onto an otherwise-unstyled prototype page would read as a
+     mismatched patch, not an integration. */
+  #menuOverlay {
+    position: fixed; inset: 0; z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(10,11,16,0.82); backdrop-filter: blur(2px);
+  }
+  #menuOverlay.hide { display: none; }
+  #menuPanel {
+    width: min(340px, calc(100vw - 40px));
+    background: rgba(18,20,28,0.96); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px; padding: 28px 24px; text-align: center;
+    color: #e8e8f0; font-family: monospace;
+  }
+  #menuPanel h1 {
+    margin: 0 0 4px; font-size: 22px; letter-spacing: 0.06em; color: #ffcb5c;
+  }
+  #menuPanel .tagline {
+    margin: 0 0 22px; font-size: 12px; color: #888;
+  }
+  .menu-btn {
+    display: block; width: 100%; margin: 0 0 10px; padding: 12px 10px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px; color: #e8e8f0; font-family: monospace; font-size: 14px;
+    font-weight: bold; letter-spacing: 0.03em; cursor: pointer;
+  }
+  .menu-btn:hover, .menu-btn:focus-visible { background: rgba(255,255,255,0.13); }
+  .menu-btn .sub { display: block; font-size: 10.5px; font-weight: normal; color: #999; margin-top: 3px; letter-spacing: 0.02em; }
+  .menu-btn.duel { border-color: rgba(107,77,255,0.5); }
+  .menu-btn.gauntlet { border-color: rgba(255,77,112,0.4); }
+  #menuBackLink {
+    display: block; margin-top: 14px; color: #777; font-size: 11px;
+    text-decoration: none; letter-spacing: 0.02em;
+  }
+  #menuBackLink:hover { color: #aaa; }
+  #menuReopenBtn {
+    position: fixed; top: 8px; right: 10px; z-index: 45;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+    color: #ccc; font-family: monospace; font-size: 11px; letter-spacing: 0.04em;
+    padding: 4px 9px; border-radius: 5px; cursor: pointer;
+  }
+  #menuReopenBtn:hover { background: rgba(255,255,255,0.16); }
 </style>
 </head>
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
 <div class="version-marker">Doll Rig Prototype — v0.1.28</div>
+<!-- Title/mode-select overlay -- see GAME_5_PILLARS.md §3 for why this is a
+     visual/input-focus framing layer (hides the non-chosen mode's HUD),
+     not a full simulation split: both Rig (Gauntlet) and Rig2/Duel keep
+     running under the hood regardless of the choice made here, exactly as
+     before this overlay existed, so every existing tests/rig-*.js suite's
+     _test-hook assumptions stay valid unchanged. -->
+<div id="menuOverlay" role="dialog" aria-modal="true" aria-label="Rykndu mode select">
+  <div id="menuPanel">
+    <h1>RYKNDU</h1>
+    <div class="tagline">doll-rig prototype — pick a mode</div>
+    <button class="menu-btn gauntlet" onclick="window.startGauntlet()" aria-label="Start the Gauntlet, solo survival mode">
+      THE GAUNTLET<span class="sub">solo — survive the approach</span>
+    </button>
+    <button class="menu-btn duel" onclick="window.startDuel()" aria-label="Start the Duel, two player mode">
+      THE DUEL<span class="sub">2 players — first to the target score</span>
+    </button>
+    <a id="menuBackLink" href="../index.html">← Back to the Arcade</a>
+  </div>
+</div>
+<button id="menuReopenBtn" onclick="window.reopenRyknduMenu()" aria-label="Change mode">☰ MODE</button>
 <div id="debug"></div>
 <div id="hud"></div>
 <div id="hint">&larr;&rarr; move &middot; &uarr; jump &middot; space attack &middot; &darr; block</div>
@@ -1852,7 +1920,13 @@
   // input scheme (see the Input section) and rig-vs-rig combat resolution
   // exists (resolveCombatHits() below) -- a fully-2-player build is the
   // actual goal this rig work has been driving toward.
-  const SHOW_P2 = true;
+  // Mutable now (was `const SHOW_P2 = true`) so the title/mode-select
+  // overlay can drive it. Still gates rendering only, never simulation --
+  // see GAME_5_PILLARS.md §3 for why (tests/rig-*.js's _test hooks assume
+  // both Rig and Rig2/Duel are always live regardless of which mode a
+  // human player chose on the title screen).
+  let SHOW_P2 = true;
+  let SHOW_GAUNTLET = true; // same rendering-only gate, for the enemy-dot side
   const P1_COLOR = '#3fd0ff'; // cyan -- verified-safe vs. this studio's reserved gold/red/green bands (STUDIO_BIBLE.md §11)
   const P2_COLOR = '#6b4dff'; // indigo-violet -- same verification
   const p2 = createRigController({ startX: 80, startFacing: 'L' }); // duel spawn: right side, facing left toward player 1
@@ -2803,7 +2877,16 @@
   function handleInput(side) {
     SFX.ensureCtx();
     if (tryRematch()) return; // a decided duel match takes priority -- restart the match, don't also throw a kick
-    if (sessionState === 'lose') { resetSession(); return; }
+    // SHOW_GAUNTLET-gated (added with the title/mode-select overlay,
+    // GAME_5_PILLARS.md §3): updateEnemies() keeps ticking in the
+    // background regardless of mode (simulation isn't paused, only
+    // rendering is -- see the SHOW_P2/SHOW_GAUNTLET comment above), so
+    // missedCount can silently reach MAX_MISSES while the player is mid-
+    // Duel with the Gauntlet HUD hidden. Without this guard, the next
+    // attack input during an active Duel would silently call
+    // resetSession() -- which resets p1's position/velocity -- for a
+    // loss condition the player never saw and isn't playing toward.
+    if (sessionState === 'lose' && SHOW_GAUNTLET) { resetSession(); return; }
     triggerAttack(side);
   }
 
@@ -3200,6 +3283,31 @@
     }
   };
 
+  // ---- Title/mode-select overlay control (GAME_5_PILLARS.md §3/§4) ----
+  // Exposed on window (not just wired via inline onclick) the same way
+  // wardfall.html's own Game.startRound() is -- tests/rig-*.js call these
+  // directly via page.evaluate() to dismiss the overlay before any real
+  // interaction, mirroring the studio's existing convention for menu
+  // overlays rather than requiring a page.click() on the DOM button.
+  function hideRyknduMenu() { document.getElementById('menuOverlay').classList.add('hide'); }
+  // Deliberately does NOT call SFX.ensureCtx() here -- audio should start
+  // on the first real gameplay input (existing handleInput()/keydown paths
+  // already do this), not on the menu choice itself. rig-audio.js asserts
+  // audioStarted===false immediately after page load/menu dismissal.
+  window.startGauntlet = function () {
+    SHOW_GAUNTLET = true; SHOW_P2 = false;
+    resetSession();
+    hideRyknduMenu();
+  };
+  window.startDuel = function () {
+    SHOW_GAUNTLET = false; SHOW_P2 = true;
+    resetMatch();
+    hideRyknduMenu();
+  };
+  window.reopenRyknduMenu = function () {
+    document.getElementById('menuOverlay').classList.remove('hide');
+  };
+
   // ---- Main loop ----
   let lastFrameTime = 0;
   function frame(now) {
@@ -3272,7 +3380,7 @@
     updateParticles(dt); // let residual particles/shake from the losing hit finish decaying under game-over
     drawShadows(joints); // must draw before the rig/enemies so it reads as underneath them, but after resolveHits()/updateEnemies() so enemy positions/removals are current this frame
     if (SHOW_P2) drawShadow(joints2.pelvis.x, 34 * renderScale, 8 * renderScale); // drawShadows() also draws enemy shadows -- calling it twice would double-draw those, so player 2 uses the underlying primitive directly
-    drawEnemies();
+    if (SHOW_GAUNTLET) drawEnemies();
     drawParticles();
     renderRig(joints, P1_COLOR);
     if (SHOW_P2) renderRig(joints2, P2_COLOR);
@@ -3292,7 +3400,7 @@
     shakeMag = Math.max(0, shakeMag - dt * 90);
     missFlash = Math.max(0, missFlash - dt * 7);
 
-    if (sessionState === 'lose') {
+    if (sessionState === 'lose' && SHOW_GAUNTLET) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -3359,10 +3467,18 @@
       ctx.restore();
     }
 
-    hudEl.innerHTML = 'KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
-      '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
-      '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>' +
-      '&nbsp;&nbsp;&nbsp;<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2 (first to ' + MATCH_TARGET_SCORE + ')</span>';
+    // Mode-gated (title/mode-select overlay, GAME_5_PILLARS.md §3): the two
+    // halves used to always concatenate regardless of which mode the
+    // player was actually in -- a Duel player saw an irrelevant kill/lives
+    // readout, and vice versa. Neither half's underlying counters stop
+    // updating (simulation isn't paused, only display is), so switching
+    // modes via the reopened menu shows correct, live numbers immediately.
+    hudEl.innerHTML =
+      (SHOW_GAUNTLET ? ('KILLS: ' + killCount + '&nbsp;&nbsp;&nbsp;' +
+        '<span class="lives-full">' + '♥'.repeat(Math.max(0, MAX_MISSES - missedCount)) + '</span>' +
+        '<span class="lives-spent">' + '♥'.repeat(Math.min(MAX_MISSES, missedCount)) + '</span>') : '') +
+      (SHOW_GAUNTLET && SHOW_P2 ? '&nbsp;&nbsp;&nbsp;' : '') +
+      (SHOW_P2 ? ('<span class="duel-score">P1 ' + p1Score + ' — ' + p2Score + ' P2 (first to ' + MATCH_TARGET_SCORE + ')</span>') : '');
 
     debugEl.textContent = 'state: ' + (!p1.idle ? ('attacking [' + p1.seqIdx + '/' + p1.seqLen + ']') : (p1.guarding ? 'guarding' : 'idle')) +
       (p1.queuedSide ? '\nbuffered: ' + p1.queuedSide : '') +
@@ -3374,6 +3490,21 @@
   }
   requestAnimationFrame(frame);
 })();
+
+// PWA registration — see the pwa-offline-games skill. Explicit scope keeps
+// this service worker from ever intercepting fetches beyond this one file.
+// REMINDER (STUDIO_BIBLE.md §13): any edit to this file's cached content
+// requires bumping rykndu-sw.js's CACHE_NAME in the same commit, or
+// returning visitors keep seeing the old page indefinitely. Note: real
+// "Add to Home Screen" install won't fire yet -- rykndu.webmanifest's
+// icons (icons/rykndu-192.png, -512.png, -512-maskable.png) don't exist
+// as files yet (see GAME_5_PILLARS.md §1); this registers real offline
+// caching now and the manifest is ready the moment that art lands.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./rykndu-sw.js', { scope: './rykndu-doll-rig.html' }).catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

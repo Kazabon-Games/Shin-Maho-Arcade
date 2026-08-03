@@ -65,6 +65,11 @@ function rectsOverlap(a, b) {
 
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof window.Rig !== 'undefined');
+    // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) so it
+    // doesn't intercept the boundingBox()/tap checks below. Gauntlet
+    // specifically: the very next line calls resetSession() (a
+    // Gauntlet-session concept), matching this suite's actual scope.
+    await page.evaluate(() => window.startGauntlet());
     await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); });
 
     console.log('  1. All touch controls are on-screen (not clipped by this device\'s real viewport)');

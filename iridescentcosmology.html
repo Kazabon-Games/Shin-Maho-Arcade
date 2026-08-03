@@ -1936,7 +1936,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <!-- SHOP -->
 <div class="overlay" id="shopOverlay">
-  <div class="panel" role="dialog" aria-modal="true" aria-label="The Grimoire — permanent upgrades">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="The Grimoire — permanent Grimoire Research">
     <h2>THE GRIMOIRE</h2>
     <div class="tagline">essence trades for permanence · spend with intent</div>
     <div class="shard-count">✦ <span id="shopShards">0</span> essence</div>
@@ -2221,7 +2221,21 @@ const Input = (function(){
 
   window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
-    if(e.key === 'Escape' || e.key.toLowerCase() === 'p') Game.togglePause();
+    if(e.key === 'Escape' || e.key.toLowerCase() === 'p') {
+      // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+      // 2026-08-03): this used to call Game.togglePause() unconditionally,
+      // with no idea a secondary overlay (Settings/Bug Report, both
+      // reachable mid-run via the always-on-top meta-row) might be stacked
+      // on top of an already-open pause screen. Escape/P then silently
+      // RESUMED the game live underneath whichever panel stayed visually
+      // on top — close the topmost secondary overlay first if one is open,
+      // through its own close() (now pausedByThis-aware, see Settings/
+      // Bugrep above), and only fall through to the raw pause toggle once
+      // neither is showing.
+      if(document.getElementById('settingsOverlay').classList.contains('show')) Settings.close();
+      else if(document.getElementById('bugOverlay').classList.contains('show')) Bugrep.close();
+      else Game.togglePause();
+    }
     if((e.key === ' ' || e.key === 'Shift') && !e.repeat) Game.dash();
     // dev/playtest shortcut — not a real game feature, just skips the wait
     // to reach the boss without needing 7.5 real minutes each time. Gated
@@ -2570,7 +2584,7 @@ const SHOP_DEFS = {
   // maxed every one of them with essence still piling up unspent. Real new
   // value instead of just deepening already-tuned stats further (that risks
   // undoing the balance pass rather than extending it).
-  insight:   { name:'Rite of Insight', desc:'+15% essence gems\' XP value per rank', base:35 },
+  insight:   { name:'Rite of Insight', desc:'+15% essence gems\' Insight value per rank', base:35 },
   revival:   { name:'Rite of the Second Wind', desc:'Survive a lethal hit at 1 rank/run, +2s invulnerable. Capped at 3 — not meant to trivialize death.', base:80, maxRank:3 },
   // meta-progression half of the relic system (STUDIO_BIBLE-style split:
   // relics themselves are per-run build-crafting, this Rite is the
@@ -7741,21 +7755,36 @@ const ShareCard = (function(){
     return cv;
   }
 
+  // Busy flag (found via RECURRING_BUG_CATALOG.md-driven audit, 2026-08-03):
+  // toBlob() is async and this function returned immediately with no guard
+  // and no button-disable, on an overlay that doesn't close itself after
+  // Share is clicked -- a real double-click fired two toBlob callbacks,
+  // racing two navigator.share() calls (one throwing "share already in
+  // progress" on some platforms) or two back-to-back downloads of the same
+  // run. Not a { once: true } listener -- Share is meant to work again on
+  // a future run, so the guard clears itself once this call finishes.
+  let sharing = false;
   function share(){
+    if(sharing) return;
     const stats = Game.getLastRunStats();
     if(!stats) return;
+    sharing = true;
     const cv = buildCanvas(stats);
     cv.toBlob(async (blob) => {
-      if(!blob) return;
-      const file = new File([blob], 'iridescentcosmology-run.png', { type:'image/png' });
-      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
-        try{ await navigator.share({ files:[file], title:'IRIDESCENT COSMOLOGY', text:'My Iridescent Cosmology run' }); return; }
-        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      try{
+        if(!blob) return;
+        const file = new File([blob], 'iridescentcosmology-run.png', { type:'image/png' });
+        if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+          try{ await navigator.share({ files:[file], title:'IRIDESCENT COSMOLOGY', text:'My Iridescent Cosmology run' }); return; }
+          catch(e){ /* user cancelled or share failed — fall through to download */ }
+        }
+        const a = document.createElement('a');
+        a.href = cv.toDataURL('image/png');
+        a.download = 'iridescentcosmology-run.png';
+        a.click();
+      } finally {
+        sharing = false;
       }
-      const a = document.createElement('a');
-      a.href = cv.toDataURL('image/png');
-      a.download = 'iridescentcosmology-run.png';
-      a.click();
     }, 'image/png');
   }
 
@@ -7785,6 +7814,17 @@ const Settings = (function(){
   // Bugrep.open() below, and stacks on top of the pause overlay rather than
   // hiding it.
   let openedFromMenu = false;
+  // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+  // 2026-08-03; runeshatter's Bugrep module already carries this exact
+  // fix — see its own comment): opening Settings mid-run only auto-paused
+  // "if(st.running && !st.paused...)" — if the game was ALREADY paused
+  // (pauseOverlay already showing, reachable via the always-on-top
+  // meta-row gear), that check was false, so open() correctly skipped
+  // re-pausing, but close() had no way to know that and could still
+  // resume a pause it didn't cause. pausedByThis tracks whether THIS
+  // open() call was the one that paused, so close() only ever undoes
+  // what it itself did.
+  let pausedByThis = false;
   function open(){
     // BUG FIX (found by qa-playtest, v2.12.1 changelog): double-clicking
     // the gear re-entered open() while settingsOverlay was already
@@ -7802,7 +7842,8 @@ const Settings = (function(){
     if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
     else {
       const st = Game._test.state();
-      if(st.running && !st.paused && !st.levelChoosing) Game.togglePause();
+      pausedByThis = st.running && !st.paused && !st.levelChoosing;
+      if(pausedByThis) Game.togglePause();
     }
     // music branch (v2.8.0): only when opened from the menu. Opened mid-run
     // the game is already paused, and the pause branch — which inherits the
@@ -7821,7 +7862,11 @@ const Settings = (function(){
       Game.renderMenuBest();
       document.getElementById('menuOverlay').classList.add('show');
       if(typeof Music.setBranch === 'function') Music.setBranch('menu');
+    } else if(pausedByThis){
+      const st = Game._test.state();
+      if(st.running && st.paused) Game.togglePause();
     }
+    pausedByThis = false;
   }
   function setMusicVol(v){
     Persist.data.settings.musicVol = Number(v);
@@ -7903,7 +7948,7 @@ const Shop = (function(){
 const Achievements = (function(){
   const DEFS = [
     { id:'first_light', name:'First Light', desc:'Complete your first run.', check:d=>d.totalRuns>=1 },
-    { id:'grimoire_opens', name:'The Grimoire Opens', desc:'Purchase your first Grimoire upgrade.', check:d=>Object.values(d.upgrades).some(v=>v>0) },
+    { id:'grimoire_opens', name:'The Grimoire Opens', desc:'Purchase your first Grimoire Research.', check:d=>Object.values(d.upgrades).some(v=>v>0) },
     { id:'iridescent_novice', name:'Iridescent Novice', desc:'Reach level 10 in a single run.', check:d=>d.best.level>=10 },
     { id:'iridescent_adept', name:'Iridescent Adept', desc:'Reach level 20 in a single run.', check:d=>d.best.level>=20 },
     { id:'iridescent_master', name:'Iridescent Master', desc:'Reach level 30 in a single run.', check:d=>d.best.level>=30 },
@@ -8046,16 +8091,34 @@ const Bugrep = (function(){
     b.style.display = l.length ? 'flex' : 'none';
     b.textContent = l.length;
   }
+  // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+  // 2026-08-03; runeshatter's own Bugrep module already carries this exact
+  // fix): opening the report form mid-run auto-paused, but close() was a
+  // bare classList.remove() with no resume logic at all — a player who
+  // filed a report mid-run was silently dropped onto (and stuck on) the
+  // pause screen once they closed the report. pausedByThis tracks whether
+  // THIS open() call was the one that paused, so close() only ever undoes
+  // what it itself did.
+  let pausedByThis = false;
   function open(){
+    pausedByThis = false;
     if(document.getElementById('hud').classList.contains('show')){
       // pause game if mid-run
       const st = Game._test.state();
-      if(st.running && !st.paused && !st.levelChoosing) Game.togglePause();
+      pausedByThis = st.running && !st.paused && !st.levelChoosing;
+      if(pausedByThis) Game.togglePause();
     }
     renderList();
     document.getElementById('bugOverlay').classList.add('show');
   }
-  function close(){ document.getElementById('bugOverlay').classList.remove('show'); }
+  function close(){
+    document.getElementById('bugOverlay').classList.remove('show');
+    if(pausedByThis){
+      const st = Game._test.state();
+      if(st.running && st.paused) Game.togglePause();
+    }
+    pausedByThis = false;
+  }
   function cat(btn){
     document.querySelectorAll('.bugcat .btn').forEach(b=>b.classList.remove('sel'));
     btn.classList.add('sel');
@@ -8076,7 +8139,7 @@ const Bugrep = (function(){
     const l = loadAll();
     document.getElementById('bugList').innerHTML = l.map((r,i)=>`
       <div class="bug-item"><span class="del" onclick="Bugrep.del(${i})">remove</span>
-        <div class="cat">${r.category}</div><strong>${escapeHtml(r.title)}</strong>
+        <div class="cat">${escapeHtml(r.category)}</div><strong>${escapeHtml(r.title)}</strong>
         ${r.details?`<div style="opacity:.75;margin-top:2px;">${escapeHtml(r.details)}</div>`:''}
       </div>`).join('');
     document.getElementById('bugExportBtn').style.display = l.length ? 'block' : 'none';

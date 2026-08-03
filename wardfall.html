@@ -433,7 +433,7 @@ function shotScore(nPopped, nFallen, nBomb, nHazard, streak){
 
 /* =====================================================================
    FACETED RENDERING — shadeHex copied verbatim from
-   sigilchain.html:362-380 (itself copied from iridescentcosmology.html:1888-1906).
+   sigilchain.html:363-366 (itself copied from iridescentcosmology.html:2764).
    Regular color orbs use the radial-gradient round-pickup variant the
    faceted-gem-rendering skill specifies for round shapes; special orbs
    use the hand-authored asymmetric-polygon variant, each its own
@@ -734,7 +734,7 @@ const Queue = (function(){
    module) while Grid/Queue stay split out as distinct-responsibility
    modules per GAME_3_PILLARS.md §7. Fixed-timestep accumulator loop is
    the same SIM_DT/MAX_STEPS/spiral-of-death convention as
-   iridescentcosmology.html:3489-3508 / sigilchain.html:833-845.
+   iridescentcosmology.html:5300-5319 / sigilchain.html:916-935.
 ===================================================================== */
 const Game = (function(){
   const canvas = document.getElementById('gameCanvas');
@@ -1489,7 +1489,7 @@ const Juice = (function(){
       ctx.save();
       // capability audit finding: this was one of three games whose burst/
       // pop particles drew with plain alpha fades only — real bloom-like
-      // additive stacking (iridescentcosmology.html:4019-4036) had never
+      // additive stacking (iridescentcosmology.html:5263-5269) had never
       // propagated here. Scoped to pops (the actual glow/flare moment),
       // not shockwaves below (a ring + darkening iris, not a glow — additive
       // blending doesn't serve that effect the same way).
@@ -1528,7 +1528,7 @@ const Juice = (function(){
    so a live update can never clobber the game-over rampGain fade —
    this is the one place in the design with a persistent per-frame
    AudioParam, the exact shape of the studio's "dying sticks the music"
-   incident (iridescentcosmology.html:4308-4316) if left unguarded.
+   incident (iridescentcosmology.html:6533-6539) if left unguarded.
 ===================================================================== */
 const Music = (function(){
   let ctx, master, compressor, musicGain, sfxGain, reverb, reverbSend;
@@ -1566,7 +1566,7 @@ const Music = (function(){
     // spreading them across the stereo field makes them thicker in theory
     // but not wider in practice — they're both fighting for the same point
     // in the image. Same StereoPannerNode widening trick as
-    // iridescentcosmology.html:5125-5130's supersaw lead voices, applied
+    // iridescentcosmology.html:6641-6675's supersaw lead voices, applied
     // here to the drone pair instead.
     const d1 = ctx.createOscillator(); d1.type='sine'; d1.frequency.value=60;
     const d2 = ctx.createOscillator(); d2.type='sine'; d2.frequency.value=60.7;
@@ -1671,7 +1671,7 @@ const Music = (function(){
 /* =====================================================================
    SHARECARD — Wardfall was the only shipped game without one (grepped:
    no ShareCard/navigator.share anywhere in this file before this).
-   Mirrors iridescentcosmology.html:5534-5596's proven pattern verbatim:
+   Mirrors iridescentcosmology.html:7701-7764's proven pattern verbatim:
    a composed canvas card, navigator.share with a file attachment when
    available, falling back to a plain PNG download. Also adds a plain-
    text result string + clipboard-copy path neither existing game has —
@@ -1730,21 +1730,36 @@ const ShareCard = (function(){
     return cv;
   }
 
+  // Busy flag (found via RECURRING_BUG_CATALOG.md-driven audit, 2026-08-03):
+  // toBlob() is async and this function returned immediately with no guard
+  // and no button-disable, on an overlay that doesn't close itself after
+  // Share is clicked -- a real double-click fired two toBlob callbacks,
+  // racing two navigator.share() calls (one throwing "share already in
+  // progress" on some platforms) or two back-to-back downloads of the same
+  // run. Not a { once: true } listener -- Share is meant to work again on
+  // a future run, so the guard clears itself once this call finishes.
+  let sharing = false;
   function share(){
+    if(sharing) return;
     const stats = Game.getLastRunStats();
     if(!stats) return;
+    sharing = true;
     const cv = buildCanvas(stats);
     cv.toBlob(async (blob) => {
-      if(!blob) return;
-      const file = new File([blob], 'wardfall-run.png', { type:'image/png' });
-      if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
-        try{ await navigator.share({ files:[file], title:'WARDFALL', text: resultText(stats) }); return; }
-        catch(e){ /* user cancelled or share failed — fall through to download */ }
+      try{
+        if(!blob) return;
+        const file = new File([blob], 'wardfall-run.png', { type:'image/png' });
+        if(navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))){
+          try{ await navigator.share({ files:[file], title:'WARDFALL', text: resultText(stats) }); return; }
+          catch(e){ /* user cancelled or share failed — fall through to download */ }
+        }
+        const a = document.createElement('a');
+        a.href = cv.toDataURL('image/png');
+        a.download = 'wardfall-run.png';
+        a.click();
+      } finally {
+        sharing = false;
       }
-      const a = document.createElement('a');
-      a.href = cv.toDataURL('image/png');
-      a.download = 'wardfall-run.png';
-      a.click();
     }, 'image/png');
   }
   // plain-text fallback, deliberately separate from share()'s image path —
@@ -1783,12 +1798,25 @@ const Settings = (function(){
     document.body.classList.toggle('reduced-motion', reducedMotion());
   }
   let openedFromMenu = false;
+  // Stacking bug (found via RECURRING_BUG_CATALOG.md-driven audit,
+  // 2026-08-03; runeshatter's own Bugrep module already carries this exact
+  // fix): opening Settings mid-run only auto-paused "if(st.running &&
+  // !st.paused...)" — if the game was ALREADY paused (pauseOverlay already
+  // showing — the pause overlay itself embeds a Settings.open() button,
+  // and the always-on-top meta-row gear reaches this mid-run too), that
+  // check was false, so open() correctly skipped re-pausing, but close()
+  // had no way to know that and could leave the player stuck staring at
+  // an unrequested pause screen after just checking the volume. pausedByThis
+  // tracks whether THIS open() call was the one that paused, so close()
+  // only ever undoes what it itself did.
+  let pausedByThis = false;
   function open(){
     openedFromMenu = document.getElementById('menuOverlay').classList.contains('show');
-    if(openedFromMenu) document.getElementById('menuOverlay').classList.remove('show');
+    if(openedFromMenu) { document.getElementById('menuOverlay').classList.remove('show'); pausedByThis = false; }
     else {
       const st = Game._test.state();
-      if(st.running && !st.paused && !st.roundEnded) Game.togglePause();
+      pausedByThis = st.running && !st.paused && !st.roundEnded;
+      if(pausedByThis) Game.togglePause();
     }
     document.getElementById('musicVolSlider').value = Persist.data.settings.musicVol;
     document.getElementById('sfxVolSlider').value = Persist.data.settings.sfxVol;
@@ -1803,7 +1831,11 @@ const Settings = (function(){
       document.getElementById('menuShardsVal').textContent = Persist.data.shards;
       renderMenuDailyRow();
       document.getElementById('menuOverlay').classList.add('show');
+    } else if(pausedByThis){
+      const st = Game._test.state();
+      if(st.running && st.paused) Game.togglePause();
     }
+    pausedByThis = false;
   }
   function setMusicVol(v){ Persist.data.settings.musicVol = Number(v); Persist.save(); if(typeof Music.setMusicVolume==='function') Music.setMusicVolume(Number(v)); }
   function setSfxVol(v){ Persist.data.settings.sfxVol = Number(v); Persist.save(); if(typeof Music.setSfxVolume==='function') Music.setSfxVolume(Number(v)); }

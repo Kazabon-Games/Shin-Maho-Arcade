@@ -33,6 +33,9 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined' && typeof window.Rig2 !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) --
+  // mirrors wardfall.html's tests calling Game.startRound() directly.
+  await page.evaluate(() => window.startDuel());
 
   console.log('1. The idle pose is genuinely asymmetric fore/aft, not a symmetric shape that would mirror to itself');
   await page.evaluate(() => window.Rig._test.resetSession());

@@ -132,6 +132,16 @@ h1.title{
   background:rgba(10,6,20,0.55);border:1px solid var(--border);border-radius:20px;
   padding:.3em .8em;backdrop-filter:blur(3px);
 }
+/* Prototype badge — a real, named-in-progress game, but not "Live Now"
+   alongside five shipped ones; distinct from .card.soon's fully-unrevealed
+   placeholder below. Muted ink tone rather than the gold/neon accent,
+   since gold is reserved for reward/positive-highlight semantics
+   (STUDIO_BIBLE.md §11) and this badge means the opposite of "ready." */
+.card-badge.proto{ color:var(--ink-soft); border-style:dashed; }
+.card-art.placeholder{
+  display:flex;align-items:center;justify-content:center;
+}
+.card-art.placeholder .glyph{font-size:2.4rem;color:var(--ink-soft);opacity:.45;}
 
 .card-body{padding:1.6rem 1.7rem 1.8rem;display:flex;flex-direction:column;flex:1;}
 .card-title{
@@ -344,6 +354,28 @@ footer .fine{margin-top:.9rem;font-size:.78rem;color:var(--ink-soft);opacity:.7;
         <div class="card-actions">
           <a class="btn" href="runeshatter.html">✦&nbsp; Shatter the Board</a>
           <span class="card-meta">4-to-6 tile tiers · line &amp; area bombs · chain detonation</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-art placeholder">
+        <div class="glyph">⚔</div>
+        <div class="card-badge proto">Prototype · In Development</div>
+      </div>
+      <div class="card-body">
+        <div class="card-title">Rykndu</div>
+        <div class="card-genre">Fighting · Side-View Duel</div>
+        <p class="card-desc">
+          A doll-rig fighter still finding its shape — real velocity/momentum physics,
+          guard, parry, and combo-cancel already work, on a hand-built 15-joint frame.
+          The Gauntlet tests you solo against an approaching threat; the Duel puts two
+          players on one screen, first to the target score. Early, unfinished, and
+          worth a look regardless.
+        </p>
+        <div class="card-actions">
+          <a class="btn" href="prototypes/rykndu-doll-rig.html">✦&nbsp; Enter the Prototype</a>
+          <span class="card-meta">Gauntlet or Duel · gamepad, keyboard &amp; touch</span>
         </div>
       </div>
     </div>

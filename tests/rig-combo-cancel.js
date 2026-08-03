@@ -34,6 +34,9 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined' && typeof window.Rig2 !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) --
+  // mirrors wardfall.html's tests calling Game.startRound() directly.
+  await page.evaluate(() => window.startDuel());
 
   async function freshDuel() {
     await page.evaluate(() => {

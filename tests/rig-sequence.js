@@ -33,6 +33,13 @@ function ok(cond, label) {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.Rig !== 'undefined');
+  // Dismiss the title/mode-select overlay (GAME_5_PILLARS.md §3/§4) --
+  // mirrors wardfall.html's tests calling Game.startRound() directly.
+  // Gauntlet specifically: this suite exercises sessionState/missedCount/
+  // the game-over-restart flow, which handleInput() only honors when
+  // SHOW_GAUNTLET is true (see GAME_5_PILLARS.md §3 -- that gate exists so
+  // a background Gauntlet loss can't silently reset player 1 mid-Duel).
+  await page.evaluate(() => window.startGauntlet());
   // Freeze the autonomous spawner from the very start. Sections 1-6 don't
   // exercise enemies/spawning at all, but they still sum to several seconds
   // of nominal waits -- long enough for the real spawn timer to complete
