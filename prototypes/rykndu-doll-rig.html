@@ -1437,6 +1437,10 @@
   const GUARD_REGEN_PER_SEC = 25;
   const GUARD_MIN_TO_RAISE = 15; // can't re-raise guard the instant it hits empty -- needs to recover a little first
   const GUARD_BLOCK_HIT_DRAIN = 20;
+  // Reuses drawGuardMeter's own low-guard warning cutoff (pct<0.25 -> orange)
+  // so the audio "in danger" language (Music's Duel intensity signal) and
+  // the visual one agree on the same number, not a separately invented one.
+  const GUARD_BREAK_RISK_THRESHOLD = GUARD_METER_MAX * 0.25;
 
   // Parry window (v0.1.25), same module-level sharing as everything else
   // above -- one budget both rigs are held to identically. Deliberately
@@ -2439,31 +2443,33 @@
 
     return {
       ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse, parryChime,
-      getCtx: () => ctx, getBus: () => compressor,
+      getCtx: () => ctx, getBus: () => compressor, getSfxGain: () => sfx,
       _test: { isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null }
     };
   })();
 
-  // ---- Music: continuous adaptive drone bed ----
+  // ---- Music: continuous adaptive drone bed (v2 -- per-mode identity) ----
   // See prototypes/rykndu-assets/music/MUSIC_DIRECTION.md for the full
   // design rationale, most importantly: NO ConvolverNode anywhere in this
   // module -- tests/rig-audio.js §6 asserts zero across the whole session
   // (a deliberate, already-tested "stay dry" decision from the v0.1.6
   // quality pass), so the standard adaptive-game-audio synthesized-reverb
-  // technique is deliberately not used here.
+  // technique is deliberately not used here, including in v2's stingers
+  // (bell() below routes to sfxGain, never through a convolver).
   const Music = (function () {
-    let ctx, master, duckGain, droneFilter, started = false;
+    let ctx, bus, sfxGain, master, duckGain, droneFilter, clashVoice, started = false;
     let voices = [];
     let targetIntensity = 0, intensity = 0;
+    let targetDuelProximity = 0, duelProximity = 0;
+    let mode = 'gauntlet';
+    let reducedAudio = false;
+    let nextHeartbeatAt = 0;
 
     // cancel-then-set-then-ramp -- the mandatory idiom (adaptive-game-audio)
     // for every SCHEDULED gain change. Never used for tick()'s per-frame
     // writes below, which are already smoothed in JS and use direct .value
     // assignment instead -- mixing the two patterns on the same AudioParam
     // is the exact "dying sticks the music" bug this rule exists to prevent.
-    // Not a risk here by construction: rampGain only ever touches
-    // duckGain.gain, tick() only ever touches droneFilter.frequency and a
-    // drone voice's own gain -- disjoint AudioParams, not just disjoint timing.
     function rampGain(param, target, seconds) {
       const t = ctx.currentTime;
       param.cancelScheduledValues(t);
@@ -2474,11 +2480,12 @@
     function ensureCtx() {
       if (started) return;
       ctx = SFX.getCtx();
-      const bus = SFX.getBus();
+      bus = SFX.getBus();
+      sfxGain = SFX.getSfxGain(); // stingers route here, not through droneFilter -- must not get swallowed by whatever the lowpass cutoff happens to be
       master = ctx.createGain(); master.gain.value = 0.0001;
       duckGain = ctx.createGain(); duckGain.gain.value = 1;
       droneFilter = ctx.createBiquadFilter();
-      droneFilter.type = 'lowpass'; droneFilter.frequency.value = 400;
+      droneFilter.type = 'lowpass'; droneFilter.frequency.value = 400; droneFilter.Q.value = 0.7;
       master.connect(duckGain); duckGain.connect(droneFilter); droneFilter.connect(bus);
       // Three detuned low voices -- root (~C2), a near-unison detune (tension
       // shimmer once the second voice fades in via tick(), see below), and a
@@ -2494,37 +2501,133 @@
         o.start();
         return { o, g };
       });
+      // Duel-only clash voice: tritone of the C2 root, one octave up
+      // (F#3, 185.00Hz) -- the score's one dissonant interval, reserved for
+      // Duel specifically (a tritone has no home key, fitting two evenly-
+      // matched opponents in unresolved conflict). Gauntlet's threat is
+      // known/physical, so it's handled by rhythm (the heartbeat below)
+      // instead, never by pitch -- silent (gain ~0) whenever mode isn't 'duel'.
+      const cv = ctx.createOscillator(); cv.type = 'sawtooth'; cv.frequency.value = 185.00;
+      const cvg = ctx.createGain(); cvg.gain.value = 0.0001;
+      cv.connect(cvg); cvg.connect(master);
+      cv.start();
+      clashVoice = { o: cv, g: cvg };
       started = true;
       rampGain(master.gain, 0.13, 1.4); // fade in on real audio start, not an instant on/off
     }
 
     // Continuous per-frame smoothing -- called from frame() every tick,
     // NOT event-gated. Direct .value writes only, per the rule above.
+    // Not a risk mixing with rampGain()'s scheduled automation: tick() only
+    // ever touches droneFilter.frequency/Q, a drone voice's own gain, and
+    // clashVoice's gain -- disjoint AudioParams from duckGain.gain, the only
+    // param rampGain() ever schedules against.
     function tick() {
       if (!started) return;
       intensity += (targetIntensity - intensity) * 0.03;
-      droneFilter.frequency.value = 380 + intensity * 1500;
+      duelProximity += (targetDuelProximity - duelProximity) * 0.03;
+
+      const duel = mode === 'duel';
+      droneFilter.Q.value = duel ? 2.2 : 0.7;
+      droneFilter.frequency.value = (duel ? 520 : 380) + intensity * 1500;
       voices[1].g.gain.value = 0.10 + intensity * 0.20;
+      clashVoice.g.gain.value = duel ? (0.0001 + duelProximity * 0.16) : 0.0001;
+
+      // Gauntlet-only heartbeat: a real elapsed-time lookahead scheduler,
+      // sub-bass sine sweep 90->42Hz, interval shortens as intensity rises
+      // -- the "closing physical threat" made audible as a literal pulse.
+      if (!duel && !reducedAudio && ctx.currentTime >= nextHeartbeatAt) {
+        fireHeartbeat();
+        nextHeartbeatAt = ctx.currentTime + Math.max(0.4, 1.15 - intensity * 0.75);
+      }
     }
 
-    // 0..1, set every frame by the caller from real combat state (see
-    // GAME_5_PILLARS.md-adjacent callers in frame() below) -- the actual
-    // "mood as a live input" mechanism, not a fixed track swap.
+    function fireHeartbeat() {
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.05 + intensity * 0.15, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      g.connect(duckGain); // rides the same duck+droneFilter chain as the drone; cutoff never attenuates it (always >=380Hz, well above 42-90Hz)
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(90, t);
+      o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+      o.connect(g); o.start(t); o.stop(t + 0.22);
+    }
+
+    // 0..1, set every frame by the caller from real combat state -- the
+    // actual "mood as a live input" mechanism, not a fixed track swap.
     function setIntensity(v) { targetIntensity = Math.max(0, Math.min(1, v)); }
+    // 0..1, Duel-only: how close the two rigs currently are, drives the
+    // clash voice directly (not blended through the general intensity).
+    function setDuelProximity(v) { targetDuelProximity = Math.max(0, Math.min(1, v)); }
+    function setMode(m) { mode = m; }
+    // Reduced-motion-equivalent audio cap (MUSIC_DIRECTION.md's own named
+    // v2 gap) -- silences the driving Gauntlet heartbeat specifically, the
+    // audio equivalent of screen shake, mirroring shakeMag's existing
+    // reducedMotion-gated convention elsewhere in this file.
+    function setReducedAudio(v) { reducedAudio = !!v; }
 
     // Sidechain-style duck on a punctuating hit (strike connect, parry) --
-    // the one genuinely one-shot, SCHEDULED event in this module, so it
-    // correctly uses rampGain (the dip) + setTargetAtTime (the recovery),
-    // never tick()'s continuous-write pattern.
+    // the one genuinely one-shot, SCHEDULED event among the continuous
+    // writes above, so it correctly uses rampGain (the dip) + setTargetAtTime
+    // (the recovery).
     function duck() {
       if (!started) return;
       rampGain(duckGain.gain, 0.35, 0.03);
       duckGain.gain.setTargetAtTime(1, ctx.currentTime + 0.05, 0.12);
     }
 
+    // bell() -- same fundamental+2.01x-overtone sine idiom as sigilchain.html
+    // / iridescentcosmology.html, minus the reverb send: connects to
+    // sfxGain, never droneFilter, so a stinger can't get swallowed by
+    // whatever the drone's lowpass cutoff happens to be that instant.
+    function bell(freq, dur, vol) {
+      if (!started) return;
+      const t = ctx.currentTime;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.5));
+      g.connect(sfxGain);
+      const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq;
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = freq * 2.01;
+      const g2 = ctx.createGain(); g2.gain.value = 0.28;
+      o2.connect(g2); g2.connect(g); o1.connect(g);
+      o1.start(t); o2.start(t);
+      o1.stop(t + (dur || 0.5) + 0.05); o2.stop(t + (dur || 0.5) + 0.05);
+    }
+
+    // Signature motif: an open perfect fifth, C6/G6 -- checked >100Hz clear
+    // of every existing SFX/drone frequency. Never a full triad anywhere in
+    // this score (matches the drone's own C+G-only harmony) -- every accent
+    // event below uses these same two pitches so one consistent "moment of
+    // consequence" signature covers all of them.
+    const MOTIF_ROOT = 1046.50, MOTIF_FIFTH = 1567.98;
+
+    function parryStinger() { bell(MOTIF_FIFTH, 0.18, 0.09); } // one quiet grace-note under SFX.parryChime()'s existing 880/1320 tones
+    function ringOutStinger() {
+      bell(MOTIF_ROOT, 0.16, 0.14);
+      setTimeout(() => bell(MOTIF_FIFTH, 0.24, 0.16), 70);
+    }
+    function matchWinStinger() {
+      bell(MOTIF_ROOT, 0.3, 0.18);
+      setTimeout(() => bell(MOTIF_FIFTH, 0.35, 0.2), 130);
+      setTimeout(() => bell(MOTIF_ROOT, 0.5, 0.22), 320);
+      setTimeout(() => bell(MOTIF_FIFTH, 0.9, 0.26), 500); // landing ring
+    }
+
     return {
-      ensureCtx, tick, setIntensity, duck,
-      _test: { isStarted: () => started, intensityValue: () => intensity, targetIntensityValue: () => targetIntensity }
+      ensureCtx, tick, setIntensity, setDuelProximity, setMode, setReducedAudio, duck,
+      parryStinger, ringOutStinger, matchWinStinger,
+      _test: {
+        isStarted: () => started,
+        intensityValue: () => intensity,
+        targetIntensityValue: () => targetIntensity,
+        duelProximityValue: () => duelProximity,
+        modeValue: () => mode,
+        clashVoiceGain: () => clashVoice ? clashVoice.g.gain.value : null,
+        droneFilterQ: () => droneFilter ? droneFilter.Q.value : null
+      }
     };
   })();
   const PULSE_THRESHOLDS = [0.4, 0.7, 0.9]; // fraction of ENEMY_TRAVEL_MS at which each proximityPulse stage fires
@@ -2782,6 +2885,7 @@
       attacker.applyKnockback(-dir * KNOCKBACK_SPEED, false);
       SFX.parryChime();
       Music.duck();
+      Music.parryStinger();
       spawnBurst(hurtbox.x, hurtbox.y);
       shakeMag = Math.min(20, shakeMag + (reducedMotion ? 2 : 6));
       return;
@@ -2830,11 +2934,13 @@
     if (matchOver) return;
     if (Math.abs(p1.posX) > ARENA_BOUND) {
       p2Score++;
-      if (p2Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P2'; }
+      Music.ringOutStinger();
+      if (p2Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P2'; Music.matchWinStinger(); }
       resetDuelPositions();
     } else if (Math.abs(p2.posX) > ARENA_BOUND) {
       p1Score++;
-      if (p1Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P1'; }
+      Music.ringOutStinger();
+      if (p1Score >= MATCH_TARGET_SCORE) { matchOver = true; matchWinner = 'P1'; Music.matchWinStinger(); }
       resetDuelPositions();
     }
   }
@@ -3291,7 +3397,11 @@
       // it can also fire in the middle of a deterministic test's own waits.
       // These two let a test isolate a scenario without fighting the timer.
       clearEnemies: () => { enemies = []; },
-      freezeSpawns: () => { nextSpawnAt = Infinity; }
+      freezeSpawns: () => { nextSpawnAt = Infinity; },
+      // Test-only direct guard-meter drain -- lets a test put a rig into
+      // GUARD_BREAK_RISK_THRESHOLD range deterministically (for Music's
+      // Duel guardRisk signal) instead of grinding out real blocked hits.
+      damageGuardMeter: (amt) => p1.damageGuardMeter(amt)
     }
   };
 
@@ -3357,7 +3467,8 @@
         if (p2PadIndex === index) p2PadIndex = null;
         delete padPrevPressed[index];
       },
-      padAssignment: () => ({ p1PadIndex, p2PadIndex })
+      padAssignment: () => ({ p1PadIndex, p2PadIndex }),
+      damageGuardMeter: (amt) => p2.damageGuardMeter(amt)
     }
   };
 
@@ -3379,7 +3490,11 @@
     _test: {
       isStarted: () => Music._test.isStarted(),
       intensityValue: () => Music._test.intensityValue(),
-      targetIntensityValue: () => Music._test.targetIntensityValue()
+      targetIntensityValue: () => Music._test.targetIntensityValue(),
+      duelProximityValue: () => Music._test.duelProximityValue(),
+      modeValue: () => Music._test.modeValue(),
+      clashVoiceGain: () => Music._test.clashVoiceGain(),
+      droneFilterQ: () => Music._test.droneFilterQ()
     }
   };
 
@@ -3577,11 +3692,32 @@
     // the score too).
     let musicIntensity = 0;
     if (SHOW_GAUNTLET) {
+      Music.setMode('gauntlet');
       if (sessionState === 'lose') musicIntensity = 0.08;
       else if (enemies.length) musicIntensity = Math.max(...enemies.map(e => e.dying ? 0 : e.t)) * 0.85 + missedCount / MAX_MISSES * 0.15;
+      Music.setDuelProximity(0); // not the visible mode -- keep the clash voice silent, same isolation musicIntensity itself already gets
     } else if (SHOW_P2) {
-      musicIntensity = matchOver ? 0.1 : 0.55;
+      Music.setMode('duel');
+      if (matchOver) {
+        musicIntensity = 0.1;
+        Music.setDuelProximity(0);
+      } else {
+        // Real Duel intensity signal (v2) -- proximity + guard-break risk +
+        // match-point stakes, all already-live combat state, not a flat
+        // baseline. See rykndu-assets/music/MUSIC_DIRECTION.md.
+        const dist = Math.abs(p1.posX - p2.posX);
+        const proximity = 1 - Math.min(1, dist / (ARENA_BOUND * 2)); // 0 = walled apart, 1 = clinch-close
+        const guardRisk = Math.max(
+          (p1.guarding && p1.guardMeter < GUARD_BREAK_RISK_THRESHOLD) ? 1 - p1.guardMeter / GUARD_BREAK_RISK_THRESHOLD : 0,
+          (p2.guarding && p2.guardMeter < GUARD_BREAK_RISK_THRESHOLD) ? 1 - p2.guardMeter / GUARD_BREAK_RISK_THRESHOLD : 0
+        );
+        const matchPoint = (p1Score === MATCH_TARGET_SCORE - 1 || p2Score === MATCH_TARGET_SCORE - 1) ? 1 : 0;
+        musicIntensity = 0.25 + proximity * 0.40 + guardRisk * 0.20 + matchPoint * 0.15; // sums to exactly 1.0 at max
+        Music.setDuelProximity(proximity);
+      }
     }
+    Music.setReducedAudio(reducedMotion);
+    if (reducedMotion) musicIntensity = Math.min(musicIntensity, 0.5);
     Music.setIntensity(musicIntensity);
     Music.tick();
 

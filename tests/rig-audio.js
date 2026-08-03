@@ -82,6 +82,23 @@ function ok(cond, label) {
   // mirrors wardfall.html's tests calling Game.startRound() directly.
   await page.evaluate(() => window.startDuel());
 
+  // Shared helpers for the Music v2 (Duel differentiation) sections below --
+  // same shape as tests/rig-match.js's own freshDuel()/landOneRingOut().
+  async function freshDuel() {
+    await page.evaluate(() => {
+      window.Rig._test.resetSession();
+      window.Rig._test.freezeSpawns();
+      window.Rig._test.clearEnemies();
+      window.Rig2._test.reset();
+      window.Duel._test.resetMatch();
+    });
+  }
+  async function landOneRingOut() {
+    await page.evaluate(() => { window.Rig._test.teleportTo(120); window.Rig2._test.teleportTo(150); });
+    await page.evaluate(() => window.Rig._test.trigger('R'));
+    await page.waitForTimeout(700); // strike lands, knockback carries p2 out, ring-out resolves
+  }
+
   console.log('1. AudioContext lifecycle');
   let state = await page.evaluate(() => window.Rig._test.state());
   ok(state.audioStarted === false, 'audio not started before any input');
@@ -141,7 +158,118 @@ function ok(cond, label) {
   console.log('6. Deliberately dry mix — no reverb send');
   ok((await page.evaluate(() => window.__audioCalls.convolvers.length)) === 0, 'zero ConvolverNodes created across the whole session (a reverb tail would blur the transient onset this pass exists to sharpen)');
 
-  console.log('7. No page errors from any of the above');
+  console.log('7. Music v2 — mode tracking and per-mode drone-filter Q differentiation');
+  await page.evaluate(() => window.startGauntlet());
+  await page.waitForTimeout(80); // a few rAF ticks so tick() applies the new mode
+  let musicMode = await page.evaluate(() => window.Music._test.modeValue());
+  ok(musicMode === 'gauntlet', 'mode tracks the visible Gauntlet mode');
+  let q1 = await page.evaluate(() => window.Music._test.droneFilterQ());
+  ok(Math.abs(q1 - 0.7) < 0.01, 'drone filter Q is the calmer Gauntlet value (0.7), got ' + q1);
+  await page.evaluate(() => window.startDuel());
+  await page.waitForTimeout(80);
+  musicMode = await page.evaluate(() => window.Music._test.modeValue());
+  ok(musicMode === 'duel', 'mode tracks the visible Duel mode');
+  let q2 = await page.evaluate(() => window.Music._test.droneFilterQ());
+  ok(Math.abs(q2 - 2.2) < 0.01, 'drone filter Q is the tenser Duel value (2.2), distinct from Gauntlet\'s 0.7, got ' + q2);
+
+  console.log('8. Duel clash-voice gain rises as the fighters close distance (proximity signal)');
+  await freshDuel();
+  await page.evaluate(() => { window.Rig._test.teleportTo(-160); window.Rig2._test.teleportTo(160); });
+  await page.waitForTimeout(600); // let duelProximity settle low (0.03/frame smoothing)
+  const gainFar = await page.evaluate(() => window.Music._test.clashVoiceGain());
+  await page.evaluate(() => { window.Rig._test.teleportTo(0); window.Rig2._test.teleportTo(10); });
+  await page.waitForTimeout(600); // let duelProximity settle high
+  const gainClose = await page.evaluate(() => window.Music._test.clashVoiceGain());
+  ok(gainClose > gainFar, 'clash-voice gain is higher when the fighters are close than when walled apart (far=' + gainFar.toFixed(4) + ', close=' + gainClose.toFixed(4) + ')');
+
+  console.log('9. Guard-break risk raises Duel intensity when a fighter is low on guard meter while guarding');
+  await freshDuel();
+  await page.evaluate(() => { window.Rig._test.teleportTo(-160); window.Rig2._test.teleportTo(160); window.Rig._test.setGuard(false); });
+  await page.waitForTimeout(600);
+  const intensityCalm = await page.evaluate(() => window.Music._test.intensityValue());
+  await page.evaluate(() => { window.Rig._test.setGuard(true); window.Rig._test.damageGuardMeter(90); });
+  await page.waitForTimeout(250); // enough for the target bump to register before natural drain (40/sec) forces guard down
+  const intensityGuardRisk = await page.evaluate(() => window.Music._test.intensityValue());
+  ok(intensityGuardRisk > intensityCalm, 'intensity rises once a guarding fighter drops below the guard-break risk threshold (calm=' + intensityCalm.toFixed(3) + ', guardRisk=' + intensityGuardRisk.toFixed(3) + ')');
+  await page.evaluate(() => window.Rig._test.setGuard(false));
+
+  console.log('10. Reaching match point (one score from winning) raises Duel intensity by itself');
+  await freshDuel();
+  await page.waitForTimeout(600);
+  const intensityFresh = await page.evaluate(() => window.Music._test.intensityValue());
+  await landOneRingOut();
+  await landOneRingOut(); // p1Score now 2 -- one away from MATCH_TARGET_SCORE (3)
+  const scoreState = await page.evaluate(() => window.Duel._test.state());
+  ok(scoreState.p1Score === 2 && scoreState.matchOver === false, 'match point reached (2 of 3), not yet decided');
+  await page.waitForTimeout(600);
+  const intensityMatchPoint = await page.evaluate(() => window.Music._test.intensityValue());
+  ok(intensityMatchPoint > intensityFresh, 'intensity is higher at match point than at a fresh, scoreless match reset to the same distance (fresh=' + intensityFresh.toFixed(3) + ', matchPoint=' + intensityMatchPoint.toFixed(3) + ')');
+
+  console.log('11. Reduced-motion preference caps Duel intensity at 0.5, even with every term stacked');
+  await freshDuel();
+  await landOneRingOut();
+  await landOneRingOut(); // p1Score now 2 -- match point, same as §10
+  await page.evaluate(() => { window.Rig._test.teleportTo(0); window.Rig2._test.teleportTo(5); window.Rig._test.setGuard(true); window.Rig._test.damageGuardMeter(90); });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The cap clamps the TARGET every frame, not the smoothed value directly
+  // -- intensity was already elevated from the stacked setup above, so it
+  // needs real convergence time (0.03/frame EMA) to settle back down to
+  // the new capped target rather than snapping to it instantly.
+  await page.waitForTimeout(3000);
+  const cappedIntensity = await page.evaluate(() => window.Music._test.intensityValue());
+  ok(cappedIntensity <= 0.505, 'intensity converges back down to the 0.5 cap under a reduced-motion preference even with proximity+guardRisk+matchPoint all stacked (got ' + cappedIntensity.toFixed(3) + ')');
+  await page.evaluate(() => window.Rig._test.setGuard(false));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  console.log('12. A parried connect fires a bell stinger (Music.parryStinger), not just the SFX chime');
+  await freshDuel();
+  await page.evaluate(() => { window.__audioCalls.oscillators.length = 0; });
+  await page.evaluate(() => { window.Rig._test.teleportTo(0); window.Rig2._test.teleportTo(30); });
+  await page.evaluate(() => window.Rig._test.trigger('R'));
+  await page.waitForTimeout(100); // still in windup -- raise guard right before the strike lands
+  await page.evaluate(() => window.Rig2._test.setGuard(true));
+  await page.waitForTimeout(40); // now in the strike phase, well within the parry window
+  calls = await page.evaluate(() => window.__audioCalls);
+  const parryBell = calls.oscillators.find(o => o.type === 'sine' && o.freqSets.some(f => Math.abs(f - 1567.98) < 0.01));
+  ok(!!parryBell, 'a sine bell voice at the parry stinger\'s fifth (1567.98Hz) fires on a parried connect');
+  await page.evaluate(() => window.Rig2._test.setGuard(false));
+
+  console.log('13. A ring-out fires a two-note stinger; winning the match fires the fuller four-note sequence');
+  await freshDuel();
+  await page.evaluate(() => { window.__audioCalls.oscillators.length = 0; });
+  await landOneRingOut();
+  await page.waitForTimeout(150); // let the ringOutStinger's 70ms-delayed second bell fire
+  calls = await page.evaluate(() => window.__audioCalls);
+  const bellRoot1 = calls.oscillators.filter(o => o.type === 'sine' && o.freqSets.some(f => Math.abs(f - 1046.50) < 0.01));
+  const bellFifth1 = calls.oscillators.filter(o => o.type === 'sine' && o.freqSets.some(f => Math.abs(f - 1567.98) < 0.01));
+  ok(bellRoot1.length >= 1 && bellFifth1.length >= 1, 'ringOutStinger fires both the root (1046.50Hz) and fifth (1567.98Hz) bell voices');
+
+  await page.evaluate(() => { window.__audioCalls.oscillators.length = 0; });
+  await landOneRingOut(); // p1Score now 2
+  await landOneRingOut(); // p1Score now 3 -- decides the match
+  const decided = await page.evaluate(() => window.Duel._test.state());
+  ok(decided.matchOver === true && decided.matchWinner === 'P1', 'the match is decided after the third ring-out');
+  await page.waitForTimeout(700); // matchWinStinger's last bell fires at +500ms, plus its own decay tail
+  calls = await page.evaluate(() => window.__audioCalls);
+  const rootBells = calls.oscillators.filter(o => o.type === 'sine' && o.freqSets.some(f => Math.abs(f - 1046.50) < 0.01)).length;
+  const fifthBells = calls.oscillators.filter(o => o.type === 'sine' && o.freqSets.some(f => Math.abs(f - 1567.98) < 0.01)).length;
+  ok(rootBells >= 2 && fifthBells >= 2, 'the decisive point fires a fuller root/fifth sequence than a plain ring-out alone (ringOutStinger + matchWinStinger both fire), got ' + rootBells + ' root + ' + fifthBells + ' fifth bells');
+
+  console.log('14. The Gauntlet-only heartbeat pulse fires in Gauntlet mode and stays silent in Duel');
+  await page.evaluate(() => window.startGauntlet());
+  await page.evaluate(() => { window.Rig._test.resetSession(); window.Rig._test.freezeSpawns(); window.Rig._test.clearEnemies(); window.__audioCalls.oscillators.length = 0; });
+  await page.waitForTimeout(500); // nextHeartbeatAt starts at 0, so the first pulse fires on the very next tick
+  calls = await page.evaluate(() => window.__audioCalls);
+  const heartbeat = calls.oscillators.find(o => o.type === 'sine' && o.freqSets.includes(90) && o.freqRamps.includes(42));
+  ok(!!heartbeat, 'a heartbeat pulse (sine, 90Hz dropping to 42Hz) fires in Gauntlet mode with no enemies present');
+  await page.evaluate(() => window.startDuel());
+  await page.evaluate(() => { window.Duel._test.resetMatch(); window.__audioCalls.oscillators.length = 0; });
+  await page.waitForTimeout(1400); // longer than Gauntlet's own worst-case heartbeat interval (1.15s at zero intensity)
+  calls = await page.evaluate(() => window.__audioCalls);
+  const heartbeatInDuel = calls.oscillators.find(o => o.type === 'sine' && o.freqSets.includes(90) && o.freqRamps.includes(42));
+  ok(!heartbeatInDuel, 'no heartbeat pulse fires while Duel is the visible mode (mode-gated, not just a lower rate)');
+
+  console.log('15. No page errors from any of the above');
   ok(pageErrors.length === 0, 'zero page errors across all audio triggers (' + pageErrors.length + ' found)');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
