@@ -68,6 +68,7 @@ both documents' import code can share one parser.
 | `equipment` | object, one key per slot (`head`, `neck`, `hands`, `feet`, `body`) | all slots empty |
 | `weapons` | `{ main: weaponId, secondary: weaponId|null }` | falls back to the one starting weapon each class's primary weapon type grants — never null on both, a class always has a legal default main weapon |
 | `allocatedStars` | object, stat name → points spent | `{}` — base stats only, no allocation yet |
+| `battlesWon` | integer ≥ 0 | `0` — drives the Rarity-progression table in MONOLITH_RULESET.md (R2 at 1 win, R3 at 2, ...); Arena writes this back to the shared local roster directly on a win, same-origin, same key it already reads from — no export/import round-trip needed for the common same-device case |
 | `avatarSeed` | string (for procedural portrait generation, if/when that's built) | omitted → default placeholder |
 | `notes` | string, free text | omitted → no notes shown |
 

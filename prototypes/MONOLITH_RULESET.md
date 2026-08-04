@@ -81,7 +81,23 @@ reference. Where they conflict, this is the resolution order:
 
 Rarity progression (battles-to-level, source table): R2 at 1 battle, R3 at
 2, R4 at 3, R5 at 5, R6 at 8, R7 at 9, R8 at 11, R9 at 13. ("O A" in the
-source is illegible/unresolved — flagged, not guessed at.)
+source is illegible/unresolved — flagged, not guessed at.) Implemented in
+Arena: a `battlesWon` counter is written back to the Esori's own record on
+each win, and Rarity is derived from that table, not tracked as a
+separately-editable number.
+
+**Stated simplification, not a sourced rule:** none of the four
+currencies are tied to "win a battle" anywhere in the source docs — Stars
+come from "completing chapters," Fragments from "Challenges and
+Contests," Favor from NPC interaction, none of which this prototype
+models. Rather than leave every currency permanently inert (nothing
+would ever earn any of them), Arena awards a small flat amount of Stars
+per battle won, as the closest available stand-in for "chapter
+completion" progress. Fragments and Favor are left untouched — inventing
+a relationship nobody's confirmed for a currency this project doesn't
+have a source trigger for at all would be a bigger leap than reusing
+Stars' "progression currency" role for the one form of progress that
+does exist here.
 
 ## Class (chosen at creation; changeable only via special home-realm items)
 

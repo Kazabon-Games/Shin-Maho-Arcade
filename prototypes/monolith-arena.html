@@ -11,6 +11,32 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.4.0 — 2026-08-04 — Battle outcomes now persist — closing a real gap
+                          left open since Phase 0's own scaffold comment
+                          promised it. On a win, every winning-team unit
+                          whose esoriId exists in the shared local roster
+                          gets +1 battlesWon, Rarity re-derived from
+                          MONOLITH_RULESET.md's battles-to-Rarity table
+                          (not hand-edited), and the roster's Stars balance
+                          +10 (a stated simplification — no source doc ties
+                          any currency to "win a battle" specifically; see
+                          the ruleset's own note). Written straight back to
+                          the same ROSTER_KEY localStorage Codex reads,
+                          same-origin, no export/import round-trip needed.
+                          allocatedStars (spent in Codex's new Allocate
+                          Stars screen) now actually applies in
+                          computeBattleStats().
+
+                          Real bug caught before it shipped: finishBattle()
+                          has several independent call sites that each
+                          check win state after their own action (a card
+                          cast, a strike, an AI turn) — more than one can
+                          see "already won" on the same battle. Without a
+                          guard, that would double-award Stars and double-
+                          increment battlesWon. Added a battle.finished
+                          flag; verified by calling finishBattle() twice in
+                          a row directly and confirming rewards apply
+                          exactly once.
   v0.3.0 — 2026-08-04 — Equipment now actually does something: bonuses
                           (Ring/Glove/Boots/Sandals/Helmet — Ability
                           Range, Strike, Special Movement, Distance, Hand
@@ -315,6 +341,7 @@
   <div id="screen-gameover" style="display:none;">
     <div class="panel" style="text-align:center;">
       <h2 id="gameover-heading"></h2>
+      <p class="hint" id="gameover-rewards"></p>
       <button class="btn" onclick="resetToSetup()">New Battle</button>
     </div>
   </div>
@@ -604,6 +631,7 @@ function computeBattleStats(e){
   if (e.weapons?.main === 'dagger') s.strike += 1;
   if (e.weapons?.main === 'wand') s.abilityRange += 1;
   applyEquipmentBonuses(s, e.equipment);
+  Object.entries(e.allocatedStars || {}).forEach(([stat, points]) => { if (s[stat] !== undefined) s[stat] += points; });
   s.rarity = e.rarity || 1;
   s.dmg = 10 * s.rarity;
   s.critDmg = 15 * s.rarity;
@@ -669,6 +697,7 @@ function beginDeployment(){
     interactionMode: null, // 'move' | 'strike' | 'rally' | 'cast'
     castingCardId: null,
     pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
+    finished: false, // guards finishBattle() against double-applying rewards — see that function's own comment
     log: [],
   };
 
@@ -855,10 +884,63 @@ function endTurn(){
   renderBattle();
   maybeRunAiTurn();
 }
+/* ============================================================
+   BATTLE REWARDS — writes straight back to the shared local roster
+   (same-origin, same ROSTER_KEY Codex reads/writes), matching how Team A
+   was read in the first place. Only applies to units whose esoriId
+   actually exists in the local roster — the AI preset squad and any
+   file-imported guest Esori aren't persisted anywhere, by design.
+   ============================================================ */
+const RARITY_TABLE = [
+  { rarity: 2, winsNeeded: 1 }, { rarity: 3, winsNeeded: 2 }, { rarity: 4, winsNeeded: 3 },
+  { rarity: 5, winsNeeded: 5 }, { rarity: 6, winsNeeded: 8 }, { rarity: 7, winsNeeded: 9 },
+  { rarity: 8, winsNeeded: 11 }, { rarity: 9, winsNeeded: 13 },
+];
+function rarityForBattlesWon(wins){
+  let rarity = 1;
+  for (const tier of RARITY_TABLE) if (wins >= tier.winsNeeded) rarity = tier.rarity;
+  return rarity;
+}
+const STARS_PER_WIN = 10; // stated simplification — see MONOLITH_RULESET.md's Rarity/currency notes
+
+function applyBattleRewards(winnerTeam){
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(ROSTER_KEY) || '{}'); } catch(e) { return []; }
+  if (!Array.isArray(saved.roster)) return [];
+  const winningUnits = battle.units.filter(u => u.team === winnerTeam);
+  const rewarded = [];
+  winningUnits.forEach(u => {
+    const record = saved.roster.find(r => r.esoriId === u.esoriId);
+    if (!record) return; // AI preset / guest-imported unit — not a local-roster Esori
+    record.battlesWon = (record.battlesWon || 0) + 1;
+    record.rarity = rarityForBattlesWon(record.battlesWon);
+    record.updatedAt = new Date().toISOString();
+    rewarded.push({ name: record.name, battlesWon: record.battlesWon, rarity: record.rarity });
+  });
+  if (rewarded.length){
+    saved.currency = saved.currency || { stars: 0, fragments: 0, favor: 0, stones: 0 };
+    saved.currency.stars = (saved.currency.stars || 0) + STARS_PER_WIN;
+    localStorage.setItem(ROSTER_KEY, JSON.stringify(saved));
+  }
+  return rewarded;
+}
 function finishBattle(winnerTeam){
+  // finishBattle now has real side effects (writing currency/rarity back
+  // to the shared roster), so it must be idempotent — several call sites
+  // check win independently after their own state change (a card cast, a
+  // strike, an AI turn), and more than one can see "already won" on the
+  // same battle before any of them gets a chance to hide the battle
+  // screen. Without this guard, a win would double-award Stars and
+  // double-increment battlesWon.
+  if (battle.finished) return;
+  battle.finished = true;
   document.getElementById('screen-battle').style.display = 'none';
   document.getElementById('screen-gameover').style.display = 'block';
   document.getElementById('gameover-heading').textContent = `Team ${winnerTeam} wins!`;
+  const rewarded = applyBattleRewards(winnerTeam);
+  document.getElementById('gameover-rewards').innerHTML = rewarded.length
+    ? `+${STARS_PER_WIN} Stars.<br>` + rewarded.map(r => `${escapeHtml(r.name)}: ${r.battlesWon} battle${r.battlesWon===1?'':'s'} won — Rarity ${r.rarity}`).join('<br>')
+    : 'No local-roster Esori on the winning team — nothing saved.';
 }
 function resetToSetup(){
   battle = null;
