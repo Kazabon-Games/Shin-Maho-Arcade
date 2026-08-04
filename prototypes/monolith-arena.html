@@ -11,6 +11,33 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.10.0 — 2026-08-04 — Defensive/Reactive: Nazar, Parry, Nullify Cost,
+                          Mojo. Nazar/Parry/Nullify Cost are "readied" on
+                          play (self-cast, 20 Ini, no board target, pushed
+                          onto the unit's own readiedDefensives array —
+                          any number can be readied, no Passive-style
+                          one-at-a-time cap) and consumed later at one of
+                          two interception points: finalizeCast (an
+                          incoming single-target Aggressive card is
+                          nullified before its operator(s) resolve;
+                          Nullify Cost additionally refunds the attacker's
+                          spent Initiative, the one thing distinguishing
+                          it from Nazar) and tryStrike (a Weapon Strike's
+                          damage is reflected onto the attacker instead of
+                          the defender for Parry). Two stated scope lines:
+                          neither reaches a Target-All Ultimate's
+                          resolution or a Talisman's per-turn AoE tick,
+                          since neither routes through those two
+                          functions; and Nullify Cost is scoped to the
+                          same "incoming Aggressive" trigger as Nazar
+                          rather than a picker for naming a specific
+                          ability. Mojo is architecturally separate — it
+                          targets a placed enemy Talisman directly (same
+                          targetsTalisman path as Destroy/Capture), marks
+                          it `nullified` so it stays on the board but its
+                          AoE stops resolving (resolveTalismanAoE's own
+                          check); board marker dims to show it. HUD now
+                          shows an active unit's readied Defensives.
   v0.9.0 — 2026-08-04 — Ultimate-tier cards playable in battle: 50 Ini
                           flat, both main effects always apply (no
                           Ultimate-level OR yet), fixed range 4 (does not
@@ -315,6 +342,7 @@
   .talisman-marker.ward.teamB{background:var(--rival);color:#fff;}
   .talisman-marker.trap.teamA{background:var(--teal);box-shadow:0 0 0 2px var(--danger) inset;}
   .talisman-marker.trap.teamB{background:var(--rival);color:#fff;box-shadow:0 0 0 2px var(--danger) inset;}
+  .talisman-marker.nullified{opacity:.35;filter:grayscale(1);}
 
   .side-panel{flex:1;min-width:220px;}
   .hud-line{padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.82rem;}
@@ -517,6 +545,14 @@ const OPERATORS = {
   scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
   destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
   capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
+
+  // Defensive/Reactive — see monolith-codex.html's copy of this table for
+  // the full note on the "readied ability" mechanism used here instead of
+  // a generic interrupt system.
+  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive' },
+  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike' },
+  mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
+  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -841,6 +877,7 @@ function beginDeployment(){
       openWonderlandActive: false,
       catalysts: (esori.catalysts || []).slice(),
       talismanInventory: (esori.talismans || []).slice(),
+      readiedDefensives: [], // { operatorId, cardId } — see the Defensive/Reactive comment near playHandCard
     };
   };
 
@@ -978,6 +1015,7 @@ function resolveTalismanAoE(u){
   // still works exactly the same way (ownership is by team, not by a
   // specific caster).
   battle.talismans.forEach(t => {
+    if (t.nullified) return; // Mojo'd — stays on the board, but inert
     if (chebyshev(u.x - t.x, u.y - t.y) > t.aoe) return;
     const def = TALISMAN_TYPES[t.typeId];
     if (!def) return;
@@ -1218,6 +1256,17 @@ function tryStrike(u, x, y){
   if (target){
     const dmg = u.dmg;
     u.hasStruckThisTurn = true;
+    const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
+    if (parryIdx !== -1){
+      target.readiedDefensives.splice(parryIdx, 1);
+      logMsg(`${target.name}'s Parry reflects ${u.name}'s strike for ${dmg}.`, target.team);
+      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
+      applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
+      renderBattle();
+      const w = checkWin();
+      if (w) finishBattle(w);
+      return;
+    }
     logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
     if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
     applyLifeDamage(target, dmg);
@@ -1369,6 +1418,23 @@ function activatePassiveCard(u, card){
   logMsg(`${u.name} activates ${OPERATORS[card.operatorId].name}.`, u.team);
   return true;
 }
+/* ============================================================
+   DEFENSIVE/REACTIVE — Nazar, Parry, Nullify Cost. Readying is
+   self-cast (no board target, same shape as a Passive activation), but
+   unlike a Passive it doesn't take effect now — it waits, consumed the
+   next time a matching opponent action is intercepted (see finalizeCast
+   for Nazar/Nullify Cost, tryStrike for Parry). Any number can be
+   readied at once (source text doesn't cap it the way Passive's "one at
+   a time" is explicit about), so this is a plain array, not a single
+   slot.
+   ============================================================ */
+function readyDefensiveCard(u, card, cost){
+  u.initiative -= cost;
+  discardCard(u, card.id);
+  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id });
+  logMsg(`${u.name} readies ${OPERATORS[card.operatorId].name}.`, u.team);
+  renderBattle();
+}
 function playHandCard(cardId){
   const u = currentUnit();
   if (!u || u.controller !== 'human') return;
@@ -1392,6 +1458,15 @@ function playHandCard(cardId){
   }
   if (category === 'ultimate'){
     playUltimateCard(u, card, cost);
+    return;
+  }
+  if (category === 'defensive' && !OPERATORS[card.operatorId].targetsTalisman){
+    // Nazar/Parry/Nullify Cost — self-cast readying, no board target; the
+    // effect happens later, off the *opponent's* subsequent action. Mojo
+    // (the one Defensive operator with targetsTalisman:true) falls
+    // through to the normal 'cast' board-targeting below instead, same
+    // path Destroy/Capture already use.
+    readyDefensiveCard(u, card, cost);
     return;
   }
   battle.interactionMode = 'cast';
@@ -1500,6 +1575,24 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   // "banish a random other card from your own hand" needs the just-played
   // card already gone, or it could randomly banish itself.
   discardCard(u, card.id);
+  // Defensive interception: an incoming Aggressive card against a target
+  // with a readied Nazar/Nullify Cost is nullified before its effect(s)
+  // resolve. The played card is still spent either way — only the
+  // *effect* is what the defender bought off, per Nazar's own wording
+  // ("nullify an incoming Aggressive"). See the OPERATORS comment above
+  // Nazar's own entry for why this doesn't reach Target-All Ultimates.
+  if (cardCategory(card) === 'aggressive' && target.readiedDefensives?.length){
+    const defIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'nazar' || d.operatorId === 'nullifyCost');
+    if (defIdx !== -1){
+      const def = target.readiedDefensives.splice(defIdx, 1)[0];
+      if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from Nazar
+      logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} nullifies ${u.name}'s ${cardDescription(card)}.`, target.team);
+      battle.interactionMode = null;
+      battle.castingCardId = null;
+      renderBattle();
+      return;
+    }
+  }
   if (chosenOperatorId){
     // OR: exactly one of the two operators, never both and never the
     // card's base operator "by default" — that was a real bug (the base
@@ -1625,6 +1718,15 @@ function applyOperator(operatorId, caster, target, cost){
       }
       break;
     }
+    case 'nullify-talisman': {
+      // Mojo — the Talisman stays on the board (unlike Destroy) but its
+      // AoE effect stops applying; see resolveTalismanAoE's own check.
+      if (battle.talismans.includes(target)){
+        target.nullified = true;
+        logMsg(`${caster.name}'s Mojo nullifies a ${TALISMAN_TYPES[target.typeId].label}'s effect.`, caster.team);
+      }
+      break;
+    }
     // passive-* kinds aren't one-shot cast effects: activation itself is
     // handled in playHandCard (sets activePassive), and the ongoing
     // per-turn effect — Gather's extra draw, Regen's heal, Evade/Shield
@@ -1739,7 +1841,9 @@ function talismanHtml(t){
   const def = TALISMAN_TYPES[t.typeId];
   const teamClass = t.ownerTeam === 'A' ? 'teamA' : 'teamB';
   const letter = def.kind === 'ward' ? 'W' : 'T';
-  return `<div class="talisman-marker ${def.kind} ${teamClass}" title="${escapeHtml(def.label)} (Team ${t.ownerTeam})"><span>${letter}</span></div>`;
+  const nullifiedClass = t.nullified ? ' nullified' : '';
+  const nullifiedNote = t.nullified ? ' (nullified by Mojo, inert)' : '';
+  return `<div class="talisman-marker ${def.kind} ${teamClass}${nullifiedClass}" title="${escapeHtml(def.label)} (Team ${t.ownerTeam})${nullifiedNote}"><span>${letter}</span></div>`;
 }
 function renderBattle(){
   if (!battle) return;
@@ -1807,9 +1911,10 @@ function renderBattle(){
   if (active){
     const passiveNote = active.activePassive ? ` · Passive: ${OPERATORS[active.activePassive].name}` : '';
     const wonderlandNote = active.openWonderlandActive ? ' · <b style="color:var(--gold)">Wonderland Open</b>' : '';
+    const readiedNote = active.readiedDefensives.length ? ` · Readied: ${active.readiedDefensives.map(d => OPERATORS[d.operatorId].name).join(', ')}` : '';
     hudActive.innerHTML = `<b>${escapeHtml(active.name)}</b> (Team ${active.team}, ${POSITIONS[active.position].label})
       — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative}
-      · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}`;
+      · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}${readiedNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
   const blocked = !isHumanTurn || !!battle.pendingOr;

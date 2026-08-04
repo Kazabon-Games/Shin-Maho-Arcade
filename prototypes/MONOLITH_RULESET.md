@@ -250,7 +250,7 @@ numbers for.
 | Type | Cost | Targets | Modifiable |
 |---|---|---|---|
 | Aggressive | 20 Ini | opponent (Life/Ini/Movement/Strike/hand/deck) | yes |
-| Defensive/Reactive | 20 Ini | triggers off opponent's action, once condition met | yes |
+| Defensive/Reactive | 20 Ini | triggers off opponent's action, once condition met | not yet — see the Defensive entry under Fundamental Operators below |
 | Supportive | 20 Ini | ally only | yes |
 | Passive | 15 Ini, +10/turn to sustain | self, always-on | **no**; only one active at a time |
 | Ultimate | 50 Ini | 2 main effects + up to 2 optional modifiers, range 4 (fixed — does not scale with abilityRange bonuses), can hit all valid targets in range | partially (see modifiers) |
@@ -308,6 +308,34 @@ Disarm (Weapon Strike → 0), Root (Movement → 0), Blind (Range → 0), Crush
 incoming Aggressive), Parry (reflect Weapon Strike damage), Mojo (nullify
 a specific Talisman's effect), Nullify Cost (negate the Initiative cost of
 a named ability/category).
+
+**Defensive implementation status:** all four are implemented, via a
+lightweight "readied ability" mechanism rather than a full generic
+interrupt/priority system. Playing Nazar, Parry, or Nullify Cost is a
+self-cast (no board target) that *readies* it — pushed onto the unit's
+own `readiedDefensives` list, costing the normal 20 Ini immediately, with
+no persistent-slot limit the way Passive's "one at a time" is explicit
+about (any number can be readied at once). It's consumed later, off the
+*opponent's* subsequent matching action, at one of exactly two
+interception points: `finalizeCast` (an incoming single-target Aggressive
+card — nullifies it; for Nullify Cost, also refunds the caster's spent
+Initiative, the one thing distinguishing it from Nazar) and `tryStrike`
+(an incoming Weapon Strike — Parry reflects the damage onto the attacker
+instead of the defender). **Two real, stated simplifications:** (1)
+Nullify Cost is scoped to the same "incoming Aggressive" trigger as
+Nazar rather than the literal "a *named* ability/category" — a picker
+for choosing which specific ability to ward against at ready-time is a
+separate, larger scope this pass doesn't build; (2) neither reaches a
+Target-All Ultimate's resolution (which doesn't route through
+`finalizeCast`) or a Talisman's per-turn AoE tick (which isn't an
+"opponent's action" in the same instantaneous sense) — a readied Nazar
+will not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
+architecturally different from the other three: it targets a specific
+placed Talisman directly (same `targetsTalisman` click-a-cell path as
+Destroy/Capture, restricted to enemy-owned Talismans), marking it
+`nullified` so it stays on the board but stops resolving its AoE effect
+— not a reactive trigger at all, so none of the above interrupt-window
+caveats apply to it.
 
 **Supportive** (ally only): Give Mov, Give Strike, Heal (+Life), Give Ini,
 Give Range, Transpose (swap two characters' positions), Accelerate (grant

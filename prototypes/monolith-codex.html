@@ -11,6 +11,13 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.9.0 — 2026-08-04 — Defensive/Reactive operators: Nazar, Parry, Mojo,
+                          Nullify Cost added to OPERATORS (this doc only
+                          needs the data — names, categories, costs — for
+                          Grimoire/deck-building; the readied-ability
+                          runtime lives entirely in Arena). Every operator
+                          category MONOLITH_RULESET.md names is now
+                          represented in the shared library.
   v0.8.0 — 2026-08-04 — Ultimate-tier cards: a small hand-authored
                           ULTIMATE_CARDS set (2 main effects per card,
                           flat 50 Ini), implementing Target All and IF
@@ -617,16 +624,16 @@ const TALISMAN_TYPES = {
    effect "kind" (mirrored by Arena's small resolver switch) instead of
    bespoke per-card code, so a new card is a data row, not new logic.
 
-   Current scope: every operator category is implemented except
-   Defensive/Reactive (Nazar, Parry, Mojo, Nullify Cost — these trigger on
-   the *opponent's* turn, which needs an interrupt/reaction window Arena's
-   turn loop doesn't have yet) and every Special operator except Open
-   Wonderland itself (Rhyzl Step, Daedalus Tesseract, Nhül Partikül —
-   under-specified, Phase-3 stretch per MONOLITH_RULESET.md). Talismans
-   (Destroy/Capture, `targetsTalisman:true` below) are placeable and
-   Utility (Glimpse/Scry/Refine) is implemented — see each doc's own
-   changelog for when. AND/OR are simple compositions, not conditionals,
-   and were always in scope.
+   Current scope: every operator category is implemented, including
+   Defensive/Reactive (Nazar, Parry, Mojo, Nullify Cost — see the note
+   directly above their block below for the lightweight "readied ability"
+   mechanism used instead of a full generic interrupt system), except
+   every Special operator besides Open Wonderland itself (Rhyzl Step,
+   Daedalus Tesseract, Nhül Partikül — under-specified, Phase-3 stretch
+   per MONOLITH_RULESET.md). Talismans (Destroy/Capture, Mojo, all
+   `targetsTalisman:true` below) are placeable and Utility (Glimpse/Scry/
+   Refine) is implemented — see each doc's own changelog for when. AND/OR
+   are simple compositions, not conditionals, and were always in scope.
 
    ULTIMATE_CARDS (below CARD_LIBRARY) are hand-authored, same pattern as
    COMPOSED_CARDS, not generated from OPERATORS — an Ultimate is 2 main
@@ -661,6 +668,25 @@ const OPERATORS = {
   scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
   destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
   capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
+
+  // Defensive/Reactive — 20 Ini base. Nazar/Parry/Nullify Cost are
+  // "readied" when played (self-cast, no board target — see
+  // readyDefensiveCard in Arena) and consumed later, off the *opponent's*
+  // subsequent action, via two narrow interception points rather than a
+  // full generic interrupt/priority system: finalizeCast (an incoming
+  // single-target Aggressive card) and tryStrike (an incoming Weapon
+  // Strike). A stated simplification, not the literal "named
+  // ability/category" text: Nullify Cost is scoped to the same "incoming
+  // Aggressive" trigger as Nazar (a picker for naming a specific ability
+  // at ready-time is a separate scope this pass doesn't build), and
+  // neither reaches Target-All Ultimates or Talisman AoE ticks, which
+  // don't route through those two functions. Mojo is different — it
+  // targets a specific placed Talisman directly (like Destroy/Capture,
+  // reusing that exact targetsTalisman path), not a reactive trigger.
+  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive' },
+  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike' },
+  mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
+  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund' },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },

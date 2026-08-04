@@ -46,19 +46,24 @@ short on purpose.
   creation wizard, roster persistence, a Grimoire/deck editor, and JSON
   import/export; Arena has a working 9x9 battle engine — movement, weapon
   strikes, initiative turn order, defeat/rally, and data-driven ability
-  cards (playable by both the human and the AI), Catalysts, Open
-  Wonderland, and now placeable Talismans (Ward/Trap, Destroy/Capture) —
-  reachable end to end from character creation through a finished battle.
-  `tests/monolith-adversarial.js` covers both documents. Still explicitly
-  out of scope, not silently missing: Mojo (a Defensive operator that
-  nullifies a Talisman's effect — blocked on the same interrupt/reaction
-  window gap as the rest of Defensive/Reactive abilities), Defensive/
-  Reactive abilities generally (need an interrupt/reaction window the turn
-  loop doesn't have), and — now partially closed — Ultimate-tier cards: a
-  small hand-authored `ULTIMATE_CARDS` set implements the 2-main-effects/
-  Target All/IF-WONDERLAND-OPEN/self-declared-Auto-Win subset; the AND/
-  ALSO/IF-THEN modifiers and Ultimate-level OR remain unimplemented — see
-  MONOLITH_RULESET.md's own scope notes for the exact line.
+  cards (playable by both the human and the AI) across every category —
+  Aggressive/Supportive/Passive/Utility, placeable Talismans (Ward/Trap,
+  Destroy/Capture/Mojo), Ultimate-tier cards (2 main effects, Target All,
+  IF WONDERLAND OPEN, self-declared Auto-Win — a bounded subset, see
+  MONOLITH_RULESET.md), and now Defensive/Reactive (Nazar/Parry/Nullify
+  Cost, via a lightweight "readied ability" mechanism intercepted at two
+  points — an incoming Aggressive card, an incoming Weapon Strike — rather
+  than a full generic interrupt/priority system) — reachable end to end
+  from character creation through a finished battle. `tests/
+  monolith-adversarial.js` covers both documents. Every operator category
+  named in MONOLITH_RULESET.md is now implemented at least in its stated,
+  documented-scope form; remaining gaps are the deliberately-deferred
+  sub-features each has its own note for (Ultimate's AND/ALSO/IF-THEN
+  modifiers and Ultimate-level OR, Defensive's "named ability" picker and
+  its two blind spots against Target-All Ultimates/Talisman AoE ticks,
+  Refine's ally-targeting half) plus the three under-specified Special
+  operators (Rhyzl Step, Daedalus Tesseract, Nhül Partikül) — see each
+  doc's own scope notes for the exact line.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
