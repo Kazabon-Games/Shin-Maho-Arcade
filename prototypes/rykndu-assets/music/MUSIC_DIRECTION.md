@@ -165,3 +165,151 @@ reduced-motion/audio-preference parity (done — `setReducedAudio()` plus
 `frame()`'s 0.5 intensity cap). No further music work is currently named
 as open for Rykndu; the next thing that could surface new scope is a
 real playtest pass once the vertical-slice showcase build is live.
+
+## TitleTheme — the title/mode-select screen's own composed OST (v0.1.29, 2026-08-04)
+
+A producer request, verbatim: "I want a soundtrack created that would have
+people doubting it's web audio. The title screen for Rykndu must have the
+cleanest most satisfactory OST created for a mobile game." Before this
+pass the title/mode-select overlay played nothing at all — a real,
+deliberate v1/v2-era decision ("audio should start on the first real
+gameplay input, not the menu choice itself," `hideRyknduMenu()`'s own
+comment), not an oversight. This pass keeps that reasoning intact for
+gameplay's own Music module and adds a second, wholly separate module —
+`TitleTheme` — scoped specifically to the screen Music was never meant to
+cover.
+
+**Why a separate module, not an extension of Music.** Music is the
+adaptive GAMEPLAY score — its intensity/mode/duck machinery is built
+around live combat state that doesn't exist on the title screen at all.
+Bolting a six-voice composed piece onto Music's own graph would mean
+either running that composition through combat-shaped plumbing it doesn't
+need, or growing Music's own `tick()`/`ensureCtx()` in ways this doc's own
+existing sections don't call for. `TitleTheme` shares Music's context/bus
+the same way Music shares SFX's (`SFX.getCtx()`/`SFX.getBus()`, never a
+second `AudioContext`) but is otherwise a fully independent module with
+its own lifecycle, own master bus, own limiter, and its own lookahead
+scheduler — see `rykndu-doll-rig.html`'s own `TitleTheme` module comment
+(~line 2830) for the exact reasoning inline.
+
+**The one constraint change this module makes.** This doc's own "one hard
+constraint" section above pre-authorizes exactly this move: "if a future
+pass wants reverb on the music bed specifically (not the SFX), that's a
+deliberate decision to make explicitly, updating the test's own asserted
+scope in the same commit — not something to add quietly." `TitleTheme`
+builds one real `ConvolverNode` (the `adaptive-game-audio` skill's
+documented exponentially-decaying stereo noise burst technique, ~1.3s
+tail), fed only by the lead/countermelody/shimmer sends — never sub-bass
+(would mud the low end), never the pulse (needs transient clarity), and
+never SFX's four one-shots or Music's own drone, both of which remain
+exactly as dry as before. `tests/rig-audio.js` §6's comment was updated in
+this same commit to state precisely what it now proves (SFX/Music stay
+convolver-free under that suite's programmatic-dismissal setup) rather
+than implying no convolver exists anywhere in the file, per this
+constraint. `tests/rig-title-theme.js` is the new suite that actually
+exercises the real-gesture path and confirms the convolver count stays
+pinned at exactly 1 through a run of real SFX one-shots.
+
+**Activation and lifecycle — deliberately different from Music's own.**
+Music activates as a side effect of `SFX.ensureCtx()`'s own existing
+unconditional cascade (13 gameplay-input call sites). `TitleTheme` has its
+own activation path: a capture-phase, self-removing `pointerdown`/
+`keydown`/`touchstart` listener registered once at load. Since the menu
+overlay blocks the entire page at first paint, the first gesture anywhere
+is unambiguously "the player is looking at the title screen" — no
+overlay-visibility check needed. On first fire it calls both
+`SFX.ensureCtx()` (which, as an accepted, known side effect of its own
+existing cascade, also starts Music) and `TitleTheme.ensureCtx()`.
+`hideRyknduMenu()` gained one new line, `TitleTheme.stop()` — a real
+scheduled fade (scheduler halted first, then the master bus ramped to
+near-silence over ~1.6s, then the module's continuously-running
+oscillators get a scheduled `.stop()` past the fade) rather than an
+instant cut. Once stopped, `TitleTheme` never restarts for the rest of the
+page session, even if `window.reopenRyknduMenu()` is used — layering a
+second, uncoordinated six-voice piece back over a live adaptive gameplay
+score would directly contradict the "produced, not mixed" goal this
+feature exists for. No crossfade-coordination code was needed with Music:
+both start on the same gesture, so Music's own independent fade-in and
+TitleTheme's fade-out on stop simply overlap on the shared bus — that
+overlap **is** the crossfade.
+
+**One consistent tonal identity, not a coincidence.** `TitleTheme`'s
+sub-bass layer uses the exact same two pitches Music's own drone root/
+fifth already use (65.41Hz/C2, 98.0Hz/G2) — deliberately, because Music's
+drone quietly starts as a side effect of the very same `SFX.ensureCtx()`
+cascade `TitleTheme`'s own gesture handler triggers, so the incidental
+bleed reinforces rather than clashes. The FM lead's opening phrase
+literally quotes `ringOutStinger()`'s own exact gesture (root C6 1046.50Hz
+then fifth G6 1567.98Hz, 70ms apart) before extending into a full
+C-pentatonic phrase (C-D-E-G-A) built off the same root/fifth this file's
+signature motif already establishes — one consistent melodic vocabulary
+across SFX stingers, the gameplay score, and this new piece.
+
+**Six real voices over a real 32-second section timeline** (Intro →
+Statement → Build → Full restatement → Tail, `T_STATEMENT`/`T_BUILD`/
+`T_FULL`/`T_TAIL` = 6/14/22/29s): a sub-bass continuity anchor that is
+never stopped/restarted for the module's whole lifetime (same philosophy
+Music's own drone voices already use, so every cycle after the first finds
+it already running rather than re-attacking); a 5-oscillator unison-stack
+pad (±14 cents spread, phase-randomized start) through a shared lowpass,
+routed to both a dry tap and a chorus send (a ~22ms `DelayNode` LFO-
+modulated per the standard chorus trick) with its own slow stereo-pan LFO;
+an FM lead (real 2:1-ratio FM synthesis — a sine modulator into the
+carrier's own `.frequency` AudioParam, not a filter/waveshaper
+approximation) that states the signature motif and the extended phrase;
+an FM countermelody using the same recipe at a gentler modulation index,
+panned opposite the lead, entering only in the Build section (the piece's
+one "a new instrument arrives" depth moment, not a wall-to-wall doubling
+of the lead from the start); a free-timed soft pulse (a 110→55Hz sine
+sweep, fired on its own elapsed-time interval — deliberately NOT locked to
+the section timeline's own clock, this is a menu, not a rhythm cue); and a
+sparse highpassed noise-burst shimmer, mostly wet through the reverb send.
+
+**Scheduling: the lookahead pattern, not Music's `tick()`.** Per
+`adaptive-game-audio`'s own "one-shot vs continuous" rule (also restated
+in this doc's own section below), discrete note/section events need the
+standard Web Audio lookahead-scheduler pattern (a `setInterval` re-checking
+section-entry times against `ctx.currentTime` a fraction of a second
+ahead) — the same idiom `iridescentcosmology.html`'s own `schedulerTick()`
+uses, not Music's per-frame `tick()`/rAF pattern, which is right for
+continuous smoothed parameters (Music has none of TitleTheme's own
+per-frame writes at all — every write in this module is either a
+fixed-duration section-entry `rampGain()` call or a note's own
+self-contained envelope, so the "dying sticks the music" collision class
+this doc already names cannot occur here by construction).
+
+**`TitleTheme._test.previewFromSection(name)`** — a fast-iteration hook
+(`'statement'|'build'|'full'|'tail'`, plus `'intro'`) that hushes every
+layer but the sub-bass and fires the requested section immediately rather
+than waiting out the real 32s cycle, used repeatedly while tuning this
+composition by ear (or, in this environment's case, by live `AudioParam`
+inspection — see the task report for the explicit statement that no
+speakers exist here).
+
+**Judgment calls, named plainly, not asserted as final.** The FM
+modulation indices (`LEAD_FM_INDEX = 2.0`, `CM_FM_INDEX = 0.9` — Hz of
+peak deviation is `carrierFreq * 2 * index`), the reverb's 1.3s tail
+length, and the relative gain balance between the six voices were all
+picked by ear/judgment during this pass and verified only to the extent
+that every scheduled value lands exactly where the code says it should
+(confirmed live via Playwright — see the task report for the actual
+numbers read). None of this replaces a real human listening pass; that
+pass is the actual gate for whether the piece hits the "doesn't sound like
+Web Audio" bar it was written for.
+
+**Verified live** (not read and judged plausible): the full node graph
+traced by `.connect()` call type (exactly 1 `ConvolverNode`, 1 `DelayNode`,
+3 `StereoPannerNode`s, 2 `DynamicsCompressorNode`s — SFX's own plus
+TitleTheme's own separate limiter); every bus's `.gain.value` sampled at
+real elapsed-time checkpoints through a full natural 32s cycle (not
+`previewFromSection` shortcuts) confirmed each layer swelling in at its
+own section and landing at its exact intended target (pad dry 0.16, lead
+dry 0.5, countermelody dry 0.22, shimmer reverb send 0.55, etc.), decaying
+in Tail, and the sub-bass holding rock-steady at 0.34 throughout; a second
+natural cycle's own Statement re-firing correctly (pad/lead ramping back
+up a second time) confirming the loop itself, not just one pass through
+it; and `TitleTheme.stop()`'s master-gain decay sampled at four real
+checkpoints (0.850 just before stop → 0.847 → 0.582 → 0.258 → 0.0001 across
+~1.7s after stop) confirming a genuine, monotonic scheduled fade, not an
+instant cut or a stuck ramp — see `tests/rig-title-theme.js` §7 for the
+exact assertion.

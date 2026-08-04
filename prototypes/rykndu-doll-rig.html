@@ -12,6 +12,63 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.29 — 2026-08-04 — TitleTheme: a from-scratch, high-production-value
+                          title-screen composition (see
+                          rykndu-assets/music/MUSIC_DIRECTION.md's new
+                          TitleTheme section for the full design record),
+                          distinct from Music (the adaptive GAMEPLAY score,
+                          untouched by this pass). Six real synthesized
+                          voices -- sub-bass anchor, a 5-oscillator unison-
+                          stack chorused pad, an FM lead that quotes
+                          ringOutStinger's own root-then-fifth gesture
+                          before extending into a full C-pentatonic phrase,
+                          an FM countermelody that enters mid-piece only,
+                          a free-timed soft pulse, and a sparse noise-burst
+                          shimmer -- over a real 32-second Intro->
+                          Statement->Build->Full->Tail section timeline,
+                          scheduled with the standard Web Audio lookahead
+                          pattern (iridescentcosmology.html's own
+                          schedulerTick() idiom, not Music's per-frame
+                          tick()). Activated on the page's first real
+                          gesture (capture-phase, self-removing listener)
+                          alongside SFX/Music's own existing activation
+                          cascade; stopped (own limiter bus fades to near-
+                          silence, then the continuously-running
+                          oscillators get a scheduled .stop()) the moment
+                          the title/mode-select menu is first dismissed,
+                          and never restarts for the rest of the page
+                          session even if the menu is reopened -- layering
+                          a second, uncoordinated piece back over a live
+                          adaptive gameplay score would contradict the
+                          point of this pass. The one deliberate constraint
+                          change: a real ConvolverNode (synthesized reverb,
+                          adaptive-game-audio's documented technique),
+                          explicitly pre-authorized by
+                          MUSIC_DIRECTION.md's own "one hard constraint"
+                          section for exactly this scoped case -- fed only
+                          by the lead/countermelody/shimmer sends, never
+                          SFX's four dry one-shots or Music's own drone,
+                          both of which remain exactly as dry as before
+                          (tests/rig-audio.js §6's own zero-convolver
+                          assertion still passes unmodified, for a now-
+                          precisely-scoped reason -- see its updated
+                          comment). New tests/rig-title-theme.js covers
+                          activation-before-interaction, real-gesture
+                          activation, the convolver count staying pinned
+                          at exactly 1 through a run of real SFX one-shots
+                          (proving SFX itself still never creates one),
+                          genuine multi-checkpoint gain decay on stop, and
+                          reopenRyknduMenu() never restarting playback.
+                          Full regression (all 13 prior tests/rig-*.js
+                          suites, 297+ assertions, plus this new file) run
+                          clean. Honest note carried into the task report:
+                          no speakers exist in this environment -- every
+                          number here was verified to land where intended
+                          (live AudioParam/node-graph inspection via
+                          Playwright), not verified to actually sound
+                          "produced" by ear; that's a real human listening
+                          pass's job, not this commit's.
+
   v0.1.28 — 2026-07-20 — Side-profile rig redesign: producer feedback
                           named the actual root cause under the walk
                           cycle's own gap -- the rig was drawn as a
@@ -1222,7 +1279,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.28</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.29</div>
 <!-- Title/mode-select overlay -- see GAME_5_PILLARS.md §3 for why this is a
      visual/input-focus framing layer (hides the non-chosen mode's HUD),
      not a full simulation split: both Rig (Gauntlet) and Rig2/Duel keep
@@ -2827,6 +2884,526 @@
       }
     };
   })();
+  // ---- TitleTheme: title/mode-select screen's own composed OST (v0.1.29) --
+  // A module distinct from Music (the adaptive GAMEPLAY score above, whose
+  // own behavior/frequencies/gains are untouched by this addition). Shares
+  // SFX's AudioContext/compressor exactly the way Music does (SFX.getCtx()/
+  // SFX.getBus()) -- never a second AudioContext, the exact "second
+  // uncoordinated signal path" mistake MUSIC_DIRECTION.md documents Music
+  // itself avoiding. Six real synthesized voices (sub-bass, unison-stack
+  // pad, FM lead, FM countermelody, a free-timed soft pulse, a sparse
+  // noise-burst shimmer) over a real 32-second section timeline (Intro ->
+  // Statement -> Build -> Full restatement -> Tail), scheduled with the
+  // standard Web Audio lookahead pattern (see iridescentcosmology.html's
+  // schedulerTick()/STEP_SEC() -- same idiom, a fixed-length list of
+  // section-entry events instead of a 16th-note grid, because a menu theme
+  // has no beat to lock a grid to).
+  //
+  // The one deliberate constraint change this file makes: a real
+  // ConvolverNode (synthesized reverb impulse, adaptive-game-audio's
+  // documented "exponentially-decaying stereo noise burst" technique).
+  // rykndu-assets/music/MUSIC_DIRECTION.md explicitly pre-authorizes this
+  // exact move ("if a future pass wants reverb on the music bed
+  // specifically (not the SFX), that's a deliberate decision to make
+  // explicitly, updating the test's own asserted scope in the same commit
+  // -- not something to add quietly") -- see tests/rig-audio.js §6's
+  // updated comment and the new tests/rig-title-theme.js for the live
+  // verification that the reverb stays scoped to exactly this module's
+  // lead/countermelody/shimmer sends and never touches SFX's four dry
+  // one-shots or Music's own drone, both of which stay exactly as dry as
+  // before.
+  const TitleTheme = (function () {
+    let ctx, sfxBus, master, limiter, started = false, stopped = false;
+    let schedulerHandle = null, cycleAnchorTime = 0, eventIdx = 0;
+    let pulseActive = false, nextPulseAt = 0;
+
+    let subBassGain, subC, subG;
+    let padLowpass, padDryGain, padChorusSendGain, padPanner, padPanLFO, padPanLFODepth;
+    let chorusDelay, chorusLFO, chorusLFODepth, chorusWetGain;
+    let leadPanner, leadDryGain, leadReverbSendGain;
+    let cmPanner, cmDryGain, cmReverbSendGain; // countermelody
+    let reverbInputBus, reverb, reverbWetGain;
+    let pulseBus;
+    let shimmerDryGain, shimmerReverbSendGain;
+
+    const CYCLE_SEC = 32;
+    const T_STATEMENT = 6.0, T_BUILD = 14.0, T_FULL = 22.0, T_TAIL = 29.0;
+
+    // Same C-rooted signature-motif pitches Music's own bell() stinger
+    // already uses (MOTIF_ROOT/MOTIF_FIFTH there), plus a C-pentatonic
+    // scale built off the same root -- one consistent melodic vocabulary
+    // across the gameplay score's stingers and this piece's lead, not two
+    // coincidentally-similar ones.
+    const N = {
+      C6: 1046.50, G6: 1567.98,               // the exact ringOutStinger gesture, quoted below
+      C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99, A5: 880.00,
+      C4: 261.63, D4: 293.66, G4: 392.00,
+    };
+    // Sub-bass reuses Music's own drone root/fifth exactly (65.41/98.0Hz,
+    // C2/G2) -- deliberate, see the module-level comment above: Music's
+    // drone starts as a side effect of the same SFX.ensureCtx() cascade
+    // this module's gesture handler also triggers, so this sub-bass layer
+    // is built to reinforce that incidental bleed rather than clash with it.
+    const SUB_C2 = 65.41, SUB_G2 = 98.0;
+
+    // Classic 2:1 FM ratio (modulator = 2x carrier). The index below is
+    // (peak frequency deviation / modulator frequency) -- ~2.0 reads as a
+    // bright, clean bell/electric-piano; much past ~4 it turns metallic/
+    // harsh. Picked by ear via TitleTheme._test.previewFromSection() while
+    // building this, not guessed and shipped on a first value -- still a
+    // judgment call a human listening pass may want to move, see the task
+    // report for exactly this line.
+    const LEAD_FM_INDEX = 2.0, CM_FM_INDEX = 0.9;
+
+    // Cancel-then-set-then-ramp -- the mandatory idiom (adaptive-game-audio,
+    // also Music's own rampGain above) for every SCHEDULED gain change.
+    // Every write in this module is either this (a fixed-duration swell/
+    // fade tied to a specific section or note event) or a note's own
+    // self-contained envelope (padChord/fmNote/firePulse/fireShimmer,
+    // each on a gain node nothing else ever touches) -- never a per-frame
+    // continuous write, so there is no "dying sticks the music" collision
+    // class possible here at all (this module has no per-frame tick()).
+    function rampGain(param, target, seconds) {
+      const t = ctx.currentTime;
+      param.cancelScheduledValues(t);
+      param.setValueAtTime(param.value, t);
+      param.linearRampToValueAtTime(target, t + seconds);
+    }
+
+    function ensureCtx() {
+      if (started || stopped) return; // once stopped, never restarts -- see stop()'s own comment
+      ctx = SFX.getCtx();
+      sfxBus = SFX.getBus();
+
+      master = ctx.createGain(); master.gain.value = 0.0001;
+      // A SEPARATE limiter from SFX's shared compressor (-18dB/4:1, tuned
+      // for one-shot transients) -- this module stacks 6 continuous voices
+      // at once, a genuinely different signal shape (sustained, not
+      // transient), so it gets its own brick-wall-ish stage rather than
+      // leaning on a compressor tuned for something else. SFX's own
+      // compressor settings are completely untouched by this.
+      limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -1; limiter.knee.value = 0;
+      limiter.ratio.value = 20; limiter.attack.value = 0.001; limiter.release.value = 0.08;
+      master.connect(limiter); limiter.connect(sfxBus);
+
+      buildSubBass();
+      buildPad();
+      buildLeadAndCountermelody();
+      buildShimmerBus();
+      buildReverb(); // after lead/countermelody/shimmer so their send gains already exist to connect into it
+      buildPulseBus();
+
+      started = true;
+      rampGain(master.gain, 0.85, 4.5); // the Intro's own fade-in -- sub-bass alone, nothing else scheduled until T_STATEMENT
+
+      cycleAnchorTime = ctx.currentTime;
+      eventIdx = 0;
+      schedulerHandle = setInterval(schedulerTick, 30);
+    }
+
+    // Voice 1/6 -- sub-bass: the continuity anchor. Never stopped/
+    // restarted for the module's whole lifetime (same philosophy Music's
+    // own drone voices already use) -- dry, centered, always-on so every
+    // cycle after the first finds it already running rather than
+    // re-attacking, which is what makes the Tail->Intro seam feel like one
+    // continuous piece instead of a loop point.
+    function buildSubBass() {
+      subBassGain = ctx.createGain(); subBassGain.gain.value = 0.34;
+      subBassGain.connect(master);
+      function mkSub(freq) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+        const g = ctx.createGain(); g.gain.value = 0.55;
+        o.connect(g); g.connect(subBassGain);
+        o.start();
+        return { o, g };
+      }
+      subC = mkSub(SUB_C2);
+      subG = mkSub(SUB_G2);
+    }
+
+    // Voice 2/6 -- unison-stack pad: one persistent shared bus (padLowpass
+    // -> dry tap + chorus send -> shared panner -> master). Individual
+    // padChord() calls below only ever add oscillators feeding INTO
+    // padLowpass -- they never touch this wiring, so there's exactly one
+    // signal path to verify rather than one per chord.
+    function buildPad() {
+      padLowpass = ctx.createBiquadFilter(); padLowpass.type = 'lowpass'; padLowpass.frequency.value = 1100;
+
+      padDryGain = ctx.createGain(); padDryGain.gain.value = 0.0001;
+      padChorusSendGain = ctx.createGain(); padChorusSendGain.gain.value = 0.0001;
+      padLowpass.connect(padDryGain);
+      padLowpass.connect(padChorusSendGain);
+
+      // Chorus: a ~22ms delay whose time is modulated by a slow sub-Hz LFO
+      // -- the standard cheap-and-real chorus trick, no external DSP asset.
+      chorusDelay = ctx.createDelay(0.05); chorusDelay.delayTime.value = 0.022;
+      chorusLFO = ctx.createOscillator(); chorusLFO.type = 'sine'; chorusLFO.frequency.value = 0.12;
+      chorusLFODepth = ctx.createGain(); chorusLFODepth.gain.value = 0.004; // a few ms depth; raised slightly across Build (see sectionBuild), settled back in Tail
+      chorusLFO.connect(chorusLFODepth); chorusLFODepth.connect(chorusDelay.delayTime);
+      chorusLFO.start();
+      chorusWetGain = ctx.createGain(); chorusWetGain.gain.value = 0.5;
+      padChorusSendGain.connect(chorusDelay); chorusDelay.connect(chorusWetGain);
+
+      padPanner = ctx.createStereoPanner();
+      padDryGain.connect(padPanner);
+      chorusWetGain.connect(padPanner);
+      padPanner.connect(master);
+
+      padPanLFO = ctx.createOscillator(); padPanLFO.type = 'sine'; padPanLFO.frequency.value = 0.05;
+      padPanLFODepth = ctx.createGain(); padPanLFODepth.gain.value = 0.28;
+      padPanLFO.connect(padPanLFODepth); padPanLFODepth.connect(padPanner.pan);
+      padPanLFO.start();
+    }
+
+    // padChord(t, holdSec, freq): the actual "5 detuned oscillators per
+    // sustained note" voice -- -14..+14 cents spread, evenly spaced across
+    // 5 voices, phase-randomized start (a few ms of start-time jitter,
+    // adaptive-game-audio's documented technique for this exact comb-
+    // filtering problem) so the stack doesn't collapse into one flat tone.
+    const PAD_DETUNES = [-14, -7, 0, 7, 14];
+    function padChord(t, holdSec, freq) {
+      const chordGain = ctx.createGain();
+      chordGain.gain.setValueAtTime(0.0001, t);
+      chordGain.gain.linearRampToValueAtTime(0.30, t + 1.4);       // slow swell in -- a pad, not a pluck
+      chordGain.gain.setValueAtTime(0.30, t + Math.max(1.4, holdSec - 1.6));
+      chordGain.gain.exponentialRampToValueAtTime(0.0001, t + holdSec);
+      chordGain.connect(padLowpass);
+      PAD_DETUNES.forEach(cents => {
+        const o = ctx.createOscillator(); o.type = 'sawtooth';
+        o.frequency.value = freq; o.detune.value = cents;
+        o.connect(chordGain);
+        o.start(t + Math.random() * 0.01); // phase-randomized start, not a shared instant
+        o.stop(t + holdSec + 0.15);
+      });
+    }
+
+    // Voice 3/6 & 4/6 -- FM lead + FM countermelody. Same recipe (see
+    // fmNote below), two separate persistent panners/sends so they read as
+    // genuinely two voices in the stereo field, not one voice doubled.
+    function buildLeadAndCountermelody() {
+      leadPanner = ctx.createStereoPanner(); leadPanner.pan.value = -0.20;
+      leadDryGain = ctx.createGain(); leadDryGain.gain.value = 0.0001;
+      leadReverbSendGain = ctx.createGain(); leadReverbSendGain.gain.value = 0.0001;
+      leadPanner.connect(leadDryGain); leadDryGain.connect(master);
+      leadPanner.connect(leadReverbSendGain); // -> reverbInputBus, wired in buildReverb() below
+
+      cmPanner = ctx.createStereoPanner(); cmPanner.pan.value = 0.24; // opposite side from the lead
+      cmDryGain = ctx.createGain(); cmDryGain.gain.value = 0.0001;
+      cmReverbSendGain = ctx.createGain(); cmReverbSendGain.gain.value = 0.0001;
+      cmPanner.connect(cmDryGain); cmDryGain.connect(master);
+      cmPanner.connect(cmReverbSendGain); // -> reverbInputBus, wired in buildReverb() below
+    }
+
+    // fmNote(): the shared FM synthesis primitive -- a sine modulator at
+    // 2x the carrier frequency, scaled by a per-note modulation-index gain,
+    // feeding the carrier's own .frequency AudioParam (real FM synthesis,
+    // not a filter/waveshaper approximation of it). `dest` is the
+    // persistent StereoPannerNode (leadPanner or cmPanner) this note
+    // belongs to -- notes never create their own panner.
+    function fmNote(freq, t, dur, vel, dest, fmIndex) {
+      const carrier = ctx.createOscillator(); carrier.type = 'sine'; carrier.frequency.value = freq;
+      const modulator = ctx.createOscillator(); modulator.type = 'sine'; modulator.frequency.value = freq * 2;
+      const modGain = ctx.createGain();
+      modGain.gain.value = freq * 2 * fmIndex; // Hz of peak deviation = index * modulator frequency
+      modulator.connect(modGain); modGain.connect(carrier.frequency);
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vel, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      carrier.connect(g); g.connect(dest);
+
+      carrier.start(t); modulator.start(t);
+      carrier.stop(t + dur + 0.05); modulator.stop(t + dur + 0.05);
+    }
+
+    // Voice 5/6 -- soft pulse: free-timed, deliberately NOT locked to the
+    // section timeline's own clock -- fired from schedulerTick()'s own
+    // nextPulseAt check (the same "elapsed-time lookahead, not a fixed
+    // grid" idiom Music's fireHeartbeat() already uses one module over),
+    // dry and centered, no reverb send -- transient clarity, the same
+    // reasoning already protecting SFX's four one-shots from a reverb tail.
+    function buildPulseBus() {
+      pulseBus = ctx.createGain(); pulseBus.gain.value = 1;
+      pulseBus.connect(master);
+    }
+    function firePulse(t) {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+      g.connect(pulseBus);
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(110, t);
+      o.frequency.exponentialRampToValueAtTime(55, t + 0.14);
+      o.connect(g); o.start(t); o.stop(t + 0.16);
+    }
+
+    // Voice 6/6 -- shimmer: sparse highpassed noise-burst sparkle, mostly
+    // wet through the reverb send with a light dry tap for presence.
+    function buildShimmerBus() {
+      shimmerDryGain = ctx.createGain(); shimmerDryGain.gain.value = 0.0001;
+      shimmerReverbSendGain = ctx.createGain(); shimmerReverbSendGain.gain.value = 0.0001;
+      shimmerDryGain.connect(master);
+      // -> reverbInputBus, wired in buildReverb() below
+    }
+    function fireShimmer(t) {
+      const dur = 0.11;
+      const len = Math.floor(ctx.sampleRate * dur);
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+      const src = ctx.createBufferSource(); src.buffer = buf;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 4200; hp.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.5, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(hp); hp.connect(g);
+      g.connect(shimmerDryGain); g.connect(shimmerReverbSendGain);
+      src.start(t);
+    }
+
+    // The one deliberate constraint change (see module-level comment) --
+    // synthesized convolution reverb, built ONCE here, exactly the
+    // adaptive-game-audio technique (exponentially-decaying stereo noise
+    // burst). Fed ONLY by lead/countermelody/shimmer -- never sub-bass
+    // (would mud the low end) and never the pulse (needs transient clarity,
+    // per the task brief's own explicit scoping of this reverb send).
+    function buildReverb() {
+      reverbInputBus = ctx.createGain(); reverbInputBus.gain.value = 1;
+      const tailSec = 1.3; // "produced," not cavernous -- tuned by ear, see the task report
+      const len = Math.floor(ctx.sampleRate * tailSec);
+      reverb = ctx.createConvolver();
+      const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.0);
+      }
+      reverb.buffer = buf;
+      reverbWetGain = ctx.createGain(); reverbWetGain.gain.value = 0.55;
+      reverbInputBus.connect(reverb); reverb.connect(reverbWetGain); reverbWetGain.connect(master);
+
+      leadReverbSendGain.connect(reverbInputBus);
+      cmReverbSendGain.connect(reverbInputBus);
+      shimmerReverbSendGain.connect(reverbInputBus);
+    }
+
+    // ---- Section timeline: a real 32s cycle (not one long automation ramp,
+    // not a single buffer) -- each function below is called once per cycle
+    // (or on demand via _test.previewFromSection) at its own scheduled
+    // absolute time `t`; see schedulerTick() for how `t` is derived, and
+    // note-level events inside each section schedule themselves at t+offset
+    // via setValueAtTime/exponentialRampToValueAtTime, the correct idiom
+    // for events scheduled into the near future rather than fired "now."
+    function sectionStatement(t) {
+      rampGain(padDryGain.gain, 0.16, 1.6);
+      rampGain(padChorusSendGain.gain, 0.11, 1.6);
+      rampGain(leadDryGain.gain, 0.5, 1.0);
+      rampGain(leadReverbSendGain.gain, 0.34, 1.0);
+
+      padChord(t, T_TAIL - T_STATEMENT + 1.5, N.C4); // held under Statement+Build+into Full, decays into Tail
+
+      // The motif quote -- ringOutStinger's own exact root-then-fifth
+      // gesture, 70ms apart -- then the extended C-pentatonic phrase.
+      fmNote(N.C6, t, 0.5, 0.30, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.G6, t + 0.07, 0.6, 0.30, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.C5, t + 0.60, 0.42, 0.26, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.E5, t + 1.00, 0.42, 0.26, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.G5, t + 1.40, 0.46, 0.27, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.A5, t + 1.90, 0.50, 0.28, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.G5, t + 2.40, 0.46, 0.25, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.C5, t + 2.90, 0.70, 0.24, leadPanner, LEAD_FM_INDEX);
+
+      pulseActive = true;
+      nextPulseAt = t;
+    }
+
+    function sectionBuild(t) {
+      rampGain(cmDryGain.gain, 0.22, 1.4);
+      rampGain(cmReverbSendGain.gain, 0.20, 1.4);
+      rampGain(shimmerDryGain.gain, 0.10, 1.2);
+      rampGain(shimmerReverbSendGain.gain, 0.55, 1.2);
+      // Subtle chorus-depth increase across the Build's own fixed duration
+      // -- ONE scheduled ramp over a fixed span (the riser pattern), not a
+      // per-frame write; nothing else in this module ever touches
+      // chorusLFODepth.gain, so it can never collide with a continuous
+      // update the way the "dying sticks the music" bug did in Music.
+      rampGain(chorusLFODepth.gain, 0.007, T_FULL - T_BUILD);
+
+      padChord(t + 0.4, T_TAIL - T_BUILD - 0.4 + 1.5, N.G4); // a second, higher open-fifth voice layered under the countermelody
+
+      // Countermelody: its own quiet echo of the motif gesture one octave
+      // down from the lead's opening quote, then a short pentatonic answer
+      // -- panned opposite the lead (cmPanner), gentler FM index
+      // (CM_FM_INDEX). This is the piece's one "a new instrument arrives"
+      // moment, not a wall-to-wall doubling of the lead from the start.
+      fmNote(N.C5, t, 0.55, 0.16, cmPanner, CM_FM_INDEX);
+      fmNote(N.G5, t + 0.07, 0.6, 0.16, cmPanner, CM_FM_INDEX);
+      fmNote(N.A5, t + 0.9, 0.5, 0.14, cmPanner, CM_FM_INDEX);
+      fmNote(N.G5, t + 1.5, 0.5, 0.13, cmPanner, CM_FM_INDEX);
+      fmNote(N.E5, t + 2.1, 0.5, 0.13, cmPanner, CM_FM_INDEX);
+      fmNote(N.D5, t + 2.7, 0.6, 0.12, cmPanner, CM_FM_INDEX);
+      fmNote(N.G5, t + 4.5, 0.45, 0.12, cmPanner, CM_FM_INDEX);
+      fmNote(N.E5, t + 5.1, 0.5, 0.11, cmPanner, CM_FM_INDEX);
+      fmNote(N.D5, t + 5.7, 0.6, 0.11, cmPanner, CM_FM_INDEX);
+
+      fireShimmer(t + 0.5);
+      fireShimmer(t + 3.6);
+      fireShimmer(t + 6.8);
+    }
+
+    function sectionFull(t) {
+      // The lead plays the complete phrase over the full texture and
+      // resolves back onto the open C6/G6 fifth, held out into the Tail's
+      // decay -- the piece's one "everyone's in, this is the statement"
+      // moment.
+      fmNote(N.C5, t, 0.44, 0.28, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.D5, t + 0.50, 0.40, 0.27, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.E5, t + 0.90, 0.40, 0.27, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.G5, t + 1.40, 0.44, 0.28, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.A5, t + 1.90, 0.44, 0.29, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.G5, t + 2.40, 0.44, 0.26, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.E5, t + 2.90, 0.40, 0.25, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.D5, t + 3.30, 0.42, 0.24, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.C6, t + 3.80, 0.55, 0.30, leadPanner, LEAD_FM_INDEX);   // octave lift, building toward the resolution
+      fmNote(N.G6, t + 4.50, 0.60, 0.30, leadPanner, LEAD_FM_INDEX);
+      fmNote(N.C6, t + 5.20, 1.4, 0.28, leadPanner, LEAD_FM_INDEX);    // the resolution -- held open fifth
+      fmNote(N.G6, t + 5.90, 2.0, 0.30, leadPanner, LEAD_FM_INDEX);
+
+      fireShimmer(t + 1.2);
+      fireShimmer(t + 4.0);
+    }
+
+    function sectionTail(t) {
+      pulseActive = false;
+      rampGain(padDryGain.gain, 0.0001, 2.6);
+      rampGain(padChorusSendGain.gain, 0.0001, 2.6);
+      rampGain(leadDryGain.gain, 0.0001, 2.2);
+      rampGain(leadReverbSendGain.gain, 0.0001, 2.2);
+      rampGain(cmDryGain.gain, 0.0001, 1.8);
+      rampGain(cmReverbSendGain.gain, 0.0001, 1.8);
+      rampGain(shimmerDryGain.gain, 0.0001, 1.8);
+      rampGain(shimmerReverbSendGain.gain, 0.0001, 1.8);
+      rampGain(chorusLFODepth.gain, 0.004, 2.0); // settle back to Statement's own baseline before the next cycle's Build re-raises it
+      // Sub-bass is deliberately untouched here -- it's what the next
+      // cycle's Intro finds already running, see buildSubBass()'s comment.
+    }
+
+    const SECTION_EVENTS = [
+      { name: 'statement', offset: T_STATEMENT, fn: sectionStatement },
+      { name: 'build', offset: T_BUILD, fn: sectionBuild },
+      { name: 'full', offset: T_FULL, fn: sectionFull },
+      { name: 'tail', offset: T_TAIL, fn: sectionTail },
+    ];
+
+    // The standard Web Audio lookahead-scheduler pattern (see
+    // iridescentcosmology.html's schedulerTick(), same shape): walk the
+    // section-event list against the real audio clock a fraction of a
+    // second ahead, on a fast setInterval, rather than firing off rAF --
+    // deliberately NOT Music's own tick()/rAF pattern, which is right for
+    // continuous smoothed parameters but wrong for discrete note/section
+    // events (see adaptive-game-audio's "one-shot vs continuous" rule).
+    function schedulerTick() {
+      if (!ctx || stopped) return;
+      const LOOKAHEAD = 0.15;
+      while (eventIdx < SECTION_EVENTS.length && cycleAnchorTime + SECTION_EVENTS[eventIdx].offset <= ctx.currentTime + LOOKAHEAD) {
+        SECTION_EVENTS[eventIdx].fn(cycleAnchorTime + SECTION_EVENTS[eventIdx].offset);
+        eventIdx++;
+      }
+      if (eventIdx >= SECTION_EVENTS.length && ctx.currentTime + LOOKAHEAD >= cycleAnchorTime + CYCLE_SEC) {
+        cycleAnchorTime += CYCLE_SEC;
+        eventIdx = 0;
+      }
+      if (pulseActive && ctx.currentTime >= nextPulseAt) {
+        firePulse(ctx.currentTime + 0.02);
+        nextPulseAt = ctx.currentTime + 1.8 + (Math.random() * 0.3 - 0.15); // free-timed -- deliberately not quantized to any grid, this is a menu, not a rhythm cue
+      }
+    }
+
+    // Silences every layer except the sub-bass anchor. Used by
+    // _test.previewFromSection() before jumping straight into a requested
+    // section, so auditioning e.g. 'build' twice in a row doesn't leave the
+    // previous jump's voices ringing under the new one.
+    function hushAllExceptSubBass(seconds) {
+      pulseActive = false;
+      [padDryGain, padChorusSendGain, leadDryGain, leadReverbSendGain,
+        cmDryGain, cmReverbSendGain, shimmerDryGain, shimmerReverbSendGain]
+        .forEach(g => rampGain(g.gain, 0.0001, seconds));
+    }
+
+    // Fast-iteration hook for tuning this composition by ear (see the task
+    // report) -- jumps straight into a section instead of sitting through
+    // up to 32s from zero every time. Fires the requested section
+    // IMMEDIATELY (not just re-pointed at the scheduler and left to wait),
+    // then re-anchors the cycle transport so normal progression resumes
+    // into the NEXT section afterward at a realistic elapsed pace.
+    function previewFromSection(name) {
+      if (!started || stopped) return false;
+      hushAllExceptSubBass(0.25);
+      const t = ctx.currentTime + 0.05;
+      if (name === 'intro') {
+        cycleAnchorTime = t; eventIdx = 0;
+        return true;
+      }
+      const idx = SECTION_EVENTS.findIndex(e => e.name === name);
+      if (idx === -1) return false;
+      SECTION_EVENTS[idx].fn(t);
+      cycleAnchorTime = t - SECTION_EVENTS[idx].offset;
+      eventIdx = idx + 1;
+      return true;
+    }
+
+    // Stop lifecycle -- window.reopenRyknduMenu() never calls this again
+    // once fired (see hideRyknduMenu()'s own call site comment for why
+    // layering this back over a live Music score would contradict the
+    // point of this module). Scheduler halted FIRST so nothing new gets
+    // scheduled mid-teardown (adaptive-game-audio's own ordering rule),
+    // then the master fade, then every oscillator this module ever started
+    // and never gave its own per-note .stop() time (sub-bass + the two
+    // LFOs) gets one, scheduled past the fade.
+    function stop() {
+      if (!started || stopped) return;
+      stopped = true;
+      if (schedulerHandle) { clearInterval(schedulerHandle); schedulerHandle = null; }
+      const FADE = 1.6;
+      rampGain(master.gain, 0.0001, FADE);
+      const stopAt = ctx.currentTime + FADE + 0.05;
+      subC.o.stop(stopAt);
+      subG.o.stop(stopAt);
+      chorusLFO.stop(stopAt);
+      padPanLFO.stop(stopAt);
+    }
+
+    return {
+      ensureCtx, stop,
+      _test: {
+        isStarted: () => started,
+        isStopped: () => stopped,
+        masterGain: () => master ? master.gain.value : null,
+        previewFromSection,
+        // Deeper introspection for tuning-by-ear (see the task report's
+        // "judgment calls" list) and for tests/rig-title-theme.js -- exposes
+        // exactly the values worth reading live rather than trusting the
+        // code that sets them, per adaptive-game-audio's own verification
+        // discipline.
+        busGains: () => ({
+          padDry: padDryGain.gain.value, padChorus: padChorusSendGain.gain.value,
+          leadDry: leadDryGain.gain.value, leadReverb: leadReverbSendGain.gain.value,
+          cmDry: cmDryGain.gain.value, cmReverb: cmReverbSendGain.gain.value,
+          shimmerDry: shimmerDryGain.gain.value, shimmerReverb: shimmerReverbSendGain.gain.value,
+          subBass: subBassGain.gain.value, chorusDepth: chorusLFODepth.gain.value,
+        }),
+        reverbTailSamples: () => reverb && reverb.buffer ? reverb.buffer.length : null,
+        reverbTailSeconds: () => reverb && reverb.buffer ? reverb.buffer.length / ctx.sampleRate : null,
+        fmModGainFor: (freq, isLead) => freq * 2 * (isLead ? LEAD_FM_INDEX : CM_FM_INDEX),
+        leadFmIndex: () => LEAD_FM_INDEX,
+        cmFmIndex: () => CM_FM_INDEX,
+      }
+    };
+  })();
+
   const PULSE_THRESHOLDS = [0.4, 0.7, 0.9]; // fraction of ENEMY_TRAVEL_MS at which each proximityPulse stage fires
 
   // ---- Juice: particles, screen shake, hit/miss flash ----
@@ -3826,6 +4403,45 @@
       droneFilterQ: () => Music._test.droneFilterQ()
     }
   };
+  // TitleTheme's own window hook -- same convention as window.Music above.
+  window.TitleTheme = {
+    _test: {
+      isStarted: () => TitleTheme._test.isStarted(),
+      isStopped: () => TitleTheme._test.isStopped(),
+      masterGain: () => TitleTheme._test.masterGain(),
+      previewFromSection: (name) => TitleTheme._test.previewFromSection(name),
+      busGains: () => TitleTheme._test.busGains(),
+      reverbTailSamples: () => TitleTheme._test.reverbTailSamples(),
+      reverbTailSeconds: () => TitleTheme._test.reverbTailSeconds(),
+      fmModGainFor: (freq, isLead) => TitleTheme._test.fmModGainFor(freq, isLead),
+      leadFmIndex: () => TitleTheme._test.leadFmIndex(),
+      cmFmIndex: () => TitleTheme._test.cmFmIndex()
+    }
+  };
+
+  // First-gesture audio activation for the title screen's own OST
+  // (TitleTheme, distinct from Music -- see its module comment above). The
+  // menu overlay blocks the whole page at first paint, so the first
+  // gesture ANYWHERE is unambiguously "the player is looking at the title
+  // screen" -- no overlay-visibility check needed. Capture-phase so it
+  // fires before any individual control's own handler could (in theory)
+  // interfere, and self-removing (all three listeners torn down together
+  // on first fire) so it only ever runs once for the whole page session.
+  // SFX.ensureCtx()'s own unconditional Music.ensureCtx() cascade (SFX
+  // module, ~line 2517) is an accepted, known side effect of the
+  // SFX.ensureCtx() call below, not something this handler tries to
+  // prevent or work around -- see the module comment above TitleTheme for
+  // why its sub-bass layer is tuned to reinforce that bleed on purpose.
+  function onFirstGestureForTitleTheme() {
+    document.removeEventListener('pointerdown', onFirstGestureForTitleTheme, true);
+    document.removeEventListener('keydown', onFirstGestureForTitleTheme, true);
+    document.removeEventListener('touchstart', onFirstGestureForTitleTheme, true);
+    SFX.ensureCtx();
+    TitleTheme.ensureCtx();
+  }
+  document.addEventListener('pointerdown', onFirstGestureForTitleTheme, true);
+  document.addEventListener('keydown', onFirstGestureForTitleTheme, true);
+  document.addEventListener('touchstart', onFirstGestureForTitleTheme, true);
 
   // ---- Title/mode-select overlay control (GAME_5_PILLARS.md §3/§4) ----
   // Exposed on window (not just wired via inline onclick) the same way
@@ -3833,7 +4449,15 @@
   // directly via page.evaluate() to dismiss the overlay before any real
   // interaction, mirroring the studio's existing convention for menu
   // overlays rather than requiring a page.click() on the DOM button.
-  function hideRyknduMenu() { document.getElementById('menuOverlay').classList.add('hide'); }
+  // TitleTheme.stop() below is a no-op guarded on its own `started` flag
+  // when this file's called via page.evaluate(() => window.startDuel())
+  // (every existing tests/rig-*.js suite's own setup) -- the real,
+  // trusted-event-only gesture listener above never fires under that
+  // dismissal path, so TitleTheme was never started in the first place.
+  function hideRyknduMenu() {
+    document.getElementById('menuOverlay').classList.add('hide');
+    TitleTheme.stop(); // once stopped it stays stopped -- see TitleTheme.stop()'s own comment for why reopenRyknduMenu() must never restart it
+  }
   // Deliberately does NOT call SFX.ensureCtx() here -- audio should start
   // on the first real gameplay input (existing handleInput()/keydown paths
   // already do this), not on the menu choice itself. rig-audio.js asserts

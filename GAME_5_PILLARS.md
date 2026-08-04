@@ -374,3 +374,92 @@ pass (still not run, per §5); real playtest-calibrated balance numbers
 not a human playtest); a `tests/rig-second-attack.js` addition covering
 the punch follow-up's own drift margin live (currently only computed
 analytically in §7.4, not asserted in a test).
+
+## 8. Title-screen OST (`TitleTheme`, v0.1.29, 2026-08-04) — a real, separately-named feature, not folded into §7's Music v2
+
+A producer request, distinct from §7's own apex-standard showcase pass:
+"I want a soundtrack created that would have people doubting it's web
+audio. The title screen for Rykndu must have the cleanest most
+satisfactory OST created for a mobile game." Before this pass the title/
+mode-select overlay played nothing (a deliberate v1/v2-era scope decision,
+not an oversight — see `hideRyknduMenu()`'s own comment). This pass adds
+`TitleTheme`, a wholly new module distinct from Music (§6/§7's own
+adaptive gameplay score, whose behavior/frequencies/gains are untouched by
+this work) — six real synthesized voices (sub-bass anchor, a 5-oscillator
+chorused unison-stack pad, an FM lead quoting `ringOutStinger()`'s own
+signature-motif gesture before extending into a full C-pentatonic phrase,
+an FM countermelody entering mid-piece, a free-timed soft pulse, and a
+sparse noise-burst shimmer) over a real 32-second Intro→Statement→Build→
+Full→Tail section timeline, activated on the page's first real user
+gesture and stopped the moment the menu is first dismissed. Full design
+record: `prototypes/rykndu-assets/music/MUSIC_DIRECTION.md`'s new
+TitleTheme section.
+
+**The one deliberate constraint change, named explicitly, not smoothed
+over**: `TitleTheme` creates a real `ConvolverNode` (synthesized reverb,
+the `adaptive-game-audio` skill's own documented technique) — new for this
+file. `MUSIC_DIRECTION.md`'s "one hard constraint" section had already
+pre-authorized exactly this move for a future pass that scoped reverb to
+the music bed specifically, never SFX; this pass is that future pass.
+`tests/rig-audio.js` §6's own zero-convolver assertion still passes
+unmodified (its comment was updated in the same commit to state precisely
+what it now proves — SFX and Music stay convolver-free under that suite's
+programmatic-dismissal setup, not "zero anywhere in the file,
+unconditionally"). New `tests/rig-title-theme.js` (25 assertions) covers
+the real-gesture activation path §6's own suite structurally cannot
+(dismissing the menu there is a direct `page.evaluate()` function call,
+never a dispatched DOM event), including confirming the convolver count
+stays pinned at exactly 1 through a run of real SFX one-shots afterward —
+the original invariant's real purpose (SFX itself never creates one),
+preserved and now more precisely proven than before.
+
+**Honest limits of what was verified, stated plainly per this repo's own
+convention**: every number in this composition (FM modulation indices,
+reverb tail length, gain balance between the six voices, section timing)
+was verified to land exactly where the code intends — live `AudioParam`
+values read via Playwright across a real natural 32-second cycle (not
+shortcuts), the full node graph traced by `.connect()` type, and
+`TitleTheme.stop()`'s fade sampled at four real elapsed-time checkpoints.
+**None of that verifies the actual subjective goal** ("doesn't sound like
+Web Audio," "cleanest most satisfactory OST") — no speakers exist in this
+environment. The FM modulation indices, reverb decay length, and the
+relative gain balance between voices were tuned by ear-equivalent
+judgment (informed by real FM-synthesis index/timbre relationships, not
+guessed blind), not measured against a human ear, and are named plainly in
+the task report as judgment calls a human listening pass may still want to
+move. That listening pass — not this section, and not a green test run —
+is the actual gate for calling this feature done.
+
+**Full regression** (all 13 prior `tests/rig-*.js` suites, 297+ assertions,
+plus the new `tests/rig-title-theme.js`) re-run clean. Two pre-existing,
+narrow-timing-margin flakes were found and characterized during this
+pass's own verification (both reproduce at a comparable rate on the
+unmodified file too, confirmed via repeated head-to-head runs, so neither
+is a regression from this work): `rig-side-profile.js`'s already-documented
+player-2-facing-mirror flake (§7's own finding, unchanged) and a
+previously-undocumented one in `rig-parry.js` — its own two `page.
+waitForTimeout()` calls (100ms then 40ms) leave a razor-thin real-world
+margin against the 110ms windup/120ms parry-window boundary, and under
+this environment's variable load the actual elapsed wall-clock time
+occasionally drifts enough to miss the intended parry window. Named here
+as a real, out-of-scope finding for whoever next touches that suite, not
+fixed by this pass.
+
+**Reference-copy gap, named rather than silently left**:
+`prototypes/rykndu-assets/music/rykndu-music-module.js` is a manually-kept-
+in-sync staged reference copy of Music specifically (per
+`MUSIC_DIRECTION.md`'s own "why a folder, not a game file" section) — it
+was not extended to include `TitleTheme` as part of this pass, since the
+task scope named `MUSIC_DIRECTION.md` and this file explicitly but did not
+name that reference-copy file. It is now out of sync with
+`rykndu-doll-rig.html`'s actual module set in the same way it always was
+scoped to be (Music only) — worth a follow-up decision (extend the
+reference copy's own scope to cover TitleTheme too, or explicitly narrow
+its stated purpose to "Music only") rather than assuming either answer.
+
+**Owner sign-off (this section only, retroactive per §0's own convention)**:
+Audio-Designer — the design/verification work above. No Game-Designer/
+Visual-Art-Director/Engineer/Capability-Auditor consultation pass was run
+for this specific feature (unlike §7's own multi-role showcase pass) —
+this was a single-domain audio commission, scoped and verified as such;
+naming that rather than implying a team review happened when it didn't.

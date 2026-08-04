@@ -155,8 +155,24 @@ function ok(cond, label) {
   ok(pulseFreqs.includes(400), 'first proximity pulse is a distinct 400Hz sine burst, not a swept ramp (freqRamps should be empty for it)');
   await page.evaluate(() => window.Rig._test.clearEnemies());
 
-  console.log('6. Deliberately dry mix — no reverb send');
-  ok((await page.evaluate(() => window.__audioCalls.convolvers.length)) === 0, 'zero ConvolverNodes created across the whole session (a reverb tail would blur the transient onset this pass exists to sharpen)');
+  console.log('6. Deliberately dry mix — SFX and Music stay convolver-free under this suite\'s programmatic-dismissal setup');
+  // NOT "zero ConvolverNodes anywhere in this file, unconditionally" any
+  // more — TitleTheme (the title-screen OST, added separately from SFX/
+  // Music) legitimately creates one, per MUSIC_DIRECTION.md's own explicit
+  // pre-authorization for that exact scoped case. This section still
+  // passes unmodified for a real reason, not because that carve-out was
+  // missed: TitleTheme only ever activates from a real, trusted user
+  // gesture (a capture-phase pointerdown/keydown/touchstart listener), and
+  // this file's own setup dismisses the menu via `page.evaluate(() =>
+  // window.startDuel())` — a direct in-page function call, not a
+  // dispatched DOM event — so that listener genuinely never fires here.
+  // What this assertion actually proves now: SFX's four one-shots and
+  // Music's adaptive drone/stinger score both still create zero
+  // ConvolverNodes, exactly as before — see tests/rig-title-theme.js for
+  // the live confirmation that a real gesture DOES create exactly one
+  // (TitleTheme's own, and only its own), and that it stays pinned at 1
+  // even after a run of real SFX one-shots afterward.
+  ok((await page.evaluate(() => window.__audioCalls.convolvers.length)) === 0, 'zero ConvolverNodes created by SFX/Music across this suite\'s programmatic-dismissal setup (TitleTheme, which legitimately owns one, never activates without a real user gesture)');
 
   console.log('7. Music v2 — mode tracking and per-mode drone-filter Q differentiation');
   await page.evaluate(() => window.startGauntlet());
