@@ -11,6 +11,23 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.5.0 — 2026-08-04 — Open Wonderland wired into battle, within a real
+                          permanent boundary stated plainly: the
+                          Activation/Effect/Sustain conditions are player-
+                          authored free text (see Tulpa creation), which
+                          code cannot parse or evaluate — there is no
+                          generic "did the stated condition just happen"
+                          check. What's built instead: a self-declared
+                          Open/Close toggle (the player's own call, same
+                          trust model as a tabletop GM), the actual text
+                          shown as a standing reminder in a new HUD panel,
+                          and the one piece of the ruleset's "if Wonderland
+                          open" behavior that's mechanically real without
+                          needing Ultimates/IF-THEN (neither exist yet):
+                          Supportive cards draw an extra card while open.
+                          The Target-All/single-defeat/extra-effect
+                          Ultimate behaviors stay deferred, not silently
+                          dropped — named in this comment, not hidden.
   v0.4.0 — 2026-08-04 — Battle outcomes now persist — closing a real gap
                           left open since Phase 0's own scaffold comment
                           promised it. On a win, every winning-team unit
@@ -319,6 +336,11 @@
             <button class="btn secondary" id="action-switch-weapon" onclick="switchWeapon(currentUnit())">Switch Weapon (10 Ini)</button>
             <button class="btn danger" id="action-end" onclick="endTurn()">End Turn</button>
           </div>
+        </div>
+        <div class="panel" id="wonderland-panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Open Wonderland</h3>
+          <div id="wonderland-text" class="hint"></div>
+          <button class="btn secondary" id="action-wonderland" onclick="toggleOpenWonderland(currentUnit())"></button>
         </div>
         <div class="panel">
           <h3 style="margin-top:0;font-size:.85rem;">Hand</h3>
@@ -681,6 +703,8 @@ function beginDeployment(){
       distanceRemaining: 0, hasStruckThisTurn: false,
       deck: shuffle(startingDeck), hand: [], discard: [],
       activePassive: null, passiveNextCost: 15,
+      tulpaName: esori.tulpa?.name || '', openWonderland: esori.tulpa?.openWonderland || null,
+      openWonderlandActive: false,
     };
   };
 
@@ -1072,6 +1096,29 @@ function switchWeapon(u){
   logMsg(`${u.name} switches to ${WEAPONS[newMain].label}.`, u.team);
   renderBattle();
 }
+/* ============================================================
+   OPEN WONDERLAND — the Activation Condition, Effect, and Sustain
+   Condition are all player-authored free text (see Tulpa creation in
+   Codex), which code fundamentally cannot parse or evaluate — there is
+   no generic way to check "did the player's own stated condition just
+   happen." This is a real, permanent boundary, not a TODO: the toggle
+   below is the player self-attesting their condition was met, the same
+   way a tabletop GM would trust a player's call, not an automated check.
+   What IS mechanically real: Supportive cards draw an extra card while
+   Wonderland is open, matching MONOLITH_RULESET.md's "extra draw on
+   Supportives... if Wonderland open." The Ultimate-tier and Basic-
+   modifier behaviors the ruleset also ties to this state aren't wired up
+   yet because Ultimates/IF-THEN don't exist yet — deferred, not silently
+   dropped. There's no forced per-turn re-confirmation of the Sustain
+   Condition either — once toggled open, it stays open until the player
+   closes it themselves, a stated simplification of "repeated each turn."
+   ============================================================ */
+function toggleOpenWonderland(u){
+  if (!u || u.controller !== 'human') return;
+  u.openWonderlandActive = !u.openWonderlandActive;
+  logMsg(`${u.name}'s Wonderland is now ${u.openWonderlandActive ? 'OPEN' : 'closed'}.`, u.team);
+  renderBattle();
+}
 
 /* ============================================================
    ABILITY CARDS — playing a card from hand.
@@ -1163,6 +1210,10 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   }
   discardCard(u, card.id);
   logMsg(`${u.name} plays ${cardDescription(card)} on ${target.name}.`, u.team);
+  if (u.openWonderlandActive && cardCategory(card) === 'supportive'){
+    drawCard(u); // "extra draw on Supportives... if Wonderland open," per MONOLITH_RULESET.md
+    logMsg(`${u.name}'s open Wonderland grants an extra draw.`, u.team);
+  }
   battle.interactionMode = null;
   battle.castingCardId = null;
   renderBattle();
@@ -1375,9 +1426,10 @@ function renderBattle(){
   const hudActive = document.getElementById('hud-active');
   if (active){
     const passiveNote = active.activePassive ? ` · Passive: ${OPERATORS[active.activePassive].name}` : '';
+    const wonderlandNote = active.openWonderlandActive ? ' · <b style="color:var(--gold)">Wonderland Open</b>' : '';
     hudActive.innerHTML = `<b>${escapeHtml(active.name)}</b> (Team ${active.team}, ${POSITIONS[active.position].label})
       — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative}
-      · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}`;
+      · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
   const blocked = !isHumanTurn || !!battle.pendingOr;
@@ -1389,6 +1441,21 @@ function renderBattle(){
   switchBtn.disabled = blocked || !active || active.initiative < 10;
   if (active?.weaponSecondary) switchBtn.textContent = `Switch to ${WEAPONS[active.weaponSecondary].label} (10 Ini)`;
   document.getElementById('action-end').disabled = blocked;
+
+  const wonderlandBtn = document.getElementById('action-wonderland');
+  const wonderlandText = document.getElementById('wonderland-text');
+  if (active && active.openWonderland){
+    wonderlandText.innerHTML = `<b>${escapeHtml(active.tulpaName)}</b><br>
+      <i>Activation:</i> ${escapeHtml(active.openWonderland.activation)}<br>
+      <i>Effect:</i> ${escapeHtml(active.openWonderland.effect)}<br>
+      <i>Sustain:</i> ${escapeHtml(active.openWonderland.sustain)}`;
+    wonderlandBtn.style.display = 'inline-block';
+    wonderlandBtn.disabled = blocked;
+    wonderlandBtn.textContent = active.openWonderlandActive ? 'Close Wonderland' : 'Open Wonderland (self-declared)';
+  } else {
+    wonderlandText.textContent = '';
+    wonderlandBtn.style.display = 'none';
+  }
 
   const handGroup = document.getElementById('hand-card-group');
   const handHint = document.getElementById('hand-hint');
