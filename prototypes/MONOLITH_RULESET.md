@@ -158,7 +158,7 @@ numbers for.
 | Hands | Glove | +1 Strike |
 | Feet | Boots | +1 Special Movement |
 | Feet | Sandals | +1 Distance |
-| Body | Cloak | +1 Talisman AoE (inert until Talismans are placeable on the grid) |
+| Body | Cloak | +1 Talisman AoE |
 | Body | Pouch | +1 Pack |
 
 ## Items
@@ -166,14 +166,36 @@ numbers for.
 - **Talismans** — placed on the grid, range 4 to place, area of effect 1,
   cost 5 Initiative. Persist until struck (declaring a Strike against the
   cell destroys it). Characters starting their turn in the AoE are
-  affected.
+  affected. No source doc says *how* they're affected beyond "buffs,
+  debuffs, or other effects" — implemented as two concrete types, a
+  stated design decision: **Ward** (allies of the owner who start their
+  turn in range heal +2 Life) and **Trap** (opponents of the owner who
+  start their turn in range take 2 damage). This owner/team distinction
+  is also what makes Capture (an Aggressive operator — "take control of a
+  target Talisman") mean something concrete: capturing flips `ownerTeam`
+  only, keeping the Talisman's own `kind` (Ward stays Ward, Trap stays
+  Trap) — a pure ownership flip, not a type conversion, matching the
+  generic operator-resolver's own philosophy of reusing existing `kind`
+  behavior rather than special-casing. The mechanical effect still
+  changes completely from the new owner's perspective purely because
+  Ward/Trap's team check (`ally-of-owner` / `opponent-of-owner`) reads
+  live off `ownerTeam`: a captured enemy Trap immediately stops hurting
+  its captor and starts hurting its original owner's team instead — a
+  captured enemy Ward immediately starts healing the captor's own team
+  instead of the original owner's. Not a cosmetic label change, but not a
+  literal "Trap becomes a healing Ward" conversion either — that would
+  need bespoke per-type capture logic where a plain ownership flip
+  already gets the meaningful result. Brought into battle from a
+  character's owned Talisman inventory, capped by Pack jointly with
+  Catalysts (per Pack's own stat description above — "Items (Talismans
+  and Catalysts) you can have equipped" is one shared pool, not two
+  separate caps).
 - **Catalysts** — single-use, permanent stat boost for the rest of the
   battle, cost 10 Initiative, resolve like an ability. No source doc
   states which stats or how much — implemented as +2 to one of Life/
   Strike/Distance/Initiative/Pack, a stated default. Brought into battle
   from a character's owned Catalyst inventory, capped by Pack (shared
-  with Talismans, per the Pack stat's own description above — Talismans
-  aren't placeable yet, so Pack is Catalyst-only capacity for now).
+  with Talismans, per the Pack stat's own description above).
 
 ## Combat
 
@@ -184,7 +206,9 @@ numbers for.
 - Per turn: Movement (up to Distance, declarable repeatedly while distance
   remains), Special Movement (ability-granted, max 2 cells unless stated),
   one Weapon Strike if a target is in weapon range, play Ability cards
-  (pay Initiative), place Talismans (within Ability Range).
+  (pay Initiative), place Talismans (range 4, per Items — not Ability
+  Range; a Talisman's placement range doesn't scale with the wand/Bishop
+  Ability-Range bonuses the way a targeted ability card does).
 - Round end: refresh Initiative for everyone, resolve continuous effects
   (Passives, Talismans), check Open Wonderland sustain conditions, reshuffle
   discard into deck if a player's deck is empty.

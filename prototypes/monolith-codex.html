@@ -11,6 +11,20 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.7.0 — 2026-08-04 — New Manage Talismans screen, mirroring Manage
+                          Catalysts exactly: Ward/Trap types (per
+                          MONOLITH_RULESET.md's Items section design
+                          decision), capped by the character's effective
+                          Pack. Catalysts and Talismans now share one Pack
+                          pool (itemsCarried() = catalysts.length +
+                          talismans.length), not two independent caps —
+                          the Catalysts screen's own cap check was updated
+                          to match. New destroy/capture operator entries
+                          (targetsTalisman:true) so Arena's Destroy/
+                          Capture cards exist in the shared OPERATORS
+                          table; Codex itself has no board to place a
+                          Talisman on, so placement/AoE/destruction are
+                          all Arena-side.
   v0.6.0 — 2026-08-04 — Utility operators: Glimpse and Scry (both kept as
                           Aggressive-targeting per this doc's already-
                           documented resolution, generated into the
@@ -323,12 +337,26 @@
   <div id="catalysts-view" style="display:none;">
     <div class="panel">
       <h2 style="margin-top:0;" id="catalysts-heading">Manage Catalysts</h2>
-      <p class="hint">Owned: <span id="catalysts-count"></span>/<span id="catalysts-cap"></span> (Pack). Single-use — consumed when used in battle for a permanent-for-the-battle boost.</p>
+      <p class="hint">Carried: <span id="catalysts-count"></span>/<span id="catalysts-cap"></span> (Pack — shared with Talismans, one pool). Single-use — consumed when used in battle for a permanent-for-the-battle boost.</p>
       <div class="opt-group" id="catalysts-owned"></div>
       <p class="hint" style="margin-top:1rem;">Acquire one:</p>
       <div class="opt-group" id="catalysts-shop"></div>
       <div class="nav-bar">
         <button class="nav-btn primary" onclick="closeCatalystsEditor()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ TALISMANS ============ -->
+  <div id="talismans-view" style="display:none;">
+    <div class="panel">
+      <h2 style="margin-top:0;" id="talismans-heading">Manage Talismans</h2>
+      <p class="hint">Carried: <span id="talismans-count"></span>/<span id="talismans-cap"></span> (Pack — shared with Catalysts, one pool). Placed on the grid in battle; persist until struck or Destroyed.</p>
+      <div class="opt-group" id="talismans-owned"></div>
+      <p class="hint" style="margin-top:1rem;">Acquire one:</p>
+      <div class="opt-group" id="talismans-shop"></div>
+      <div class="nav-bar">
+        <button class="nav-btn primary" onclick="closeTalismansEditor()">Done</button>
       </div>
     </div>
   </div>
@@ -543,14 +571,33 @@ const CATALYST_TYPES = {
 function effectivePack(record){
   // Mirrors the Pack-affecting slice of Arena's computeBattleStats, kept
   // here too (duplicated, per this repo's no-shared-imports convention)
-  // since the Catalyst picker's cap needs it and Codex has no reason to
-  // run the rest of computeBattleStats.
+  // since the Catalyst/Talisman pickers' cap needs it and Codex has no
+  // reason to run the rest of computeBattleStats.
   let pack = 3;
   if (record.position === 'infiltrator') pack += 2;
   if (record.equipment?.body === 'pouch') pack += 1;
   pack += record.allocatedStars?.pack || 0;
   return pack;
 }
+function itemsCarried(record){
+  // Catalysts and Talismans share one Pack pool — "Items (Talismans and
+  // Catalysts) you can have equipped," per MONOLITH_RULESET.md's Pack
+  // stat description — not two independent caps.
+  return (record.catalysts?.length || 0) + (record.talismans?.length || 0);
+}
+
+/* ============================================================
+   TALISMANS — placed on the grid, persist until struck or Destroyed.
+   No source doc specifies an effect beyond "buffs, debuffs, or other
+   effects" — implemented as two concrete, documented types (see
+   MONOLITH_RULESET.md's Items section for the full reasoning): Ward
+   (heals allies who start their turn in range) and Trap (damages
+   opponents who start their turn in range).
+   ============================================================ */
+const TALISMAN_TYPES = {
+  'tal-ward': { label:'Ward Talisman', kind:'ward', amount:2 },
+  'tal-trap': { label:'Trap Talisman', kind:'trap', amount:2 },
+};
 
 /* ============================================================
    ABILITY OPERATORS + CARDS — data-driven, per MONOLITH_RULESET.md's
@@ -588,6 +635,8 @@ const OPERATORS = {
   crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
   glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
   scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
+  destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
+  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
@@ -714,6 +763,7 @@ function renderRoster(){
         <button class="btn secondary" onclick="openEquipmentEditor('${r.esoriId}')">Edit Equipment</button>
         <button class="btn secondary" onclick="openStarsAllocator('${r.esoriId}')">Allocate Stars</button>
         <button class="btn secondary" onclick="openCatalystsEditor('${r.esoriId}')">Manage Catalysts</button>
+        <button class="btn secondary" onclick="openTalismansEditor('${r.esoriId}')">Manage Talismans</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','backup')">Export (Backup)</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','share')">Export (Share)</button>
         <button class="btn danger" onclick="deleteEsori('${r.esoriId}')">Delete</button>
@@ -995,6 +1045,7 @@ function saveEsori(){
       weapons: { main: wpn, secondary: secondaryWpn },
       allocatedStars: {},
       catalysts: [],
+      talismans: [],
       battlesWon: 0,
       notes: '',
     });
@@ -1176,14 +1227,14 @@ function renderCatalystsView(){
   if (!r) return;
   r.catalysts = r.catalysts || [];
   const cap = effectivePack(r);
-  document.getElementById('catalysts-count').textContent = r.catalysts.length;
+  document.getElementById('catalysts-count').textContent = itemsCarried(r);
   document.getElementById('catalysts-cap').textContent = cap;
   document.getElementById('catalysts-owned').innerHTML = r.catalysts.length
     ? r.catalysts.map((catId, idx) => `<button class="opt-btn" onclick="removeCatalyst(${idx})">
         <strong>${CATALYST_TYPES[catId]?.label || catId}</strong><span class="opt-sub">Remove</span>
       </button>`).join('')
     : '<p class="empty-note">None owned yet.</p>';
-  const atCap = r.catalysts.length >= cap;
+  const atCap = itemsCarried(r) >= cap;
   document.getElementById('catalysts-shop').innerHTML = Object.entries(CATALYST_TYPES).map(([catId, def]) => `
     <button class="opt-btn" ${atCap ? 'disabled' : ''} onclick="addCatalyst('${catId}')">
       <strong>${def.label}</strong><span class="opt-sub">+${def.amount} ${def.stat}, single-use</span>
@@ -1193,7 +1244,7 @@ function addCatalyst(catId){
   const r = state.roster.find(x => x.esoriId === catalystsEditingId);
   if (!r) return;
   r.catalysts = r.catalysts || [];
-  if (r.catalysts.length >= effectivePack(r)) return;
+  if (itemsCarried(r) >= effectivePack(r)) return;
   r.catalysts.push(catId);
   r.updatedAt = new Date().toISOString();
   save();
@@ -1210,6 +1261,59 @@ function removeCatalyst(idx){
 function closeCatalystsEditor(){
   catalystsEditingId = null;
   document.getElementById('catalysts-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+  refreshHome();
+}
+
+let talismansEditingId = null;
+function openTalismansEditor(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  talismansEditingId = esoriId;
+  document.getElementById('talismans-heading').textContent = `Manage Talismans — ${r.name}`;
+  renderTalismansView();
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('talismans-view').style.display = 'block';
+}
+function renderTalismansView(){
+  const r = state.roster.find(x => x.esoriId === talismansEditingId);
+  if (!r) return;
+  r.talismans = r.talismans || [];
+  const cap = effectivePack(r);
+  document.getElementById('talismans-count').textContent = itemsCarried(r);
+  document.getElementById('talismans-cap').textContent = cap;
+  document.getElementById('talismans-owned').innerHTML = r.talismans.length
+    ? r.talismans.map((talId, idx) => `<button class="opt-btn" onclick="removeTalisman(${idx})">
+        <strong>${TALISMAN_TYPES[talId]?.label || talId}</strong><span class="opt-sub">Remove</span>
+      </button>`).join('')
+    : '<p class="empty-note">None owned yet.</p>';
+  const atCap = itemsCarried(r) >= cap;
+  document.getElementById('talismans-shop').innerHTML = Object.entries(TALISMAN_TYPES).map(([talId, def]) => `
+    <button class="opt-btn" ${atCap ? 'disabled' : ''} onclick="addTalisman('${talId}')">
+      <strong>${def.label}</strong><span class="opt-sub">${def.kind === 'ward' ? 'Heals' : 'Damages'} ${def.amount} to whoever starts their turn in range</span>
+    </button>`).join('');
+}
+function addTalisman(talId){
+  const r = state.roster.find(x => x.esoriId === talismansEditingId);
+  if (!r) return;
+  r.talismans = r.talismans || [];
+  if (itemsCarried(r) >= effectivePack(r)) return;
+  r.talismans.push(talId);
+  r.updatedAt = new Date().toISOString();
+  save();
+  renderTalismansView();
+}
+function removeTalisman(idx){
+  const r = state.roster.find(x => x.esoriId === talismansEditingId);
+  if (!r) return;
+  r.talismans.splice(idx, 1);
+  r.updatedAt = new Date().toISOString();
+  save();
+  renderTalismansView();
+}
+function closeTalismansEditor(){
+  talismansEditingId = null;
+  document.getElementById('talismans-view').style.display = 'none';
   document.getElementById('home-view').style.display = 'block';
   refreshHome();
 }
@@ -1411,6 +1515,7 @@ window.Codex._test = {
       weapons: { main: opts.weapon, secondary: opts.secondaryWeapon || null },
       allocatedStars: opts.allocatedStars || {},
       catalysts: opts.catalysts || [],
+      talismans: opts.talismans || [],
       battlesWon: opts.battlesWon || 0,
       notes: '',
     };

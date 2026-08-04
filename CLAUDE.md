@@ -46,14 +46,16 @@ short on purpose.
   creation wizard, roster persistence, a Grimoire/deck editor, and JSON
   import/export; Arena has a working 9x9 battle engine — movement, weapon
   strikes, initiative turn order, defeat/rally, and data-driven ability
-  cards (playable by both the human and the AI) — reachable end to end
-  from character creation through a finished battle. `tests/
-  monolith-adversarial.js` covers both documents. Still explicitly out of
-  scope, not silently missing: Talisman-dependent operators (Destroy/
-  Capture/Mojo — Talismans aren't placeable on the grid yet), Defensive/
-  Reactive abilities (need an interrupt/reaction window the turn loop
-  doesn't have), and Ultimate-tier cards — see MONOLITH_RULESET.md's own
-  scope notes.
+  cards (playable by both the human and the AI), Catalysts, Open
+  Wonderland, and now placeable Talismans (Ward/Trap, Destroy/Capture) —
+  reachable end to end from character creation through a finished battle.
+  `tests/monolith-adversarial.js` covers both documents. Still explicitly
+  out of scope, not silently missing: Mojo (a Defensive operator that
+  nullifies a Talisman's effect — blocked on the same interrupt/reaction
+  window gap as the rest of Defensive/Reactive abilities), Defensive/
+  Reactive abilities generally (need an interrupt/reaction window the turn
+  loop doesn't have), and Ultimate-tier cards — see MONOLITH_RULESET.md's
+  own scope notes.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

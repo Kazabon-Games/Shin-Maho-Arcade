@@ -11,6 +11,30 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.8.0 — 2026-08-04 — Talismans: placeable on the grid (5 Ini, range 4)
+                          from a character's talismanInventory, persist
+                          until struck (a Weapon Strike against an empty
+                          Talisman-holding cell now destroys it instead of
+                          no-opping) or Destroyed/Captured via the new
+                          aggressive cards. Ward (+2 Life) and Trap (−2
+                          Life) trigger on any unit starting its turn in
+                          AoE, per team ownership. Destroy/Capture route
+                          through a parallel targeting path (tryCast/
+                          renderBattle special-case OPERATORS[...].
+                          targetsTalisman) since they target battle.
+                          talismans, not battle.units — Capture flips only
+                          ownerTeam (kind stays Ward/Trap as placed), which
+                          is enough to fully reverse who it helps/hurts
+                          since Ward/Trap's own team check reads ownerTeam
+                          live. Cloak's "+1 Talisman AoE" bonus (previously
+                          inert, no placement mechanic existed to apply it
+                          to) is now real: captured on the talisman itself
+                          at placement time from the placer's own
+                          talismanAoE stat, not read from whoever triggers
+                          it later. New Talismans battle panel mirrors
+                          Catalysts'. Board cells render a small colored
+                          marker (team color, W/T letter) for placed
+                          Talismans.
   v0.7.0 — 2026-08-04 — Glimpse/Scry (reveal a random/full opposing hand
                           via the battle log — no hidden-hand mechanic to
                           protect here, this is local hotseat/vs-AI, not
@@ -265,6 +289,12 @@
   .lifebar-wrap{position:absolute;bottom:1px;left:8%;right:8%;height:3px;background:rgba(0,0,0,0.35);border-radius:2px;}
   .lifebar-fill{height:100%;border-radius:2px;background:var(--safe);}
   .lifebar-fill.low{background:var(--danger);}
+  .talisman-marker{position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:3px;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;color:#08201c;}
+  .talisman-marker span{transform:rotate(-45deg);}
+  .talisman-marker.ward.teamA{background:var(--teal);}
+  .talisman-marker.ward.teamB{background:var(--rival);color:#fff;}
+  .talisman-marker.trap.teamA{background:var(--teal);box-shadow:0 0 0 2px var(--danger) inset;}
+  .talisman-marker.trap.teamB{background:var(--rival);color:#fff;box-shadow:0 0 0 2px var(--danger) inset;}
 
   .side-panel{flex:1;min-width:220px;}
   .hud-line{padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.82rem;}
@@ -365,6 +395,11 @@
           <p class="hint" id="catalysts-hint"></p>
           <div class="opt-group" id="catalysts-battle-group"></div>
         </div>
+        <div class="panel" id="talismans-panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Talismans</h3>
+          <p class="hint" id="talismans-hint"></p>
+          <div class="opt-group" id="talismans-battle-group"></div>
+        </div>
         <div class="panel">
           <h3 style="margin-top:0;font-size:.85rem;">Hand</h3>
           <p class="hint" id="hand-hint"></p>
@@ -458,6 +493,8 @@ const OPERATORS = {
   crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
   glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
   scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
+  destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
+  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -546,6 +583,20 @@ const CATALYST_TYPES = {
   'cat-initiative': { label:'Essence Catalyst', stat:'initiative', amount:2 },
   'cat-pack': { label:'Satchel Catalyst', stat:'pack', amount:2 },
 };
+
+/* ============================================================
+   TALISMANS — identical data to monolith-codex.html's copy. See
+   MONOLITH_RULESET.md's Items section for the Ward/Trap design decision.
+   TALISMAN_PLACE_RANGE and TALISMAN_AOE are both stated in the ruleset
+   (range 4 to place, AoE 1); TALISMAN_PLACE_COST (5 Ini) too.
+   ============================================================ */
+const TALISMAN_TYPES = {
+  'tal-ward': { label:'Ward Talisman', kind:'ward', amount:2 },
+  'tal-trap': { label:'Trap Talisman', kind:'trap', amount:2 },
+};
+const TALISMAN_PLACE_RANGE = 4;
+const TALISMAN_AOE = 1;
+const TALISMAN_PLACE_COST = 5;
 
 const PRESET_AI_SQUAD = [
   { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
@@ -683,7 +734,7 @@ function handleGuestImport(){
    BATTLE STATS + WEAPON RANGE
    ============================================================ */
 function computeBattleStats(e){
-  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE, handSize: BASE_HAND_SIZE };
+  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE, handSize: BASE_HAND_SIZE, talismanAoE: TALISMAN_AOE };
   if (e.class === 'knight') s.strike += 1;
   if (e.class === 'rook') s.specialMovement += 1;
   if (e.class === 'bishop') s.abilityRange += 1;
@@ -736,7 +787,7 @@ function beginDeployment(){
       maxLife: stats.life, life: stats.life,
       maxInitiative: stats.initiative, initiative: stats.initiative,
       strike: stats.strike, distance: stats.distance, specialMovement: stats.specialMovement,
-      abilityRange: stats.abilityRange, maxHandSize: stats.handSize,
+      abilityRange: stats.abilityRange, maxHandSize: stats.handSize, talismanAoE: stats.talismanAoE,
       weaponMain: stats.weaponMain, weaponSecondary: esori.weapons?.secondary || null,
       dmg: stats.dmg, critDmg: stats.critDmg,
       defeated: false, rallied: false, removed: false,
@@ -746,6 +797,7 @@ function beginDeployment(){
       tulpaName: esori.tulpa?.name || '', openWonderland: esori.tulpa?.openWonderland || null,
       openWonderlandActive: false,
       catalysts: (esori.catalysts || []).slice(),
+      talismanInventory: (esori.talismans || []).slice(),
     };
   };
 
@@ -763,6 +815,8 @@ function beginDeployment(){
     castingCardId: null,
     pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
     finished: false, // guards finishBattle() against double-applying rewards — see that function's own comment
+    talismans: [], // placed-on-grid state: { id, ownerTeam, x, y, typeId }
+    placingTalismanType: null, // set while in 'place-talisman' interaction mode
     log: [],
   };
 
@@ -872,6 +926,26 @@ function beginUnitTurn(u){
   u.hasStruckThisTurn = false;
   drawCard(u);
   sustainPassive(u);
+  resolveTalismanAoE(u);
+}
+function resolveTalismanAoE(u){
+  // "Characters starting their turn in the AoE are affected" — per
+  // MONOLITH_RULESET.md. Ward heals the owner's own team, Trap damages
+  // the opposing team; a talisman with no living owner-side unit left
+  // still works exactly the same way (ownership is by team, not by a
+  // specific caster).
+  battle.talismans.forEach(t => {
+    if (chebyshev(u.x - t.x, u.y - t.y) > t.aoe) return;
+    const def = TALISMAN_TYPES[t.typeId];
+    if (!def) return;
+    if (def.kind === 'ward' && u.team === t.ownerTeam){
+      applyLifeHeal(u, def.amount);
+      logMsg(`${u.name} is healed ${def.amount} by a Ward Talisman.`, u.team);
+    } else if (def.kind === 'trap' && u.team !== t.ownerTeam){
+      applyLifeDamage(u, def.amount);
+      logMsg(`${u.name} takes ${def.amount} from a Trap Talisman.`, u.team);
+    }
+  });
 }
 function shuffle(arr){
   const a = arr.slice();
@@ -1033,6 +1107,7 @@ function setInteractionMode(mode){
   if (!u || u.controller !== 'human' || battle.pendingOr) return;
   battle.interactionMode = battle.interactionMode === mode ? null : mode;
   battle.castingCardId = null; // leaving 'cast' mode (or entering a different one) drops any in-progress card selection
+  battle.placingTalismanType = null;
   renderBattle();
 }
 function reachableCells(x0, y0, maxSteps){
@@ -1068,6 +1143,7 @@ function handleBoardClick(x, y){
   else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
   else if (battle.interactionMode === 'rally') tryRally(u, x, y);
   else if (battle.interactionMode === 'cast') tryCast(u, x, y);
+  else if (battle.interactionMode === 'place-talisman') tryPlaceTalisman(u, x, y);
 }
 function tryMove(u, x, y){
   const reach = reachableCells(u.x, u.y, u.distanceRemaining);
@@ -1094,17 +1170,30 @@ function applyLifeHeal(target, amount){
 }
 function tryStrike(u, x, y){
   if (u.hasStruckThisTurn) return;
-  const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.defeated && !t.removed);
-  if (!target) return;
   if (!inWeaponRange(u.weaponMain, x-u.x, y-u.y)) return;
-  const dmg = u.dmg;
+  const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.defeated && !t.removed);
+  if (target){
+    const dmg = u.dmg;
+    u.hasStruckThisTurn = true;
+    logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
+    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+    applyLifeDamage(target, dmg);
+    renderBattle();
+    const w = checkWin();
+    if (w) finishBattle(w);
+    return;
+  }
+  // "Persist until struck (declaring a Strike against the cell destroys
+  // it)," per MONOLITH_RULESET.md — a Weapon Strike against an empty cell
+  // holding a Talisman destroys it instead of hitting a unit.
+  const talIdx = battle.talismans.findIndex(t => t.x===x && t.y===y);
+  if (talIdx === -1) return;
+  const tal = battle.talismans[talIdx];
   u.hasStruckThisTurn = true;
-  logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
+  battle.talismans.splice(talIdx, 1);
+  logMsg(`${u.name} strikes and destroys a ${TALISMAN_TYPES[tal.typeId].label}.`, u.team);
   if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
-  applyLifeDamage(target, dmg);
   renderBattle();
-  const w = checkWin();
-  if (w) finishBattle(w);
 }
 function tryRally(u, x, y){
   const target = battle.units.find(t => t.x===x && t.y===y && t.team===u.team && t.defeated && !t.removed);
@@ -1179,6 +1268,40 @@ function useCatalyst(u, catalystId){
 }
 
 /* ============================================================
+   TALISMANS — place from inventory (5 Ini, range 4, per
+   MONOLITH_RULESET.md), persist on the grid until struck or Destroyed.
+   ============================================================ */
+function startPlaceTalisman(typeId){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human' || !u.talismanInventory.includes(typeId)) return;
+  battle.interactionMode = 'place-talisman';
+  battle.placingTalismanType = typeId;
+  renderBattle();
+}
+function tryPlaceTalisman(u, x, y){
+  const typeId = battle.placingTalismanType;
+  if (!typeId) return;
+  const key = `${x},${y}`;
+  if (OBSTACLES.has(key)) return;
+  if (battle.units.some(t => !t.removed && t.x === x && t.y === y)) return;
+  if (battle.talismans.some(t => t.x === x && t.y === y)) return;
+  if (chebyshev(x - u.x, y - u.y) > TALISMAN_PLACE_RANGE) return;
+  if (u.initiative < TALISMAN_PLACE_COST) return;
+  const idx = u.talismanInventory.indexOf(typeId);
+  if (idx === -1) return;
+  u.talismanInventory.splice(idx, 1);
+  u.initiative -= TALISMAN_PLACE_COST;
+  // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
+  // at placement time — the bonus belongs to who placed it, not to
+  // whichever character later triggers it.
+  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, x, y, typeId, aoe: u.talismanAoE });
+  logMsg(`${u.name} places a ${TALISMAN_TYPES[typeId].label}.`, u.team);
+  battle.interactionMode = null;
+  battle.placingTalismanType = null;
+  renderBattle();
+}
+
+/* ============================================================
    ABILITY CARDS — playing a card from hand.
    Aggressive/Supportive: click the card (enters 'cast' mode), then click
    a valid target on the board, same interaction shape as Strike/Rally.
@@ -1232,6 +1355,19 @@ function tryCast(u, x, y){
   const card = cardById(battle.castingCardId);
   if (!card) return;
   const category = cardCategory(card);
+  const op = OPERATORS[card.operatorId];
+  if (op?.targetsTalisman){
+    // Destroy/Capture target a placed Talisman, not a unit — Capture only
+    // makes sense against an opponent's Talisman (your own is already
+    // yours), so both share the "enemy-owned" restriction.
+    const target = battle.talismans.find(t => t.x === x && t.y === y && t.ownerTeam !== u.team);
+    if (!target) return;
+    if (chebyshev(x - u.x, y - u.y) > u.abilityRange) return;
+    const cost = cardCost(card);
+    if (u.initiative < cost) return;
+    finalizeCast(u, target, card, cost);
+    return;
+  }
   const target = battle.units.find(t => !t.removed && t.x === x && t.y === y);
   if (!target) return;
   if (category === 'aggressive' && (target.team === u.team || target.defeated)) return;
@@ -1277,7 +1413,8 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     applyOperator(card.operatorId, u, target, cost);
     if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
   }
-  logMsg(`${u.name} plays ${cardDescription(card)} on ${target.name}.`, u.team);
+  const targetLabel = target.name || TALISMAN_TYPES[target.typeId]?.label || 'a target';
+  logMsg(`${u.name} plays ${cardDescription(card)} on ${targetLabel}.`, u.team);
   if (u.openWonderlandActive && cardCategory(card) === 'supportive'){
     drawCard(u); // "extra draw on Supportives... if Wonderland open," per MONOLITH_RULESET.md
     logMsg(`${u.name}'s open Wonderland grants an extra draw.`, u.team);
@@ -1369,6 +1506,21 @@ function applyOperator(operatorId, caster, target, cost){
         logMsg(`${caster.name} refines away ${cardById(banished)?.name || banished} from their own hand.`, caster.team);
       } else {
         logMsg(`${caster.name} has nothing else in hand to Refine away.`, caster.team);
+      }
+      break;
+    }
+    case 'destroy-talisman': {
+      const idx = battle.talismans.indexOf(target);
+      if (idx !== -1){
+        battle.talismans.splice(idx, 1);
+        logMsg(`${caster.name} destroys a ${TALISMAN_TYPES[target.typeId].label}.`, caster.team);
+      }
+      break;
+    }
+    case 'capture-talisman': {
+      if (battle.talismans.includes(target)){
+        target.ownerTeam = caster.team;
+        logMsg(`${caster.name} captures a ${TALISMAN_TYPES[target.typeId].label}.`, caster.team);
       }
       break;
     }
@@ -1477,15 +1629,23 @@ function tokenHtml(u, showActive){
   return `<div class="${classes.join(' ')}" title="${escapeHtml(u.name)}">${initials}</div>
     <div class="lifebar-wrap"><div class="lifebar-fill ${lifePct<=30?'low':''}" style="width:${lifePct}%"></div></div>`;
 }
+function talismanHtml(t){
+  const def = TALISMAN_TYPES[t.typeId];
+  const teamClass = t.ownerTeam === 'A' ? 'teamA' : 'teamB';
+  const letter = def.kind === 'ward' ? 'W' : 'T';
+  return `<div class="talisman-marker ${def.kind} ${teamClass}" title="${escapeHtml(def.label)} (Team ${t.ownerTeam})"><span>${letter}</span></div>`;
+}
 function renderBattle(){
   if (!battle) return;
   const active = currentUnit();
   const board = document.getElementById('battle-board');
-  let reach = {}, targets = [];
+  let reach = {}, targets = [], talismanTargets = [], placeCells = [];
   if (active && active.controller === 'human' && !battle.pendingOr){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, active.distanceRemaining);
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       targets = battle.units.filter(t => t.team !== active.team && !t.defeated && !t.removed && inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
+      // Weapon Strike also destroys an unoccupied cell's Talisman — see tryStrike.
+      talismanTargets = battle.talismans.filter(t => inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
     }
     if (battle.interactionMode === 'rally'){
       targets = battle.units.filter(t => t.team === active.team && t.defeated && !t.removed && chebyshev(t.x-active.x, t.y-active.y) <= 1);
@@ -1493,9 +1653,23 @@ function renderBattle(){
     if (battle.interactionMode === 'cast' && battle.castingCardId){
       const card = cardById(battle.castingCardId);
       const category = cardCategory(card);
-      targets = battle.units.filter(t => !t.removed && !t.defeated
-        && (category === 'aggressive' ? t.team !== active.team : t.team === active.team)
-        && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
+      const op = OPERATORS[card.operatorId];
+      if (op?.targetsTalisman){
+        talismanTargets = battle.talismans.filter(t => t.ownerTeam !== active.team && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
+      } else {
+        targets = battle.units.filter(t => !t.removed && !t.defeated
+          && (category === 'aggressive' ? t.team !== active.team : t.team === active.team)
+          && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
+      }
+    }
+    if (battle.interactionMode === 'place-talisman' && battle.placingTalismanType){
+      for (let py = 0; py < BOARD_SIZE; py++) for (let px = 0; px < BOARD_SIZE; px++){
+        if (chebyshev(px-active.x, py-active.y) > TALISMAN_PLACE_RANGE) continue;
+        if (OBSTACLES.has(`${px},${py}`)) continue;
+        if (battle.units.some(t => !t.removed && t.x===px && t.y===py)) continue;
+        if (battle.talismans.some(t => t.x===px && t.y===py)) continue;
+        placeCells.push([px,py]);
+      }
     }
   }
   let html = '';
@@ -1504,12 +1678,16 @@ function renderBattle(){
       const key = `${x},${y}`;
       const obstacle = OBSTACLES.has(key);
       const unit = battle.units.find(u => !u.removed && u.x===x && u.y===y);
+      const talisman = battle.talismans.find(t => t.x===x && t.y===y);
       const classes = ['cell'];
       if (obstacle) classes.push('obstacle');
       if (reach[key] !== undefined) classes.push('reachable');
       if (targets.some(t => t.x===x && t.y===y)) classes.push('targetable');
+      if (talismanTargets.some(t => t.x===x && t.y===y)) classes.push('targetable');
+      if (placeCells.some(([px,py]) => px===x && py===y)) classes.push('reachable');
       html += `<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}" onclick="handleBoardClick(${x},${y})">`;
       if (unit) html += tokenHtml(unit, active && unit.esoriId === active.esoriId);
+      if (talisman) html += talismanHtml(talisman);
       html += '</div>';
     }
   }
@@ -1564,6 +1742,24 @@ function renderBattle(){
   } else {
     catalystsHint.textContent = active ? 'None carried.' : '';
     catalystsGroup.innerHTML = '';
+  }
+
+  const talismansHint = document.getElementById('talismans-hint');
+  const talismansGroup = document.getElementById('talismans-battle-group');
+  if (active && active.talismanInventory.length){
+    const placing = battle.interactionMode === 'place-talisman';
+    talismansHint.textContent = `Click to place — range ${TALISMAN_PLACE_RANGE}, AoE ${active.talismanAoE}, ${TALISMAN_PLACE_COST} Ini.`;
+    talismansGroup.innerHTML = active.talismanInventory.map(typeId => {
+      const def = TALISMAN_TYPES[typeId];
+      const affordable = active.initiative >= TALISMAN_PLACE_COST;
+      const sel = placing && battle.placingTalismanType === typeId;
+      return `<button class="opt-btn ${sel ? 'sel' : ''}" ${(blocked || !affordable) ? 'disabled' : ''} onclick="startPlaceTalisman('${typeId}')">
+        <strong>${def.label}</strong><span class="opt-sub">${def.kind === 'ward' ? '+' : '−'}${def.amount} Life on trigger · ${TALISMAN_PLACE_COST} Ini</span>
+      </button>`;
+    }).join('');
+  } else {
+    talismansHint.textContent = active ? 'None carried.' : '';
+    talismansGroup.innerHTML = '';
   }
 
   const handGroup = document.getElementById('hand-card-group');
