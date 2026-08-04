@@ -11,6 +11,18 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.8.0 — 2026-08-04 — Ultimate-tier cards: a small hand-authored
+                          ULTIMATE_CARDS set (2 main effects per card,
+                          flat 50 Ini), implementing Target All and IF
+                          WONDERLAND OPEN plus a self-declared Auto-Win
+                          Condition (same free-text trust boundary as
+                          Open Wonderland's own conditions). AND/ALSO/
+                          IF-THEN modifiers and Ultimate-level OR are NOT
+                          implemented — a real scope line, not silently
+                          missing, see MONOLITH_RULESET.md. Deck editor
+                          now enforces a hard 2-Ultimate ceiling per deck
+                          (never a forced minimum of 1) and shows the
+                          Ultimate count alongside the overall card cap.
   v0.7.0 — 2026-08-04 — New Manage Talismans screen, mirroring Manage
                           Catalysts exactly: Ward/Trap types (per
                           MONOLITH_RULESET.md's Items section design
@@ -605,19 +617,31 @@ const TALISMAN_TYPES = {
    effect "kind" (mirrored by Arena's small resolver switch) instead of
    bespoke per-card code, so a new card is a data row, not new logic.
 
-   Scope for this pass: the operators that map onto mechanics that
-   already exist in Arena (life/initiative/strike/movement/ability-range,
-   hand/deck/discard, the single active Passive slot). Deliberately NOT
-   included yet, same as MONOLITH_RULESET.md's own "known unresolved
-   gaps": Talisman-dependent operators (Destroy, Capture, Mojo — Talismans
-   aren't placeable on the grid at all yet), Defensive/Reactive operators
-   (Nazar, Parry, Nullify Cost — these trigger on the *opponent's* turn,
-   which needs an interrupt/reaction window Arena's turn loop doesn't have
-   yet), Utility (Glimpse, Scry, Refine), and every Special operator
-   (Rhyzl Step, Daedalus Tesseract, Nhül Partikül, Open Wonderland) plus
-   Ultimate-tier cards and the IF/THEN modifier (both need a condition-
-   evaluation system this pass doesn't build). AND/OR are implemented —
-   they're simple compositions, not conditionals.
+   Current scope: every operator category is implemented except
+   Defensive/Reactive (Nazar, Parry, Mojo, Nullify Cost — these trigger on
+   the *opponent's* turn, which needs an interrupt/reaction window Arena's
+   turn loop doesn't have yet) and every Special operator except Open
+   Wonderland itself (Rhyzl Step, Daedalus Tesseract, Nhül Partikül —
+   under-specified, Phase-3 stretch per MONOLITH_RULESET.md). Talismans
+   (Destroy/Capture, `targetsTalisman:true` below) are placeable and
+   Utility (Glimpse/Scry/Refine) is implemented — see each doc's own
+   changelog for when. AND/OR are simple compositions, not conditionals,
+   and were always in scope.
+
+   ULTIMATE_CARDS (below CARD_LIBRARY) are hand-authored, same pattern as
+   COMPOSED_CARDS, not generated from OPERATORS — an Ultimate is 2 main
+   effects at once, not one. Implemented this pass: two-effect resolution,
+   Target All, and IF WONDERLAND OPEN as a live gate. Explicitly NOT
+   implemented, a real scope line not an oversight: the AND/ALSO/IF-THEN
+   modifiers (IF/THEN specifically needs a condition-evaluation system
+   this build doesn't have — same boundary as Open Wonderland's own
+   Activation/Sustain text), and OR at the Ultimate two-effect level
+   (Basic OR — choose one of two *different* operators — already exists;
+   an Ultimate choosing between its own two main effects is a distinct
+   design question, not just OR reused, and isn't resolved yet). Auto-Win
+   Condition is implemented as a self-declared confirm() at cast time —
+   the exact same free-text-can't-be-parsed boundary Open Wonderland's
+   Activation Condition already established, not a new kind of guess.
    ============================================================ */
 const OPERATORS = {
   // Aggressive — target one opponent, 20 Ini base
@@ -670,18 +694,38 @@ const COMPOSED_CARDS = [
   { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
   { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
 ];
+// Ultimate cards — hand-authored, not generated: an Ultimate names 2 main
+// effects (both existing OPERATORS) instead of 1, plus flags for the
+// implemented-this-pass subset of Ultimate-only features (see the big
+// comment above for what's deliberately not here yet).
+const ULTIMATE_RANGE = 4; // fixed per MONOLITH_RULESET.md — does NOT scale with abilityRange the way a Basic card's targeting does
+const ULTIMATE_CARDS = [
+  { id:'ult-devastate', name:'Devastate', category:'ultimate', effects:['inflict','afflict'] },
+  { id:'ult-guardian-surge', name:'Guardian Surge', category:'ultimate', effects:['heal','giveIni'], targetAll:true },
+  { id:'ult-cataclysm', name:'Cataclysm', category:'ultimate', effects:['inflict','disarm'], targetAll:true, autoWin:true },
+  { id:'ult-transcendence', name:'Transcendence', category:'ultimate', effects:['giveStrike','giveRange'], ifWonderlandOpen:true },
+];
 const CARD_LIBRARY = [
   ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
+  ...ULTIMATE_CARDS,
 ];
 function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
-function cardCategory(card){ return OPERATORS[card.operatorId].category; }
+function cardCategory(card){ return card.category || OPERATORS[card.operatorId].category; }
 function cardCost(card){
+  if (cardCategory(card) === 'ultimate') return 50; // flat, per MONOLITH_RULESET.md — none of the hand-authored Ultimates use a costed modifier yet
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;
 }
 function cardDescription(card){
+  if (cardCategory(card) === 'ultimate'){
+    let text = card.effects.map(id => OPERATORS[id].name).join(' + ');
+    if (card.targetAll) text += ' (Target All)';
+    if (card.ifWonderlandOpen) text += ' (IF Wonderland Open)';
+    if (card.autoWin) text += ' (Auto-Win)';
+    return text;
+  }
   const op = OPERATORS[card.operatorId];
   let text = op.name;
   if (card.modifier){
@@ -1086,7 +1130,7 @@ function openDeckEditor(esoriId){
     const card = cardById(cardId);
     if (!card) return '';
     const inDeck = (r.deck || []).includes(cardId);
-    return `<button class="opt-btn ${inDeck ? 'sel' : ''}" data-key="${cardId}" onclick="selMulti('deck-card-group', this, ${cap}); updateDeckCount(${cap});">
+    return `<button class="opt-btn ${inDeck ? 'sel' : ''}" data-key="${cardId}" onclick="toggleDeckCard('${cardId}', ${cap});">
       <strong>${escapeHtml(card.name)}</strong>
       <span class="opt-sub">${cardCategory(card)} · ${cardCost(card)} Ini</span>
     </button>`;
@@ -1095,9 +1139,36 @@ function openDeckEditor(esoriId){
   document.getElementById('home-view').style.display = 'none';
   document.getElementById('deck-view').style.display = 'block';
 }
+// Overall cap (10, or 11 with Necklace) bumps the earliest-selected card
+// out, same as selMulti elsewhere — but Ultimates get their own hard sub-
+// cap of 2 ("no duplicate Ultimates" per MONOLITH_RULESET.md is already
+// satisfied for free since every Ultimate id in the Grimoire is unique;
+// this caps *how many distinct* Ultimates, which the source text also
+// implies via its "7 Basic + 2 Ultimate" / "9 Basic + 1 Ultimate" formats
+// — enforced here as a ceiling, not a forced minimum, since forcing a
+// minimum would strand any deck built before an Ultimate was ever owned).
+function toggleDeckCard(cardId, cap){
+  const group = document.getElementById('deck-card-group');
+  const btn = group.querySelector(`[data-key="${cardId}"]`);
+  if (btn.classList.contains('sel')){
+    btn.classList.remove('sel');
+  } else {
+    if (cardCategory(cardById(cardId)) === 'ultimate'){
+      const ultimateCount = [...group.querySelectorAll('.opt-btn.sel')].filter(b => cardCategory(cardById(b.dataset.key)) === 'ultimate').length;
+      if (ultimateCount >= 2) return;
+    }
+    if (group.querySelectorAll('.opt-btn.sel').length >= cap){
+      const first = group.querySelector('.opt-btn.sel');
+      if (first) first.classList.remove('sel');
+    }
+    btn.classList.add('sel');
+  }
+  updateDeckCount(cap);
+}
 function updateDeckCount(cap){
   const selected = document.querySelectorAll('#deck-card-group .opt-btn.sel');
-  document.getElementById('deck-count').textContent = `${selected.length}/${cap}`;
+  const ultimateCount = [...selected].filter(btn => cardCategory(cardById(btn.dataset.key)) === 'ultimate').length;
+  document.getElementById('deck-count').textContent = `${selected.length}/${cap} (${ultimateCount}/2 Ultimates)`;
   const totalCost = [...selected].reduce((sum, btn) => sum + cardCost(cardById(btn.dataset.key)), 0);
   document.getElementById('deck-cost-note').textContent = `Total Initiative cost if all played in one round: ${totalCost}`;
 }

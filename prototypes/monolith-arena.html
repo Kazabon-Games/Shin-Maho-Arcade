@@ -11,6 +11,26 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.9.0 — 2026-08-04 — Ultimate-tier cards playable in battle: 50 Ini
+                          flat, both main effects always apply (no
+                          Ultimate-level OR yet), fixed range 4 (does not
+                          scale with abilityRange). Target-All Ultimates
+                          resolve self-cast, like a Utility card, against
+                          every valid unit in range at once; single-target
+                          Ultimates reuse the existing click-a-highlighted-
+                          cell 'cast' flow via a parallel branch in
+                          tryCast/renderBattle (isUltimate reads effects[0]
+                          instead of operatorId, and range 4 instead of
+                          abilityRange). IF WONDERLAND OPEN is a live gate
+                          read off openWonderlandActive; Auto-Win Condition
+                          is a native confirm() dialog at cast time — self-
+                          declared, not evaluated, same boundary as Open
+                          Wonderland's own Activation Condition. AI does
+                          not play Ultimates yet (excluded from
+                          aiChooseAndPlayCard's affordable-cards filter,
+                          same treatment as OR cards, and for the same
+                          reason: no real basis to evaluate Target All or
+                          an Auto-Win claim).
   v0.8.0 — 2026-08-04 — Talismans: placeable on the grid (5 Ini, range 4)
                           from a character's talismanInventory, persist
                           until struck (a Weapon Strike against an empty
@@ -473,10 +493,12 @@ const WEAPONS = {
 
 /* ============================================================
    ABILITY OPERATORS + CARDS — identical data to monolith-codex.html's
-   copy (see that file's own comment for scope/deferral notes: Talisman-
-   dependent, Defensive/Reactive, Utility, Special, and Ultimate-tier
-   operators are all deliberately not here yet). Duplicated rather than
-   imported, per this repo's no-shared-imports convention.
+   copy (see that file's own comment for the current scope line:
+   Defensive/Reactive and the Rhyzl-Step/Daedalus-Tesseract/Nhül-Partikül
+   Special operators remain deliberately unimplemented; everything else,
+   including Talismans, Utility, and now Ultimate-tier cards, is here).
+   Duplicated rather than imported, per this repo's no-shared-imports
+   convention.
    ============================================================ */
 const OPERATORS = {
   inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
@@ -517,18 +539,39 @@ const COMPOSED_CARDS = [
   { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
   { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
 ];
+// Ultimate cards — identical data to monolith-codex.html's copy. See that
+// file's own comment above ULTIMATE_CARDS for exactly what's implemented
+// (two-effect resolution, Target All, IF WONDERLAND OPEN, self-declared
+// Auto-Win) vs. deliberately not yet (AND/ALSO/IF-THEN modifiers, OR
+// between an Ultimate's own two main effects).
+const ULTIMATE_RANGE = 4;
+const ULTIMATE_CARDS = [
+  { id:'ult-devastate', name:'Devastate', category:'ultimate', effects:['inflict','afflict'] },
+  { id:'ult-guardian-surge', name:'Guardian Surge', category:'ultimate', effects:['heal','giveIni'], targetAll:true },
+  { id:'ult-cataclysm', name:'Cataclysm', category:'ultimate', effects:['inflict','disarm'], targetAll:true, autoWin:true },
+  { id:'ult-transcendence', name:'Transcendence', category:'ultimate', effects:['giveStrike','giveRange'], ifWonderlandOpen:true },
+];
 const CARD_LIBRARY = [
   ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
+  ...ULTIMATE_CARDS,
 ];
 function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
-function cardCategory(card){ return OPERATORS[card.operatorId].category; }
+function cardCategory(card){ return card.category || OPERATORS[card.operatorId].category; }
 function cardCost(card){
+  if (cardCategory(card) === 'ultimate') return 50;
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;
 }
 function cardDescription(card){
+  if (cardCategory(card) === 'ultimate'){
+    let text = card.effects.map(id => OPERATORS[id].name).join(' + ');
+    if (card.targetAll) text += ' (Target All)';
+    if (card.ifWonderlandOpen) text += ' (IF Wonderland Open)';
+    if (card.autoWin) text += ' (Auto-Win)';
+    return text;
+  }
   const op = OPERATORS[card.operatorId];
   let text = op.name;
   if (card.modifier){
@@ -1347,15 +1390,67 @@ function playHandCard(cardId){
     finalizeCast(u, u, card, cost);
     return;
   }
+  if (category === 'ultimate'){
+    playUltimateCard(u, card, cost);
+    return;
+  }
   battle.interactionMode = 'cast';
   battle.castingCardId = cardId;
+  renderBattle();
+}
+/* ============================================================
+   ULTIMATE CARDS — 50 Ini flat, 2 main effects. See ULTIMATE_CARDS'
+   own comment (above, near CARD_LIBRARY) for exactly what's implemented.
+   ============================================================ */
+function playUltimateCard(u, card, cost){
+  if (card.ifWonderlandOpen && !u.openWonderlandActive){
+    // The condition simply isn't met — no Ini spent, no effect, same as
+    // any other unmet gate. Not an error state.
+    logMsg(`${u.name}'s ${card.name} requires an open Wonderland — nothing happens.`, u.team);
+    return;
+  }
+  if (card.autoWin){
+    // Self-declared, same trust boundary as Open Wonderland's own
+    // Activation/Sustain text — a native confirm() is a real UI element,
+    // not a code shortcut around one.
+    const declared = confirm(`Was ${card.name}'s stated Auto-Win Condition met? (self-declared)`);
+    if (declared){
+      u.initiative -= cost;
+      discardCard(u, card.id);
+      logMsg(`${u.name} triggers ${card.name}'s Auto-Win Condition — the battle is over.`, u.team);
+      renderBattle();
+      finishBattle(u.team);
+      return;
+    }
+  }
+  const targetCategory = OPERATORS[card.effects[0]].category; // both main effects share one targeting category, by design of the hand-authored set
+  if (card.targetAll){
+    const targets = battle.units.filter(t => !t.removed && !t.defeated
+      && (targetCategory === 'aggressive' ? t.team !== u.team : t.team === u.team)
+      && chebyshev(t.x-u.x, t.y-u.y) <= ULTIMATE_RANGE);
+    if (!targets.length){ logMsg(`${u.name} has no valid targets in range for ${card.name}.`, u.team); return; }
+    u.initiative -= cost;
+    discardCard(u, card.id);
+    targets.forEach(t => card.effects.forEach(opId => applyOperator(opId, u, t, cost)));
+    logMsg(`${u.name} unleashes ${card.name} on all ${targets.length} valid target(s) in range.`, u.team);
+    renderBattle();
+    const w = checkWin();
+    if (w) finishBattle(w);
+    return;
+  }
+  // Single-target Ultimate — same click-a-highlighted-cell interaction as
+  // a Basic aggressive/supportive card, just resolved through tryCast's
+  // own ultimate branch (fixed range 4, both effects applied at once).
+  battle.interactionMode = 'cast';
+  battle.castingCardId = card.id;
   renderBattle();
 }
 function tryCast(u, x, y){
   const card = cardById(battle.castingCardId);
   if (!card) return;
   const category = cardCategory(card);
-  const op = OPERATORS[card.operatorId];
+  const isUltimate = category === 'ultimate';
+  const op = isUltimate ? OPERATORS[card.effects[0]] : OPERATORS[card.operatorId];
   if (op?.targetsTalisman){
     // Destroy/Capture target a placed Talisman, not a unit — Capture only
     // makes sense against an opponent's Talisman (your own is already
@@ -1368,11 +1463,13 @@ function tryCast(u, x, y){
     finalizeCast(u, target, card, cost);
     return;
   }
+  const targetCategory = isUltimate ? op.category : category;
+  const range = isUltimate ? ULTIMATE_RANGE : u.abilityRange;
   const target = battle.units.find(t => !t.removed && t.x === x && t.y === y);
   if (!target) return;
-  if (category === 'aggressive' && (target.team === u.team || target.defeated)) return;
-  if (category === 'supportive' && (target.team !== u.team || target.defeated)) return;
-  if (chebyshev(x - u.x, y - u.y) > u.abilityRange) return;
+  if (targetCategory === 'aggressive' && (target.team === u.team || target.defeated)) return;
+  if (targetCategory === 'supportive' && (target.team !== u.team || target.defeated)) return;
+  if (chebyshev(x - u.x, y - u.y) > range) return;
   const cost = cardCost(card);
   if (u.initiative < cost) return;
 
@@ -1409,6 +1506,10 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     // operator was firing unconditionally here, so an OR card applied
     // BOTH effects instead of the one actually chosen).
     applyOperator(chosenOperatorId, u, target, cost);
+  } else if (card.effects){
+    // Ultimate — both main effects apply, always (Ultimate-level OR
+    // between the two isn't implemented, see ULTIMATE_CARDS' own note).
+    card.effects.forEach(opId => applyOperator(opId, u, target, cost));
   } else {
     applyOperator(card.operatorId, u, target, cost);
     if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
@@ -1561,7 +1662,12 @@ function maybeRunAiTurn(){
    guessing. This is a stated scope line, not an oversight. */
 function aiChooseAndPlayCard(u){
   if (!u.hand.length || u.initiative <= 0) return;
-  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCost(c) <= u.initiative);
+  // OR-modifier cards and Ultimates are both skipped — see this
+  // function's own header comment for OR; Ultimates need the same kind
+  // of real evaluation basis (is Target All worth it, is the Auto-Win
+  // condition actually true) the AI doesn't have yet, so it just plays a
+  // different card instead of guessing at either.
+  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCategory(c) !== 'ultimate' && cardCost(c) <= u.initiative);
   if (!affordable.length) return;
 
   if (!u.activePassive){
@@ -1653,13 +1759,16 @@ function renderBattle(){
     if (battle.interactionMode === 'cast' && battle.castingCardId){
       const card = cardById(battle.castingCardId);
       const category = cardCategory(card);
-      const op = OPERATORS[card.operatorId];
+      const isUltimate = category === 'ultimate';
+      const op = isUltimate ? OPERATORS[card.effects[0]] : OPERATORS[card.operatorId];
+      const targetCategory = isUltimate ? op.category : category;
+      const range = isUltimate ? ULTIMATE_RANGE : active.abilityRange;
       if (op?.targetsTalisman){
-        talismanTargets = battle.talismans.filter(t => t.ownerTeam !== active.team && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
+        talismanTargets = battle.talismans.filter(t => t.ownerTeam !== active.team && chebyshev(t.x-active.x, t.y-active.y) <= range);
       } else {
         targets = battle.units.filter(t => !t.removed && !t.defeated
-          && (category === 'aggressive' ? t.team !== active.team : t.team === active.team)
-          && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
+          && (targetCategory === 'aggressive' ? t.team !== active.team : t.team === active.team)
+          && chebyshev(t.x-active.x, t.y-active.y) <= range);
       }
     }
     if (battle.interactionMode === 'place-talisman' && battle.placingTalismanType){

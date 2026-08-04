@@ -54,8 +54,11 @@ short on purpose.
   nullifies a Talisman's effect — blocked on the same interrupt/reaction
   window gap as the rest of Defensive/Reactive abilities), Defensive/
   Reactive abilities generally (need an interrupt/reaction window the turn
-  loop doesn't have), and Ultimate-tier cards — see MONOLITH_RULESET.md's
-  own scope notes.
+  loop doesn't have), and — now partially closed — Ultimate-tier cards: a
+  small hand-authored `ULTIMATE_CARDS` set implements the 2-main-effects/
+  Target All/IF-WONDERLAND-OPEN/self-declared-Auto-Win subset; the AND/
+  ALSO/IF-THEN modifiers and Ultimate-level OR remain unimplemented — see
+  MONOLITH_RULESET.md's own scope notes for the exact line.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

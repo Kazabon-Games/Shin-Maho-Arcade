@@ -233,7 +233,14 @@ numbers for.
 - Deck size: 10 cards, drawn from the player's Grimoire (their full owned
   pool).
 - Format: **7 Basic + 2 Ultimate** ("Balanced") or **9 Basic + 1 Ultimate**
-  ("Focused"). No duplicate Ultimates in one deck.
+  ("Focused"). No duplicate Ultimates in one deck. Implemented as a hard
+  ceiling of 2 Ultimates per deck in the deck editor (never a forced
+  minimum of 1 — a deck with zero Ultimates isn't literally either named
+  format, but forcing a minimum would strand any Grimoire built before an
+  Ultimate was ever owned, which the "don't refuse to load over a missing
+  optional field" convention elsewhere in this project already avoids).
+  "No duplicate Ultimates" itself needs no separate check — every card id
+  in a Grimoire is already unique.
 - Hand size 5, draw 1 card at the start of each turn.
 
 ## Abilities
@@ -246,7 +253,26 @@ numbers for.
 | Defensive/Reactive | 20 Ini | triggers off opponent's action, once condition met | yes |
 | Supportive | 20 Ini | ally only | yes |
 | Passive | 15 Ini, +10/turn to sustain | self, always-on | **no**; only one active at a time |
-| Ultimate | 50 Ini | 2 main effects + up to 2 optional modifiers, range 4, can hit all valid targets in range | partially (see modifiers) |
+| Ultimate | 50 Ini | 2 main effects + up to 2 optional modifiers, range 4 (fixed — does not scale with abilityRange bonuses), can hit all valid targets in range | partially (see modifiers) |
+
+**Ultimate implementation status:** the 2-main-effects resolution, Target
+All, and IF WONDERLAND OPEN (checked live against the caster's own open-
+Wonderland state) are implemented, via a small hand-authored
+`ULTIMATE_CARDS` set (same pattern as the Basic `COMPOSED_CARDS`) — see
+each document's own comment above that constant for the exact list.
+**Not implemented, a real scope line:** the AND/ALSO/IF-THEN modifiers on
+Ultimates (IF/THEN needs a condition-evaluation system this build doesn't
+have, the same boundary Open Wonderland's own free-text Activation/
+Sustain conditions already hit), and OR between an Ultimate's own two
+main effects (distinct from Basic OR, which already exists — choosing
+between an Ultimate's two *named* effects is a different design question
+that hasn't been resolved). Auto-Win Condition is implemented as a
+self-declared confirm() at cast time, not a real check — same trust
+boundary as Open Wonderland's Activation Condition (the player attests
+their stated condition was met; nothing parses it). The AI does not play
+Ultimate cards at all yet (same documented reason it skips OR cards: no
+real basis to evaluate whether Target All / an Auto-Win claim is worth
+it, so it plays something else instead of guessing).
 
 **Basic ability structure:** one primary effect (a Fundamental Operator) +
 an optional modifier.
