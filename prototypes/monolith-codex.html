@@ -11,59 +11,854 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.0 — 2026-08-04 — Phase 2: real character-creation wizard (6 steps —
+                          Identity/Class/Position/Tulpa/Weapon/Review, per
+                          multi-step-intake-form's goTo(n) + selOpt pattern),
+                          roster persistence (local-state-persistence: one
+                          localStorage blob, explicit save() allowlist,
+                          Object.assign load() merge), light/dark theme
+                          toggle (semantic-surface-token architecture, since
+                          this doc and monolith-arena.html must theme
+                          identically — shared 'monolith-theme' storage key
+                          on purpose, not a per-doc key, because they're two
+                          views of one app family, not unrelated documents),
+                          and Esori JSON export/import against the already-
+                          locked MONOLITH_ESORI_SCHEMA.md (backup vs share
+                          export modes, required-field hard-reject on
+                          import, esoriId-keyed re-import so a re-imported
+                          record updates in place instead of duplicating the
+                          roster). Weapon options in step 5 are rebuilt on
+                          arrival from whichever Class was picked in step 2,
+                          not fixed at page load — matches Sword/Spear vs
+                          Dagger/Projectile vs Staff/Wand gating in
+                          MONOLITH_RULESET.md. Palette: new 70/20/10 ratio
+                          (obsidian/parchment base, steel/mist structural,
+                          teal accent), studio's reserved-hue convention
+                          kept (gold=reward/currency, red=danger, green=
+                          safe/heal) — deliberately not sharing Iridescent
+                          Cosmology's gold/violet Monolith palette, per
+                          intake decision. Arena (monolith-arena.html) is
+                          still a Phase 0 stub — the actual 9x9 battle
+                          engine is the next pass, not this one.
   v0.0.1 — 2026-08-03 — Phase 0 scaffold. Esori/Tulpa creation, Grimoire,
                           deck-building, equipment, roster, and currency
                           balances (Stars/Fragments/Favor/Stones) live
                           here — the "home realm" half of the game's
                           two-document split, per MONOLITH_RULESET.md and
-                          MONOLITH_ESORI_SCHEMA.md (locked before this file
-                          existed, specifically so the character-creation
-                          flow and the Esori export/import shape don't get
-                          guessed at mid-build). Companion document is
-                          monolith-arena.html — this doc exports a roster
-                          snapshot for Arena to import, and Arena exports
-                          match results back for re-import here. No real
-                          features yet; this commit is the version marker
-                          and changelog block only, nothing else.
+                          MONOLITH_ESORI_SCHEMA.md. Companion document is
+                          monolith-arena.html.
 -->
 
 <style>
-  :root {
-    --bg: #16121c;
-    --ink: #f0e9f7;
-    --ink-soft: #a898b8;
-    --accent: #caa24c;
+  :root{
+    /* raw palette — 70/20/10 ratio, theme-invariant except surfaces
+       (Architecture B: semantic surface tokens, see light-dark-theme-
+       toggle skill — chosen because this doc and Arena share a design
+       language and need to theme identically without duplicating an
+       override block in two files). Deliberately its own palette, not
+       Iridescent Cosmology's gold/violet Monolith reskin. */
+    --obsidian:#0d0f14;
+    --obsidian-mid:#171a22;
+    --obsidian-panel:#1f232e;
+    --parchment:#f4f1ea;
+    --parchment-mid:#e9e3d6;
+    --parchment-panel:#ffffff;
+    --steel:#2c3140;
+    --mist:#c9cedb;
+    --teal:#2dd9c4;        /* accent — 10%, theme-invariant */
+    --teal-dim:#1a8f80;
+    --gold:#d4af37;        /* reserved: reward / currency — nothing else uses this hue */
+    --danger:#e0475a;      /* reserved: danger / damage / delete */
+    --safe:#52c77e;        /* reserved: safe / heal */
+
+    /* semantic surface tokens — the layer [data-theme] actually swaps */
+    --page-bg: var(--obsidian);
+    --panel-bg: var(--obsidian-mid);
+    --panel-bg-2: var(--obsidian-panel);
+    --text: #f0eee8;
+    --text-mid: #b7bcc9;
+    --text-soft: #7d8394;
+    --border: rgba(240,238,232,0.12);
   }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--ink);
-    font-family: system-ui, sans-serif;
-    display: flex; align-items: center; justify-content: center;
-    text-align: center;
+  html[data-theme="light"]{
+    --page-bg: var(--parchment);
+    --panel-bg: var(--parchment-mid);
+    --panel-bg-2: var(--parchment-panel);
+    --text: #201d19;
+    --text-mid: #4a463e;
+    --text-soft: #7a7468;
+    --border: rgba(32,29,25,0.14);
   }
-  a { color: var(--accent); }
-  .version-marker {
-    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
-    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
-    pointer-events: none;
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--page-bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;transition:background .25s,color .25s;}
+  .wrap{max-width:900px;margin:0 auto;padding:1.5rem;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;flex-wrap:wrap;}
+  .topbar h1{font-size:1.4rem;margin:0;}
+  .topbar .links{font-size:.8rem;color:var(--text-soft);}
+  .topbar .links a{color:var(--text-soft);text-decoration:none;border-bottom:1px dotted var(--text-soft);}
+
+  .theme-toggle{background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.4rem .7rem;cursor:pointer;font-size:.8rem;}
+
+  .currency-strip{display:flex;gap:1.1rem;flex-wrap:wrap;background:var(--panel-bg);border:1px solid var(--border);border-radius:10px;padding:.7rem 1rem;margin-bottom:1.5rem;font-size:.85rem;}
+  .currency-strip .cur{display:flex;align-items:center;gap:.35rem;}
+  .currency-strip .cur b{color:var(--gold);font-size:.95rem;}
+
+  .panel{background:var(--panel-bg);border:1px solid var(--border);border-radius:12px;padding:1.2rem;margin-bottom:1.2rem;}
+
+  .btn{background:var(--teal);border:1.5px solid var(--teal);color:#08201c;font-weight:700;border-radius:8px;padding:.6rem 1rem;cursor:pointer;font-size:.85rem;}
+  .btn.secondary{background:transparent;color:var(--text);border-color:var(--border);}
+  .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger);font-weight:600;}
+  .btn:disabled{opacity:.5;cursor:not-allowed;}
+
+  /* ---- roster ---- */
+  #home-view h2{margin-top:0;}
+  .roster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.9rem;margin-top:1rem;}
+  .roster-card{background:var(--panel-bg-2);border:1px solid var(--border);border-radius:10px;padding:.9rem;}
+  .roster-card .name{font-weight:700;font-size:1.05rem;}
+  .roster-card .tags{display:flex;gap:.4rem;flex-wrap:wrap;margin:.4rem 0;}
+  .tag{font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;background:var(--panel-bg);border:1px solid var(--border);border-radius:5px;padding:.15rem .4rem;color:var(--text-mid);}
+  .roster-card .tulpa-line{font-size:.78rem;color:var(--text-soft);margin-bottom:.5rem;}
+  .roster-card .card-actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem;}
+  .roster-card .card-actions button{font-size:.72rem;padding:.35rem .55rem;}
+  .empty-note{color:var(--text-soft);font-size:.85rem;}
+
+  .import-row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;}
+  .import-status{font-size:.78rem;color:var(--text-soft);margin-top:.5rem;}
+  .import-status.err{color:var(--danger);}
+  .import-status.ok{color:var(--safe);}
+
+  /* ---- wizard ---- */
+  #wizard-view{display:none;}
+  .app{display:flex;gap:1rem;}
+  .rail-steps{display:none;}
+  @media (min-width:769px){
+    .rail-steps{display:flex;flex-direction:column;gap:1.1rem;align-items:center;padding:1.5rem .5rem;}
+    .rail-step{display:flex;flex-direction:column;align-items:center;gap:.3rem;cursor:pointer;opacity:.4;transition:opacity .2s;}
+    .rail-step:hover{opacity:.75;}
+    .rail-step.active{opacity:1;}
+    .rail-step.done{opacity:.85;}
+    .rail-dot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--text-soft);}
+    .rail-step.active .rail-dot,.rail-step.done .rail-dot{background:var(--teal);border-color:var(--teal);}
+    .rail-num{font-size:.62rem;color:var(--text-soft);}
+    .rail-step.active .rail-num{color:var(--teal);}
   }
-  #prealpha-badge {
-    position: fixed; bottom: 26px; left: 10px; font-size: 10px; color: #888;
-    opacity: 0.5; letter-spacing: 0.05em; font-family: monospace; z-index: 50;
-    pointer-events: none;
-  }
+  .mobile-progress-wrap{display:block;position:sticky;top:0;z-index:20;background:var(--page-bg);padding:.5rem 0;}
+  @media (min-width:769px){ .mobile-progress-wrap{display:none;} }
+  .mobile-progress{display:flex;gap:.3rem;}
+  .mp-step{flex:1;height:3px;border-radius:2px;background:var(--border);transition:background .25s;}
+  .mp-step.active,.mp-step.done{background:var(--teal);}
+  .mobile-progress-label{padding-top:.35rem;font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--text-soft);}
+
+  .main{flex:1;min-width:0;}
+  .sheet{display:none;}
+  .sheet.active{display:block;animation:fadeIn .2s ease;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+  .sheet h2{margin:0 0 .25rem;}
+  .sub{color:var(--text-soft);font-size:.82rem;margin-bottom:1.1rem;}
+
+  .opt-group{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.1rem;}
+  .opt-btn{background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:9px;padding:.6rem .85rem;cursor:pointer;font-size:.82rem;text-align:left;min-width:150px;}
+  .opt-btn .opt-sub{display:block;color:var(--text-soft);font-size:.72rem;margin-top:.2rem;font-weight:400;}
+  .opt-btn.sel{border-color:var(--teal);background:rgba(45,217,196,0.1);color:var(--teal);}
+  .opt-btn.sel .opt-sub{color:var(--teal-dim);}
+  .hint{color:var(--text-soft);font-size:.82rem;}
+
+  input[type=text], textarea{width:100%;background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.65rem;font-size:.88rem;margin-bottom:1rem;font-family:inherit;}
+  textarea{min-height:64px;resize:vertical;}
+  label.field-label{display:block;font-size:.78rem;color:var(--text-soft);margin-bottom:.35rem;}
+
+  .nav-bar{display:flex;align-items:center;gap:.7rem;margin-top:1.3rem;padding-top:1rem;border-top:1px solid var(--border);flex-wrap:wrap;}
+  .nav-note{flex:1;font-size:.72rem;color:var(--text-soft);}
+  .nav-btn{background:transparent;border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.55rem .9rem;cursor:pointer;font-size:.82rem;}
+  .nav-btn.primary{background:var(--teal);border-color:var(--teal);color:#08201c;font-weight:700;}
+
+  .summary-line{padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.85rem;}
+  .summary-line b{color:var(--teal);}
+  .error-box{background:rgba(224,71,90,0.1);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:.7rem .9rem;font-size:.8rem;margin-bottom:1rem;}
 </style>
 </head>
 <body>
 
-<div>
-  <h1>Monolith Codex</h1>
-  <p style="color:var(--ink-soft)">Esori &amp; Tulpa creation, Grimoire, and roster.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
-  <p><a href="monolith-arena.html">Monolith Arena →</a> &nbsp;·&nbsp; <a href="../index.html">← Back to the Arcade</a></p>
+<div class="wrap">
+
+  <div class="topbar">
+    <h1>Monolith Codex</h1>
+    <div style="display:flex;align-items:center;gap:.7rem;">
+      <span class="links"><a href="monolith-arena.html">Arena →</a> &nbsp;·&nbsp; <a href="../index.html">Arcade</a></span>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀ Light</button>
+    </div>
+  </div>
+
+  <!-- ============ HOME / ROSTER VIEW ============ -->
+  <div id="home-view">
+
+    <div class="currency-strip" id="currency-strip"></div>
+
+    <div class="panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem;">
+        <h2 style="margin:0;">Roster</h2>
+        <button class="btn" onclick="startNewEsori()">+ New Esori</button>
+      </div>
+      <div class="roster-grid" id="roster-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0;">Import an Esori</h2>
+      <p class="hint">Import your own backup, or an Esori someone else shared with you (<code>.json</code> file exported from this document).</p>
+      <div class="import-row">
+        <input type="file" id="import-file" accept="application/json,.json">
+        <button class="btn secondary" id="import-btn" onclick="handleImportFile()">Import</button>
+      </div>
+      <div class="import-status" id="import-status"></div>
+    </div>
+
+  </div>
+
+  <!-- ============ WIZARD VIEW ============ -->
+  <div id="wizard-view">
+    <div class="app">
+      <div class="rail-steps" id="rail-steps">
+        <div class="rail-step active" onclick="goTo(0)" id="rs-0"><div class="rail-dot"></div><div class="rail-num">01</div></div>
+        <div class="rail-step" onclick="goTo(1)" id="rs-1"><div class="rail-dot"></div><div class="rail-num">02</div></div>
+        <div class="rail-step" onclick="goTo(2)" id="rs-2"><div class="rail-dot"></div><div class="rail-num">03</div></div>
+        <div class="rail-step" onclick="goTo(3)" id="rs-3"><div class="rail-dot"></div><div class="rail-num">04</div></div>
+        <div class="rail-step" onclick="goTo(4)" id="rs-4"><div class="rail-dot"></div><div class="rail-num">05</div></div>
+        <div class="rail-step" onclick="goTo(5)" id="rs-5"><div class="rail-dot"></div><div class="rail-num">06</div></div>
+      </div>
+
+      <div class="main">
+        <div class="mobile-progress-wrap">
+          <div class="mobile-progress">
+            <div class="mp-step active" id="mps-0"></div>
+            <div class="mp-step" id="mps-1"></div>
+            <div class="mp-step" id="mps-2"></div>
+            <div class="mp-step" id="mps-3"></div>
+            <div class="mp-step" id="mps-4"></div>
+            <div class="mp-step" id="mps-5"></div>
+          </div>
+          <div class="mobile-progress-label" id="mobile-progress-label"></div>
+        </div>
+
+        <!-- Step 0 — Identity -->
+        <div class="sheet active" id="s0">
+          <h2>Name your Esori</h2>
+          <div class="sub">Step 1 of 6 · Identity</div>
+          <label class="field-label" for="field-name">Esori name</label>
+          <input type="text" id="field-name" placeholder="e.g. Ala zyu Haad">
+          <div class="nav-bar">
+            <span class="nav-note">Step 1 of 6 · Identity</span>
+            <button class="nav-btn primary" onclick="goTo(1)">Class →</button>
+          </div>
+        </div>
+
+        <!-- Step 1 — Class -->
+        <div class="sheet" id="s1">
+          <h2>Choose a Class</h2>
+          <div class="sub">Fixed at creation — changeable later only via a home-realm item. Determines your stat bonus and which two weapons you can equip.</div>
+          <div class="opt-group" id="class-group"></div>
+          <div class="nav-bar">
+            <span class="nav-note">Step 2 of 6 · Class</span>
+            <button class="nav-btn" onclick="goTo(0)">← Identity</button>
+            <button class="nav-btn primary" onclick="goTo(2)">Position →</button>
+          </div>
+        </div>
+
+        <!-- Step 2 — Position -->
+        <div class="sheet" id="s2">
+          <h2>Choose a Position</h2>
+          <div class="sub">A team of 3 needs exactly one of each — this Esori's role determines its second stat bonus.</div>
+          <div class="opt-group" id="position-group"></div>
+          <div class="nav-bar">
+            <span class="nav-note">Step 3 of 6 · Position</span>
+            <button class="nav-btn" onclick="goTo(1)">← Class</button>
+            <button class="nav-btn primary" onclick="goTo(3)">Tulpa →</button>
+          </div>
+        </div>
+
+        <!-- Step 3 — Tulpa / Open Wonderland -->
+        <div class="sheet" id="s3">
+          <h2>Bond a Tulpa</h2>
+          <div class="sub">Every Tulpa has one unique Open Wonderland ability — an activation condition, a rule-breaking effect, and a per-turn sustain condition to keep it open.</div>
+          <label class="field-label" for="field-tulpa-name">Tulpa name</label>
+          <input type="text" id="field-tulpa-name" placeholder="e.g. NLDR">
+          <label class="field-label" for="field-activation">Activation condition</label>
+          <textarea id="field-activation" placeholder="What action or sequence triggers Open Wonderland?"></textarea>
+          <label class="field-label" for="field-effect">Effect</label>
+          <textarea id="field-effect" placeholder="What rule-breaking/rule-altering effect happens while it's open?"></textarea>
+          <label class="field-label" for="field-sustain">Sustain condition</label>
+          <textarea id="field-sustain" placeholder="What must be done each turn to keep it open?"></textarea>
+          <div class="nav-bar">
+            <span class="nav-note">Step 4 of 6 · Tulpa</span>
+            <button class="nav-btn" onclick="goTo(2)">← Position</button>
+            <button class="nav-btn primary" onclick="goTo(4)">Weapon →</button>
+          </div>
+        </div>
+
+        <!-- Step 4 — Weapon -->
+        <div class="sheet" id="s4">
+          <h2>Starting Weapon</h2>
+          <div class="sub" id="weapon-sub">Options depend on the Class chosen in step 2.</div>
+          <div class="opt-group" id="weapon-group"></div>
+          <div class="nav-bar">
+            <span class="nav-note">Step 5 of 6 · Weapon</span>
+            <button class="nav-btn" onclick="goTo(3)">← Tulpa</button>
+            <button class="nav-btn primary" onclick="goTo(5)">Review →</button>
+          </div>
+        </div>
+
+        <!-- Step 5 — Review -->
+        <div class="sheet" id="s5">
+          <h2>Review</h2>
+          <div class="sub">Computed from your answers on arrival — go back and change something, then return here to see it update.</div>
+          <div id="review-errors"></div>
+          <div id="review-output"></div>
+          <div class="nav-bar">
+            <span class="nav-note">Step 6 of 6 · Review</span>
+            <button class="nav-btn" onclick="goTo(4)">← Weapon</button>
+            <button class="nav-btn secondary" onclick="cancelWizard()">Cancel</button>
+            <button class="nav-btn primary" onclick="saveEsori()">Save to Roster</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
-<div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Monolith Codex — v0.0.1</div>
+<script>
+/* ============================================================
+   THEME — light-dark-theme-toggle skill, Architecture B.
+   Shared 'monolith-theme' key on purpose: Codex and Arena are two
+   views of one app family and should stay visually in sync, not
+   fight over independent theme state the way unrelated documents
+   would.
+   ============================================================ */
+const THEME_KEY = 'monolith-theme';
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = theme === 'light' ? '☾ Dark' : '☀ Light';
+  try{ localStorage.setItem(THEME_KEY, theme); }catch(e){}
+}
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+}
+(function initTheme(){
+  let saved = 'dark'; // matches :root's default (dark) so there's no flash of the wrong theme
+  try{ saved = localStorage.getItem(THEME_KEY) || 'dark'; }catch(e){}
+  applyTheme(saved);
+})();
+
+/* ============================================================
+   REFERENCE DATA — from MONOLITH_RULESET.md
+   ============================================================ */
+const CLASSES = {
+  knight: { label:'Knight', bonus:'+1 Weapon Strike', weapons:['sword','spear'] },
+  rook: { label:'Rook', bonus:'+1 Special Movement', weapons:['dagger','projectile'] },
+  bishop: { label:'Bishop', bonus:'+1 Basic Ability Range', weapons:['staff','wand'] },
+};
+const POSITIONS = {
+  vanguard: { label:'Vanguard', bonus:'+20 Life', role:'front line' },
+  saboteur: { label:'Saboteur', bonus:'+20 Initiative', role:'midrange support' },
+  infiltrator: { label:'Infiltrator', bonus:'+2 Pack', role:'backline control' },
+};
+const WEAPONS = {
+  sword: { label:'Sword', range:'1', note:'+1 Distance after a hit (as main)' },
+  spear: { label:'Spear', range:'2 (line)', note:'Crits cell 2 if cell 1 was hit' },
+  dagger: { label:'Dagger', range:'1', note:'+1 Strike (as main)' },
+  projectile: { label:'Projectile', range:'3–4', note:'Crits cell 4, straight line only' },
+  staff: { label:'Staff', range:'1 or 2', note:'—' },
+  wand: { label:'Wand', range:'2', note:'+1 Basic Ability range (as main)' },
+};
+
+/* ============================================================
+   STATE + PERSISTENCE — local-state-persistence skill.
+   Explicit save() allowlist; load() merges onto defaults rather
+   than replacing state outright, so a field added to the code
+   after a save was written doesn't get lost.
+   ============================================================ */
+const STORAGE_KEY = 'monolith-esori-chronicles-v1';
+let state = {
+  schemaVersion: 1,
+  roster: [],
+  currency: { stars: 0, fragments: 0, favor: 0, stones: 0 },
+};
+let editingId = null; // transient — not persisted, which record the wizard is editing (null = new)
+
+function save(){
+  try{
+    const toStore = {
+      schemaVersion: state.schemaVersion,
+      roster: state.roster,
+      currency: state.currency,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore));
+  }catch(e){ console.warn('Save failed:', e); }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    Object.assign(state, JSON.parse(raw));
+    return true;
+  }catch(e){ return false; }
+}
+function uuid(){
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'esori-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+
+/* ============================================================
+   HOME / ROSTER VIEW
+   ============================================================ */
+function renderCurrencyStrip(){
+  const c = state.currency;
+  document.getElementById('currency-strip').innerHTML = `
+    <div class="cur">⭐ Stars <b>${c.stars}</b></div>
+    <div class="cur">◆ Fragments <b>${c.fragments}</b></div>
+    <div class="cur">✦ Favor <b>${c.favor}</b></div>
+    <div class="cur">● Stones <b>${c.stones}</b></div>
+  `;
+}
+function renderRoster(){
+  const grid = document.getElementById('roster-grid');
+  if (!state.roster.length){
+    grid.innerHTML = '<p class="empty-note">No Esori yet — create one, or import a shared Esori file below.</p>';
+    return;
+  }
+  grid.innerHTML = state.roster.map(r => `
+    <div class="roster-card">
+      <div class="name">${escapeHtml(r.name)}</div>
+      <div class="tags">
+        <span class="tag">${CLASSES[r.class]?.label || r.class}</span>
+        <span class="tag">${POSITIONS[r.position]?.label || r.position}</span>
+        <span class="tag">Rarity ${r.rarity}</span>
+      </div>
+      <div class="tulpa-line">Tulpa: ${escapeHtml(r.tulpa?.name || '—')} · ${WEAPONS[r.weapons?.main]?.label || '—'}</div>
+      <div class="tulpa-line">Grimoire: ${(r.grimoire||[]).length} · Deck: ${(r.deck||[]).length}/10</div>
+      <div class="card-actions">
+        <button class="btn secondary" onclick="editEsori('${r.esoriId}')">Edit</button>
+        <button class="btn secondary" onclick="exportEsori('${r.esoriId}','backup')">Export (Backup)</button>
+        <button class="btn secondary" onclick="exportEsori('${r.esoriId}','share')">Export (Share)</button>
+        <button class="btn danger" onclick="deleteEsori('${r.esoriId}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function refreshHome(){
+  renderCurrencyStrip();
+  renderRoster();
+}
+
+/* ============================================================
+   WIZARD NAVIGATION — multi-step-intake-form skill.
+   ============================================================ */
+const SECTION_LABELS = ['Identity', 'Class', 'Position', 'Tulpa', 'Weapon', 'Review'];
+
+function goTo(n){
+  document.querySelectorAll('.sheet').forEach((s, i) => s.classList.toggle('active', i === n));
+  document.querySelectorAll('.rail-step').forEach((r, i) => {
+    r.classList.remove('active', 'done');
+    if (i === n) r.classList.add('active');
+    else if (i < n) r.classList.add('done');
+  });
+  document.querySelectorAll('.mp-step').forEach((m, i) => {
+    m.classList.remove('active', 'done');
+    if (i === n) m.classList.add('active');
+    else if (i < n) m.classList.add('done');
+  });
+  const mpLabel = document.getElementById('mobile-progress-label');
+  if (mpLabel) mpLabel.textContent = SECTION_LABELS[n] || '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  if (n === 4) renderWeaponOptions();
+  if (n === 5) renderReview();
+}
+
+function gv(id){
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function selOpt(groupId, btn){
+  document.querySelectorAll(`#${groupId} .opt-btn`).forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+}
+function selectedKey(groupId){
+  return document.querySelector(`#${groupId} .opt-btn.sel`)?.dataset.key || '';
+}
+
+function buildClassOptions(){
+  document.getElementById('class-group').innerHTML = Object.entries(CLASSES).map(([key, c]) => `
+    <button class="opt-btn" data-key="${key}" onclick="selOpt('class-group', this)">
+      <strong>${c.label}</strong>
+      <span class="opt-sub">${c.bonus} · ${c.weapons.map(w => WEAPONS[w].label).join(' / ')}</span>
+    </button>
+  `).join('');
+}
+function buildPositionOptions(){
+  document.getElementById('position-group').innerHTML = Object.entries(POSITIONS).map(([key, p]) => `
+    <button class="opt-btn" data-key="${key}" onclick="selOpt('position-group', this)">
+      <strong>${p.label}</strong>
+      <span class="opt-sub">${p.bonus} · ${p.role}</span>
+    </button>
+  `).join('');
+}
+function renderWeaponOptions(){
+  const cls = selectedKey('class-group');
+  const group = document.getElementById('weapon-group');
+  if (!cls){
+    group.innerHTML = '<p class="hint">Pick a Class in step 2 first, then come back here.</p>';
+    return;
+  }
+  const allowed = CLASSES[cls].weapons;
+  const previouslySelected = group.dataset.pendingKey || '';
+  group.innerHTML = allowed.map(wKey => {
+    const w = WEAPONS[wKey];
+    return `<button class="opt-btn" data-key="${wKey}" onclick="selOpt('weapon-group', this)">
+      <strong>${w.label}</strong>
+      <span class="opt-sub">Range ${w.range} — ${w.note}</span>
+    </button>`;
+  }).join('');
+  // If a weapon from a *different* class was previously picked (user went
+  // back and switched Class), it's no longer valid — don't leave a stale
+  // selection standing. Re-select only if it's still in the allowed list.
+  if (allowed.includes(previouslySelected)){
+    document.querySelector(`#weapon-group .opt-btn[data-key="${previouslySelected}"]`)?.classList.add('sel');
+  } else {
+    group.dataset.pendingKey = '';
+  }
+}
+// remember the weapon pick across a Class change so renderWeaponOptions can decide whether it's still valid
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#weapon-group .opt-btn');
+  if (btn) document.getElementById('weapon-group').dataset.pendingKey = btn.dataset.key;
+});
+
+function validateDraft(){
+  const missing = [];
+  if (!gv('field-name')) missing.push('Esori name (step 1)');
+  if (!selectedKey('class-group')) missing.push('Class (step 2)');
+  if (!selectedKey('position-group')) missing.push('Position (step 3)');
+  if (!gv('field-tulpa-name')) missing.push('Tulpa name (step 4)');
+  if (!gv('field-activation')) missing.push('Open Wonderland activation condition (step 4)');
+  if (!gv('field-effect')) missing.push('Open Wonderland effect (step 4)');
+  if (!gv('field-sustain')) missing.push('Open Wonderland sustain condition (step 4)');
+  if (!selectedKey('weapon-group')) missing.push('Starting weapon (step 5)');
+  return missing;
+}
+
+function renderReview(){
+  const missing = validateDraft();
+  const errBox = document.getElementById('review-errors');
+  errBox.innerHTML = missing.length
+    ? `<div class="error-box"><b>Before you save:</b> ${missing.join(', ')}.</div>`
+    : '';
+
+  const cls = selectedKey('class-group');
+  const pos = selectedKey('position-group');
+  const wpn = selectedKey('weapon-group');
+  document.getElementById('review-output').innerHTML = `
+    <div class="summary-line"><b>Name:</b> ${escapeHtml(gv('field-name') || '(not set)')}</div>
+    <div class="summary-line"><b>Class:</b> ${CLASSES[cls]?.label || '(not set)'}</div>
+    <div class="summary-line"><b>Position:</b> ${POSITIONS[pos]?.label || '(not set)'}</div>
+    <div class="summary-line"><b>Tulpa:</b> ${escapeHtml(gv('field-tulpa-name') || '(not set)')}</div>
+    <div class="summary-line"><b>Open Wonderland — Activation:</b> ${escapeHtml(gv('field-activation') || '(not set)')}</div>
+    <div class="summary-line"><b>Open Wonderland — Effect:</b> ${escapeHtml(gv('field-effect') || '(not set)')}</div>
+    <div class="summary-line"><b>Open Wonderland — Sustain:</b> ${escapeHtml(gv('field-sustain') || '(not set)')}</div>
+    <div class="summary-line"><b>Starting weapon:</b> ${WEAPONS[wpn]?.label || '(not set)'}</div>
+  `;
+}
+
+/* ============================================================
+   CREATE / EDIT / SAVE / DELETE
+   ============================================================ */
+function clearWizardFields(){
+  document.getElementById('field-name').value = '';
+  document.getElementById('field-tulpa-name').value = '';
+  document.getElementById('field-activation').value = '';
+  document.getElementById('field-effect').value = '';
+  document.getElementById('field-sustain').value = '';
+  document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('weapon-group').innerHTML = '<p class="hint">Pick a Class in step 2 first, then come back here.</p>';
+  document.getElementById('weapon-group').dataset.pendingKey = '';
+}
+function startNewEsori(){
+  editingId = null;
+  clearWizardFields();
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('wizard-view').style.display = 'block';
+  goTo(0);
+}
+function editEsori(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  editingId = esoriId;
+  clearWizardFields();
+  document.getElementById('field-name').value = r.name;
+  document.querySelector(`#class-group .opt-btn[data-key="${r.class}"]`)?.classList.add('sel');
+  document.querySelector(`#position-group .opt-btn[data-key="${r.position}"]`)?.classList.add('sel');
+  document.getElementById('field-tulpa-name').value = r.tulpa?.name || '';
+  document.getElementById('field-activation').value = r.tulpa?.openWonderland?.activation || '';
+  document.getElementById('field-effect').value = r.tulpa?.openWonderland?.effect || '';
+  document.getElementById('field-sustain').value = r.tulpa?.openWonderland?.sustain || '';
+  document.getElementById('weapon-group').dataset.pendingKey = r.weapons?.main || '';
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('wizard-view').style.display = 'block';
+  goTo(0);
+}
+function cancelWizard(){
+  editingId = null;
+  document.getElementById('wizard-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+  refreshHome();
+}
+function saveEsori(){
+  const missing = validateDraft();
+  if (missing.length){
+    renderReview();
+    return;
+  }
+  const now = new Date().toISOString();
+  const cls = selectedKey('class-group');
+  const pos = selectedKey('position-group');
+  const wpn = selectedKey('weapon-group');
+
+  if (editingId){
+    const existing = state.roster.find(x => x.esoriId === editingId);
+    Object.assign(existing, {
+      updatedAt: now,
+      name: gv('field-name'),
+      class: cls,
+      position: pos,
+      tulpa: {
+        name: gv('field-tulpa-name'),
+        openWonderland: {
+          activation: gv('field-activation'),
+          effect: gv('field-effect'),
+          sustain: gv('field-sustain'),
+        },
+      },
+      weapons: { main: wpn, secondary: existing.weapons?.secondary || null },
+    });
+  } else {
+    state.roster.push({
+      esoriId: uuid(),
+      updatedAt: now,
+      name: gv('field-name'),
+      class: cls,
+      position: pos,
+      rarity: 1,
+      tulpa: {
+        name: gv('field-tulpa-name'),
+        openWonderland: {
+          activation: gv('field-activation'),
+          effect: gv('field-effect'),
+          sustain: gv('field-sustain'),
+        },
+      },
+      grimoire: [],
+      deck: [],
+      equipment: { head: null, neck: null, hands: null, feet: null, body: null },
+      weapons: { main: wpn, secondary: null },
+      allocatedStars: {},
+      notes: '',
+    });
+  }
+  save();
+  editingId = null;
+  document.getElementById('wizard-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+  refreshHome();
+}
+function deleteEsori(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  if (!confirm(`Delete ${r.name}? This can't be undone (export a backup first if you want to keep it).`)) return;
+  state.roster = state.roster.filter(x => x.esoriId !== esoriId);
+  save();
+  refreshHome();
+}
+
+/* ============================================================
+   EXPORT — one Esori per file, per MONOLITH_ESORI_SCHEMA.md.
+   'backup' mode includes the account's currency snapshot; 'share'
+   mode explicitly nulls it so handing an Esori to another person
+   never leaks your own economy.
+   ============================================================ */
+function exportEsori(esoriId, mode){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  const payload = {
+    schemaVersion: 1,
+    exportMode: mode,
+    exportedAt: new Date().toISOString(),
+    esori: r,
+    currency: mode === 'backup' ? state.currency : null,
+  };
+  downloadJSON(payload, `${slugify(r.name)}-${mode}.json`);
+}
+function downloadJSON(obj, filename){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function slugify(s){
+  return (s || 'esori').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'esori';
+}
+
+/* ============================================================
+   IMPORT — json-import-validation skill. Required fields hard-
+   reject with a named-field message; optional fields get stated
+   defaults; esoriId + updatedAt drive keyed re-import so this
+   never silently duplicates the roster.
+   ============================================================ */
+function validateEsoriPayload(data){
+  if (!data || typeof data !== 'object') return { ok: false, error: "This file isn't a valid Esori export (not a JSON object)." };
+  if (data.schemaVersion !== 1) return { ok: false, error: `Unrecognized schema version (${data.schemaVersion}) — this file may be from a newer or incompatible version of the game.` };
+  if (data.exportMode !== 'backup' && data.exportMode !== 'share') return { ok: false, error: `Unrecognized export mode (${data.exportMode}).` };
+  const e = data.esori;
+  if (!e || typeof e !== 'object') return { ok: false, error: 'This file has no Esori record in it.' };
+
+  const missing = [];
+  if (!e.esoriId) missing.push('esoriId');
+  if (!e.updatedAt) missing.push('updatedAt');
+  if (!e.name) missing.push('name');
+  if (!CLASSES[e.class]) missing.push('class');
+  if (!POSITIONS[e.position]) missing.push('position');
+  if (!Number.isInteger(e.rarity) || e.rarity < 1) missing.push('rarity');
+  if (!e.tulpa || !e.tulpa.name) missing.push('tulpa.name');
+  if (!e.tulpa?.openWonderland?.activation) missing.push('tulpa.openWonderland.activation');
+  if (!e.tulpa?.openWonderland?.effect) missing.push('tulpa.openWonderland.effect');
+  if (!e.tulpa?.openWonderland?.sustain) missing.push('tulpa.openWonderland.sustain');
+  if (missing.length){
+    return { ok: false, error: `This Esori file is missing required field(s): ${missing.join(', ')}. It isn't a complete export — ask for a fresh one rather than trying to patch this.` };
+  }
+
+  // Optional fields — missing has a real, safe meaning (a brand-new Esori
+  // legitimately owns nothing yet), so these get defaults, not rejections.
+  const record = {
+    esoriId: e.esoriId,
+    updatedAt: e.updatedAt,
+    name: e.name,
+    class: e.class,
+    position: e.position,
+    rarity: e.rarity,
+    tulpa: {
+      name: e.tulpa.name,
+      openWonderland: {
+        activation: e.tulpa.openWonderland.activation,
+        effect: e.tulpa.openWonderland.effect,
+        sustain: e.tulpa.openWonderland.sustain,
+      },
+    },
+    grimoire: Array.isArray(e.grimoire) ? e.grimoire : [],
+    deck: Array.isArray(e.deck) ? e.deck : [],
+    equipment: e.equipment || { head: null, neck: null, hands: null, feet: null, body: null },
+    weapons: (e.weapons && e.weapons.main) ? e.weapons : { main: CLASSES[e.class].weapons[0], secondary: null },
+    allocatedStars: e.allocatedStars || {},
+    notes: e.notes || '',
+  };
+
+  // Currency: only ever trusted in 'backup' mode, and only if the block is
+  // fully populated — a partial block is treated as corrupt, not partially
+  // trusted. In 'share' mode this is ignored even if present, defensively.
+  let currency = null;
+  if (data.exportMode === 'backup' && data.currency &&
+      ['stars','fragments','favor','stones'].every(k => typeof data.currency[k] === 'number')){
+    currency = data.currency;
+  }
+
+  return { ok: true, record, mode: data.exportMode, currency };
+}
+
+function importIntoRoster(record, mode, currency){
+  const idx = state.roster.findIndex(x => x.esoriId === record.esoriId);
+  if (idx === -1){
+    state.roster.push(record);
+  } else {
+    const existing = state.roster[idx];
+    if (new Date(record.updatedAt) > new Date(existing.updatedAt)){
+      state.roster[idx] = record;
+    } else {
+      return { applied: false, reason: `You already have a newer (or same-age) copy of ${existing.name} — import skipped.` };
+    }
+  }
+  // 'share' mode never touches currency, by design — receiving a friend's
+  // Esori must never grant or remove your own balances.
+  if (mode === 'backup' && currency){
+    if (confirm('This backup also includes currency balances (Stars/Fragments/Favor/Stones). Overwrite your current balances with the imported ones?')){
+      state.currency = currency;
+    }
+  }
+  save();
+  return { applied: true };
+}
+
+function handleImportFile(){
+  const input = document.getElementById('import-file');
+  const status = document.getElementById('import-status');
+  status.className = 'import-status';
+  if (!input.files || !input.files[0]){
+    status.textContent = 'Choose a file first.';
+    status.classList.add('err');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try{
+      data = JSON.parse(reader.result);
+    }catch(e){
+      status.textContent = "This file isn't valid JSON.";
+      status.classList.add('err');
+      return;
+    }
+    const result = validateEsoriPayload(data);
+    if (!result.ok){
+      status.textContent = result.error;
+      status.classList.add('err');
+      return;
+    }
+    const outcome = importIntoRoster(result.record, result.mode, result.currency);
+    if (!outcome.applied){
+      status.textContent = outcome.reason;
+      status.classList.add('err');
+      return;
+    }
+    status.textContent = `Imported ${result.record.name}.`;
+    status.classList.add('ok');
+    input.value = '';
+    refreshHome();
+  };
+  reader.onerror = () => {
+    status.textContent = 'Could not read that file.';
+    status.classList.add('err');
+  };
+  reader.readAsText(input.files[0]);
+}
+
+/* ============================================================
+   INIT — no static reference data to re-seed here (Decision 3 in
+   local-state-persistence doesn't apply), so init() only needs to
+   reflect whatever load() restored into the DOM. Ordering B.
+   ============================================================ */
+function init(){
+  load();
+  buildClassOptions();
+  buildPositionOptions();
+  refreshHome();
+}
+init();
+</script>
 
 </body>
 </html>

@@ -11,6 +11,19 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.0.2 — 2026-08-04 — Wired the shared theme system so this document
+                          matches whatever light/dark choice was made in
+                          monolith-codex.html (same 'monolith-theme'
+                          localStorage key, same semantic-surface-token
+                          palette — Codex and Arena are two views of one
+                          app family, not independent documents, so they
+                          deliberately share theme state rather than each
+                          tracking their own). No battle engine yet — that
+                          palette/toggle work is scoped ahead of it on
+                          purpose so the real build doesn't have to retrofit
+                          theming later. Still nothing to import/export;
+                          the Codex-side of that handoff isn't wired yet
+                          either.
   v0.0.1 — 2026-08-03 — Phase 0 scaffold. The 9x9 grid battle engine —
                           turn order, movement, weapon strikes, ability
                           resolution — lives here, per MONOLITH_RULESET.md.
@@ -28,20 +41,47 @@
 -->
 
 <style>
-  :root {
-    --bg: #16121c;
-    --ink: #f0e9f7;
-    --ink-soft: #a898b8;
-    --accent: #caa24c;
+  :root{
+    --obsidian:#0d0f14;
+    --obsidian-mid:#171a22;
+    --obsidian-panel:#1f232e;
+    --parchment:#f4f1ea;
+    --parchment-mid:#e9e3d6;
+    --parchment-panel:#ffffff;
+    --teal:#2dd9c4;
+    --gold:#d4af37;
+    --danger:#e0475a;
+    --safe:#52c77e;
+
+    --page-bg: var(--obsidian);
+    --panel-bg: var(--obsidian-mid);
+    --panel-bg-2: var(--obsidian-panel);
+    --text: #f0eee8;
+    --text-soft: #7d8394;
+    --border: rgba(240,238,232,0.12);
+  }
+  html[data-theme="light"]{
+    --page-bg: var(--parchment);
+    --panel-bg: var(--parchment-mid);
+    --panel-bg-2: var(--parchment-panel);
+    --text: #201d19;
+    --text-soft: #7a7468;
+    --border: rgba(32,29,25,0.14);
   }
   html, body {
     margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--ink);
+    background: var(--page-bg); color: var(--text);
     font-family: system-ui, sans-serif;
     display: flex; align-items: center; justify-content: center;
     text-align: center;
+    transition: background .25s, color .25s;
   }
-  a { color: var(--accent); }
+  a { color: var(--teal); }
+  .theme-toggle{
+    position: fixed; top: 14px; right: 14px;
+    background: var(--panel-bg-2); border: 1.5px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: .4rem .7rem; cursor: pointer; font-size: .8rem;
+  }
   .version-marker {
     position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
     opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
@@ -56,14 +96,35 @@
 </head>
 <body>
 
+<button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀ Light</button>
+
 <div>
   <h1>Monolith Arena</h1>
-  <p style="color:var(--ink-soft)">9&times;9 grid tactics battle engine.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
+  <p style="color:var(--text-soft)">9&times;9 grid tactics battle engine.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
   <p><a href="monolith-codex.html">← Monolith Codex</a> &nbsp;·&nbsp; <a href="../index.html">← Back to the Arcade</a></p>
 </div>
 
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Monolith Arena — v0.0.1</div>
+<div class="version-marker">Monolith Arena — v0.0.2</div>
+
+<script>
+  const THEME_KEY = 'monolith-theme';
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.innerHTML = theme === 'light' ? '☾ Dark' : '☀ Light';
+    try{ localStorage.setItem(THEME_KEY, theme); }catch(e){}
+  }
+  function toggleTheme(){
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    applyTheme(current === 'light' ? 'dark' : 'light');
+  }
+  (function initTheme(){
+    let saved = 'dark';
+    try{ saved = localStorage.getItem(THEME_KEY) || 'dark'; }catch(e){}
+    applyTheme(saved);
+  })();
+</script>
 
 </body>
 </html>
