@@ -11,119 +11,849 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.0 — 2026-08-04 — Phase 2: real 9x9 grid battle engine — team setup
+                          (reads the shared local roster straight out of
+                          the same 'monolith-esori-chronicles-v1'
+                          localStorage key Codex writes, same-origin, no
+                          file needed for the common same-device case;
+                          .json Esori import still available for a guest/
+                          friend's shared character), deployment, BFS-based
+                          king-move (Chebyshev) movement respecting
+                          obstacles/occupied cells, weapon-range-gated
+                          strikes, initiative-ordered turns (snapshot per
+                          round — see the Known simplifications note in
+                          this changelog), Defeated/Rally state, and a win
+                          check. Runs either AI (built-in 3-Esori preset
+                          squad, one per Position) or local pass-and-play
+                          (hotseat, both teams human) — both from the same
+                          turn loop with a swappable controller per
+                          character, matching the "both from the start"
+                          decision made at intake, not an AI mode bolted on
+                          after a hotseat-only build.
+
+                          Known simplifications, flagged rather than
+                          guessed past: (1) Initiative is snapshotted at
+                          round start to fix that round's turn order —
+                          spending it mid-round doesn't reorder remaining
+                          turns, since MONOLITH_RULESET.md's source text is
+                          ambiguous about whether the *same* resource used
+                          to pay for actions also continuously re-sorts
+                          turn order. (2) One Weapon Strike per character
+                          per turn — Special Strike's starting value of 2
+                          conflicts with the ruleset doc's own framing of
+                          it as "usually ability-granted," and abilities
+                          aren't wired into battle yet at all (no card
+                          play, no Fundamental Operators resolved in this
+                          pass — Grimoire/deck/Open Wonderland exist on the
+                          Esori record but do nothing in battle yet); both
+                          gaps are the explicit next increment, not
+                          silently patched over here. (3) Spear/Projectile's
+                          conditional crit ("if the first target was hit")
+                          depends on multiple strikes per turn, which v1
+                          doesn't support, so it never triggers yet.
+                          (4) "Range N" (no "line" qualifier) is read as
+                          "up to N," matching Staff's explicit "1 or 2" —
+                          a stated interpretation of an otherwise ambiguous
+                          single number, not a silent guess.
   v0.0.2 — 2026-08-04 — Wired the shared theme system so this document
                           matches whatever light/dark choice was made in
-                          monolith-codex.html (same 'monolith-theme'
-                          localStorage key, same semantic-surface-token
-                          palette — Codex and Arena are two views of one
-                          app family, not independent documents, so they
-                          deliberately share theme state rather than each
-                          tracking their own). No battle engine yet — that
-                          palette/toggle work is scoped ahead of it on
-                          purpose so the real build doesn't have to retrofit
-                          theming later. Still nothing to import/export;
-                          the Codex-side of that handoff isn't wired yet
-                          either.
-  v0.0.1 — 2026-08-03 — Phase 0 scaffold. The 9x9 grid battle engine —
-                          turn order, movement, weapon strikes, ability
-                          resolution — lives here, per MONOLITH_RULESET.md.
-                          Built from the start to run either an AI-
-                          controlled opposing team or local pass-and-play
-                          (two players, one screen), same action-declare
-                          loop with a swappable controller for the second
-                          team, not an AI mode bolted on after a
-                          hotseat-only build. Imports a roster snapshot
-                          exported from monolith-codex.html (schema locked
-                          in MONOLITH_ESORI_SCHEMA.md) and exports match
-                          results back for Codex to re-import. No real
-                          features yet; this commit is the version marker
-                          and changelog block only, nothing else.
+                          monolith-codex.html.
+  v0.0.1 — 2026-08-03 — Phase 0 scaffold.
 -->
 
 <style>
   :root{
-    --obsidian:#0d0f14;
-    --obsidian-mid:#171a22;
-    --obsidian-panel:#1f232e;
-    --parchment:#f4f1ea;
-    --parchment-mid:#e9e3d6;
-    --parchment-panel:#ffffff;
-    --teal:#2dd9c4;
-    --gold:#d4af37;
-    --danger:#e0475a;
-    --safe:#52c77e;
+    --obsidian:#0d0f14; --obsidian-mid:#171a22; --obsidian-panel:#1f232e;
+    --parchment:#f4f1ea; --parchment-mid:#e9e3d6; --parchment-panel:#ffffff;
+    --teal:#2dd9c4; --teal-dim:#1a8f80;
+    --rival:#8a6fd8;
+    --gold:#d4af37; --danger:#e0475a; --safe:#52c77e;
 
     --page-bg: var(--obsidian);
     --panel-bg: var(--obsidian-mid);
     --panel-bg-2: var(--obsidian-panel);
-    --text: #f0eee8;
-    --text-soft: #7d8394;
+    --text: #f0eee8; --text-mid:#b7bcc9; --text-soft: #7d8394;
     --border: rgba(240,238,232,0.12);
+    --cell-bg: #23283a;
+    --cell-obstacle: #3a3f4d;
   }
   html[data-theme="light"]{
     --page-bg: var(--parchment);
     --panel-bg: var(--parchment-mid);
     --panel-bg-2: var(--parchment-panel);
-    --text: #201d19;
-    --text-soft: #7a7468;
+    --text: #201d19; --text-mid:#4a463e; --text-soft: #7a7468;
     --border: rgba(32,29,25,0.14);
+    --cell-bg: #ddd6c4;
+    --cell-obstacle: #b9b09a;
   }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: var(--page-bg); color: var(--text);
-    font-family: system-ui, sans-serif;
-    display: flex; align-items: center; justify-content: center;
-    text-align: center;
-    transition: background .25s, color .25s;
-  }
-  a { color: var(--teal); }
-  .theme-toggle{
-    position: fixed; top: 14px; right: 14px;
-    background: var(--panel-bg-2); border: 1.5px solid var(--border); color: var(--text);
-    border-radius: 8px; padding: .4rem .7rem; cursor: pointer; font-size: .8rem;
-  }
-  .version-marker {
-    position: fixed; bottom: 26px; right: 10px; font-size: 10px; color: #888;
-    opacity: 0.5; letter-spacing: 0.02em; font-family: monospace; z-index: 50;
-    pointer-events: none;
-  }
-  #prealpha-badge {
-    position: fixed; bottom: 26px; left: 10px; font-size: 10px; color: #888;
-    opacity: 0.5; letter-spacing: 0.05em; font-family: monospace; z-index: 50;
-    pointer-events: none;
-  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--page-bg);color:var(--text);font-family:system-ui,sans-serif;transition:background .25s,color .25s;}
+  .wrap{max-width:980px;margin:0 auto;padding:1.4rem;}
+
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.2rem;flex-wrap:wrap;}
+  .topbar h1{font-size:1.3rem;margin:0;}
+  .topbar .links{font-size:.8rem;color:var(--text-soft);}
+  .topbar .links a{color:var(--text-soft);text-decoration:none;border-bottom:1px dotted var(--text-soft);}
+  .theme-toggle{background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.4rem .7rem;cursor:pointer;font-size:.8rem;}
+
+  .panel{background:var(--panel-bg);border:1px solid var(--border);border-radius:12px;padding:1.1rem;margin-bottom:1.1rem;}
+  .btn{background:var(--teal);border:1.5px solid var(--teal);color:#08201c;font-weight:700;border-radius:8px;padding:.55rem .95rem;cursor:pointer;font-size:.83rem;}
+  .btn.secondary{background:transparent;color:var(--text);border-color:var(--border);}
+  .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger);}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .hint{color:var(--text-soft);font-size:.8rem;}
+  .empty-note{color:var(--text-soft);font-size:.85rem;}
+
+  .opt-group{display:flex;flex-wrap:wrap;gap:.5rem;margin:.5rem 0 1rem;}
+  .opt-btn{background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.5rem .75rem;cursor:pointer;font-size:.8rem;text-align:left;}
+  .opt-btn .opt-sub{display:block;color:var(--text-soft);font-size:.68rem;margin-top:.15rem;}
+  .opt-btn.sel{border-color:var(--teal);background:rgba(45,217,196,0.1);color:var(--teal);}
+  .position-slot{margin-bottom:.7rem;}
+  .position-slot > .slot-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-soft);margin-bottom:.3rem;}
+
+  /* ---- setup ---- */
+  .team-columns{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+  @media (max-width:700px){ .team-columns{grid-template-columns:1fr;} }
+
+  /* ---- board ---- */
+  #battle-layout{display:flex;gap:1.1rem;flex-wrap:wrap;align-items:flex-start;}
+  .board{display:grid;grid-template-columns:repeat(9,minmax(28px,42px));grid-template-rows:repeat(9,minmax(28px,42px));gap:2px;background:var(--border);padding:2px;border-radius:8px;}
+  .cell{background:var(--cell-bg);position:relative;display:flex;align-items:center;justify-content:center;cursor:default;}
+  .cell.obstacle{background:var(--cell-obstacle);}
+  .cell.zoneA{box-shadow:inset 0 0 0 2px rgba(45,217,196,0.35);}
+  .cell.zoneB{box-shadow:inset 0 0 0 2px rgba(138,111,216,0.35);}
+  .cell.reachable{background:rgba(45,217,196,0.28);cursor:pointer;}
+  .cell.targetable{background:rgba(224,71,90,0.32);cursor:pointer;}
+  .token{width:78%;height:78%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#08201c;user-select:none;}
+  .token.teamA{background:var(--teal);}
+  .token.teamB{background:var(--rival);color:#fff;}
+  .token.defeated{opacity:.35;filter:grayscale(1);}
+  .token.active-turn{outline:2px solid var(--gold);outline-offset:1px;}
+  .lifebar-wrap{position:absolute;bottom:1px;left:8%;right:8%;height:3px;background:rgba(0,0,0,0.35);border-radius:2px;}
+  .lifebar-fill{height:100%;border-radius:2px;background:var(--safe);}
+  .lifebar-fill.low{background:var(--danger);}
+
+  .side-panel{flex:1;min-width:220px;}
+  .hud-line{padding:.35rem 0;border-bottom:1px solid var(--border);font-size:.82rem;}
+  .hud-line b{color:var(--teal);}
+  .turn-order{list-style:none;margin:0;padding:0;font-size:.78rem;}
+  .turn-order li{padding:.3rem .4rem;border-radius:6px;margin-bottom:.2rem;color:var(--text-mid);}
+  .turn-order li.current{background:rgba(212,175,55,0.15);color:var(--gold);font-weight:700;}
+  .turn-order li.defeated{opacity:.4;text-decoration:line-through;}
+  .action-row{display:flex;gap:.5rem;flex-wrap:wrap;margin:.7rem 0;}
+  .log{max-height:160px;overflow-y:auto;font-size:.75rem;color:var(--text-soft);font-family:ui-monospace,monospace;line-height:1.5;}
+  .log .me{color:var(--teal);} .log .foe{color:var(--rival);}
+
+  .import-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:.4rem;}
+  .import-status{font-size:.76rem;color:var(--text-soft);margin-top:.4rem;}
+  .import-status.err{color:var(--danger);} .import-status.ok{color:var(--safe);}
+
+  #screen-deploy .board-wrap, #screen-battle .board-wrap{display:flex;justify-content:center;}
 </style>
 </head>
 <body>
 
-<button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀ Light</button>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Monolith Arena</h1>
+    <div style="display:flex;align-items:center;gap:.7rem;">
+      <span class="links"><a href="monolith-codex.html">← Codex</a> &nbsp;·&nbsp; <a href="../index.html">Arcade</a></span>
+      <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀ Light</button>
+    </div>
+  </div>
 
-<div>
-  <h1>Monolith Arena</h1>
-  <p style="color:var(--text-soft)">9&times;9 grid tactics battle engine.<br>Under construction — see <code>MONOLITH_RULESET.md</code> and <code>MONOLITH_ESORI_SCHEMA.md</code>.</p>
-  <p><a href="monolith-codex.html">← Monolith Codex</a> &nbsp;·&nbsp; <a href="../index.html">← Back to the Arcade</a></p>
+  <!-- ============ SETUP ============ -->
+  <div id="screen-setup">
+    <div class="panel">
+      <h2 style="margin-top:0;">Team A — Your Roster</h2>
+      <p class="hint">One of each Position, straight from your Codex roster (or an imported guest Esori). Create characters covering all three Positions in the Codex if a slot below is empty.</p>
+      <div id="teamA-picker"></div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0;">Opponent</h2>
+      <div class="opt-group" id="opponent-mode-group">
+        <button class="opt-btn" data-key="ai" onclick="selectOpponentMode(this)"><strong>AI Squad</strong><span class="opt-sub">Fixed 3-Esori preset, one per Position</span></button>
+        <button class="opt-btn" data-key="local2p" onclick="selectOpponentMode(this)"><strong>Local Pass-and-Play</strong><span class="opt-sub">Second player picks Team B on this device</span></button>
+      </div>
+      <div id="teamB-picker-wrap" style="display:none;">
+        <h3>Team B — Player 2</h3>
+        <div id="teamB-picker"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top:0;">Import a Guest Esori</h2>
+      <p class="hint">A friend's shared Esori <code>.json</code> (Export → Share, from the Codex) — added for this battle only, not saved to your roster.</p>
+      <div class="import-row">
+        <input type="file" id="guest-import-file" accept="application/json,.json">
+        <button class="btn secondary" id="guest-import-btn" onclick="handleGuestImport()">Add Guest</button>
+      </div>
+      <div class="import-status" id="guest-import-status"></div>
+    </div>
+
+    <button class="btn" id="begin-deploy-btn" onclick="beginDeployment()" disabled>Begin Deployment</button>
+    <div class="hint" id="setup-blocker" style="margin-top:.5rem;"></div>
+  </div>
+
+  <!-- ============ DEPLOYMENT ============ -->
+  <div id="screen-deploy" style="display:none;">
+    <div class="panel">
+      <h2 style="margin-top:0;" id="deploy-heading">Deployment</h2>
+      <p class="hint" id="deploy-hint"></p>
+      <div class="board-wrap"><div class="board" id="deploy-board"></div></div>
+      <div class="action-row" id="deploy-token-row"></div>
+    </div>
+  </div>
+
+  <!-- ============ BATTLE ============ -->
+  <div id="screen-battle" style="display:none;">
+    <div id="battle-layout">
+      <div class="board-wrap"><div class="board" id="battle-board"></div></div>
+      <div class="side-panel">
+        <div class="panel">
+          <div class="hud-line"><b>Round <span id="hud-round">1</span></b></div>
+          <div class="hud-line" id="hud-active"></div>
+          <div class="action-row">
+            <button class="btn" id="action-move" onclick="setInteractionMode('move')">Move</button>
+            <button class="btn" id="action-strike" onclick="setInteractionMode('strike')">Strike</button>
+            <button class="btn secondary" id="action-rally" onclick="setInteractionMode('rally')">Rally</button>
+            <button class="btn danger" id="action-end" onclick="endTurn()">End Turn</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Turn Order</h3>
+          <ul class="turn-order" id="turn-order-list"></ul>
+        </div>
+        <div class="panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Log</h3>
+          <div class="log" id="battle-log"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ GAME OVER ============ -->
+  <div id="screen-gameover" style="display:none;">
+    <div class="panel" style="text-align:center;">
+      <h2 id="gameover-heading"></h2>
+      <button class="btn" onclick="resetToSetup()">New Battle</button>
+    </div>
+  </div>
+
 </div>
 
-<div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Monolith Arena — v0.0.2</div>
-
 <script>
-  const THEME_KEY = 'monolith-theme';
-  function applyTheme(theme){
-    document.documentElement.setAttribute('data-theme', theme);
-    const btn = document.getElementById('theme-toggle');
-    if (btn) btn.innerHTML = theme === 'light' ? '☾ Dark' : '☀ Light';
-    try{ localStorage.setItem(THEME_KEY, theme); }catch(e){}
+/* ============================================================
+   THEME (shared with Codex — see monolith-codex.html's comment)
+   ============================================================ */
+const THEME_KEY = 'monolith-theme';
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.innerHTML = theme === 'light' ? '☾ Dark' : '☀ Light';
+  try{ localStorage.setItem(THEME_KEY, theme); }catch(e){}
+}
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  applyTheme(current === 'light' ? 'dark' : 'light');
+}
+(function initTheme(){
+  let saved = 'dark';
+  try{ saved = localStorage.getItem(THEME_KEY) || 'dark'; }catch(e){}
+  applyTheme(saved);
+})();
+
+/* ============================================================
+   REFERENCE DATA — from MONOLITH_RULESET.md, mirrors monolith-
+   codex.html (no shared imports between documents, by studio
+   convention, so this is intentionally duplicated, not factored
+   out).
+   ============================================================ */
+const CLASSES = {
+  knight: { label:'Knight', weapons:['sword','spear'] },
+  rook: { label:'Rook', weapons:['dagger','projectile'] },
+  bishop: { label:'Bishop', weapons:['staff','wand'] },
+};
+const POSITIONS = {
+  vanguard: { label:'Vanguard' },
+  saboteur: { label:'Saboteur' },
+  infiltrator: { label:'Infiltrator' },
+};
+const WEAPONS = {
+  sword: { label:'Sword' }, spear: { label:'Spear' },
+  dagger: { label:'Dagger' }, projectile: { label:'Projectile' },
+  staff: { label:'Staff' }, wand: { label:'Wand' },
+};
+const PRESET_AI_SQUAD = [
+  { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'} },
+  { esoriId:'preset-saboteur', name:'Vessa', class:'rook', position:'saboteur', rarity:1, weapons:{main:'dagger'} },
+  { esoriId:'preset-infiltrator', name:'Orune', class:'bishop', position:'infiltrator', rarity:1, weapons:{main:'wand'} },
+];
+
+const ROSTER_KEY = 'monolith-esori-chronicles-v1'; // same key Codex writes — read-only here
+const BOARD_SIZE = 9;
+// Fixed, symmetric obstacle layout — deterministic on purpose (testable,
+// and fair for repeated play), not randomized.
+const OBSTACLES = new Set(['1,3','7,3','3,3','5,3','1,5','7,5','3,5','5,5','4,4']);
+
+let localRoster = [];
+let guestRoster = [];
+let opponentMode = null; // 'ai' | 'local2p'
+
+/* ============================================================
+   SETUP SCREEN
+   ============================================================ */
+function loadLocalRoster(){
+  try{
+    const raw = localStorage.getItem(ROSTER_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed.roster) ? parsed.roster : [];
+  }catch(e){ return []; }
+}
+
+function eligiblePool(){ return [...localRoster, ...guestRoster]; }
+
+function renderTeamPicker(containerId){
+  const container = document.getElementById(containerId);
+  const pool = eligiblePool();
+  container.innerHTML = Object.entries(POSITIONS).map(([posKey, pos]) => {
+    const candidates = pool.filter(e => e.position === posKey);
+    if (!candidates.length){
+      return `<div class="position-slot"><div class="slot-label">${pos.label}</div><p class="empty-note">No ${pos.label} available yet.</p></div>`;
+    }
+    const groupId = `${containerId}-${posKey}`;
+    return `<div class="position-slot">
+      <div class="slot-label">${pos.label}</div>
+      <div class="opt-group" id="${groupId}">
+        ${candidates.map(e => `<button class="opt-btn" data-esori-id="${e.esoriId}" onclick="selOpt('${groupId}', this)">
+          <strong>${escapeHtml(e.name)}</strong>
+          <span class="opt-sub">${CLASSES[e.class]?.label || e.class} · ${WEAPONS[e.weapons?.main]?.label || '—'}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  refreshSetupGate();
+}
+function selOpt(groupId, btn){
+  document.querySelectorAll(`#${groupId} .opt-btn`).forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  refreshSetupGate();
+}
+function selectOpponentMode(btn){
+  document.querySelectorAll('#opponent-mode-group .opt-btn').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  opponentMode = btn.dataset.key;
+  document.getElementById('teamB-picker-wrap').style.display = opponentMode === 'local2p' ? 'block' : 'none';
+  if (opponentMode === 'local2p') renderTeamPicker('teamB-picker');
+  refreshSetupGate();
+}
+function pickedTeam(containerId){
+  const team = {};
+  Object.keys(POSITIONS).forEach(posKey => {
+    const sel = document.querySelector(`#${containerId}-${posKey} .opt-btn.sel`);
+    if (sel) team[posKey] = eligiblePool().find(e => e.esoriId === sel.dataset.esoriId);
+  });
+  return team;
+}
+function refreshSetupGate(){
+  const blocker = document.getElementById('setup-blocker');
+  const teamA = pickedTeam('teamA-picker');
+  const teamAComplete = Object.keys(POSITIONS).every(p => teamA[p]);
+  let ok = teamAComplete;
+  let msg = '';
+  if (!teamAComplete) msg = 'Pick one Esori per Position for Team A.';
+  else if (!opponentMode) { ok = false; msg = 'Choose an opponent mode.'; }
+  else if (opponentMode === 'local2p'){
+    const teamB = pickedTeam('teamB-picker');
+    const teamBComplete = Object.keys(POSITIONS).every(p => teamB[p]);
+    if (!teamBComplete) { ok = false; msg = 'Pick one Esori per Position for Team B.'; }
   }
-  function toggleTheme(){
-    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-    applyTheme(current === 'light' ? 'dark' : 'light');
+  document.getElementById('begin-deploy-btn').disabled = !ok;
+  blocker.textContent = msg;
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function handleGuestImport(){
+  const input = document.getElementById('guest-import-file');
+  const status = document.getElementById('guest-import-status');
+  status.className = 'import-status';
+  if (!input.files || !input.files[0]){
+    status.textContent = 'Choose a file first.'; status.classList.add('err'); return;
   }
-  (function initTheme(){
-    let saved = 'dark';
-    try{ saved = localStorage.getItem(THEME_KEY) || 'dark'; }catch(e){}
-    applyTheme(saved);
-  })();
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try{ data = JSON.parse(reader.result); }
+    catch(e){ status.textContent = "This file isn't valid JSON."; status.classList.add('err'); return; }
+    const e = data && data.esori;
+    const missing = [];
+    if (!e) missing.push('esori');
+    else {
+      if (!e.esoriId) missing.push('esoriId');
+      if (!e.name) missing.push('name');
+      if (!CLASSES[e.class]) missing.push('class');
+      if (!POSITIONS[e.position]) missing.push('position');
+      if (!Number.isInteger(e.rarity) || e.rarity < 1) missing.push('rarity');
+      if (!e.weapons || !e.weapons.main) missing.push('weapons.main');
+    }
+    if (missing.length){
+      status.textContent = `This Esori file is missing required field(s): ${missing.join(', ')}.`;
+      status.classList.add('err');
+      return;
+    }
+    guestRoster = guestRoster.filter(g => g.esoriId !== e.esoriId);
+    guestRoster.push(e);
+    status.textContent = `Added guest: ${e.name}.`;
+    status.classList.add('ok');
+    input.value = '';
+    renderTeamPicker('teamA-picker');
+    if (opponentMode === 'local2p') renderTeamPicker('teamB-picker');
+  };
+  reader.onerror = () => { status.textContent = 'Could not read that file.'; status.classList.add('err'); };
+  reader.readAsText(input.files[0]);
+}
+
+/* ============================================================
+   BATTLE STATS + WEAPON RANGE
+   ============================================================ */
+function computeBattleStats(e){
+  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3 };
+  if (e.class === 'knight') s.strike += 1;
+  if (e.class === 'rook') s.specialMovement += 1;
+  if (e.position === 'vanguard') s.life += 20;
+  if (e.position === 'saboteur') s.initiative += 20;
+  if (e.position === 'infiltrator') s.pack += 2;
+  if (e.weapons?.main === 'dagger') s.strike += 1;
+  s.rarity = e.rarity || 1;
+  s.dmg = 10 * s.rarity;
+  s.critDmg = 15 * s.rarity;
+  s.weaponMain = e.weapons?.main;
+  return s;
+}
+function chebyshev(dx, dy){ return Math.max(Math.abs(dx), Math.abs(dy)); }
+function isStraightLine(dx, dy){ return dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy); }
+function inWeaponRange(weapon, dx, dy){
+  const cheb = chebyshev(dx, dy);
+  if (cheb === 0) return false;
+  switch(weapon){
+    case 'sword': case 'dagger': return cheb <= 1;
+    case 'staff': case 'wand': return cheb <= 2;
+    case 'spear': return isStraightLine(dx, dy) && cheb <= 2;
+    case 'projectile': return isStraightLine(dx, dy) && cheb >= 3 && cheb <= 4;
+    default: return false;
+  }
+}
+
+/* ============================================================
+   DEPLOYMENT
+   ============================================================ */
+let battle = null; // the whole live-battle state object once deployment starts
+
+function beginDeployment(){
+  const teamAPicks = pickedTeam('teamA-picker');
+  const teamBPicks = opponentMode === 'local2p' ? pickedTeam('teamB-picker') : null;
+
+  const makeUnit = (esori, team, controller) => {
+    const stats = computeBattleStats(esori);
+    return {
+      esoriId: esori.esoriId, name: esori.name, class: esori.class, position: esori.position,
+      team, controller,
+      x: null, y: null, deployed: false,
+      maxLife: stats.life, life: stats.life,
+      maxInitiative: stats.initiative, initiative: stats.initiative,
+      strike: stats.strike, distance: stats.distance, specialMovement: stats.specialMovement,
+      weaponMain: stats.weaponMain, dmg: stats.dmg, critDmg: stats.critDmg,
+      defeated: false, rallied: false, removed: false,
+      distanceRemaining: 0, hasStruckThisTurn: false,
+    };
+  };
+
+  const teamA = Object.values(teamAPicks).map(e => makeUnit(e, 'A', 'human'));
+  const teamB = opponentMode === 'ai'
+    ? PRESET_AI_SQUAD.map(e => makeUnit(e, 'B', 'ai'))
+    : Object.values(teamBPicks).map(e => makeUnit(e, 'B', 'human'));
+
+  battle = {
+    units: [...teamA, ...teamB],
+    round: 1,
+    turnQueue: [],
+    turnIndex: 0,
+    interactionMode: null, // 'move' | 'strike' | 'rally'
+    log: [],
+  };
+
+  document.getElementById('screen-setup').style.display = 'none';
+  document.getElementById('screen-deploy').style.display = 'block';
+  startDeploymentFor('A');
+}
+
+let deployTeam = 'A';
+let deployPendingUnit = null;
+function startDeploymentFor(team){
+  deployTeam = team;
+  deployPendingUnit = null;
+  document.getElementById('deploy-heading').textContent = `Deployment — Team ${team}`;
+  document.getElementById('deploy-hint').textContent = team === 'A'
+    ? 'Click a token below, then click a highlighted cell in your zone (top rows) to place it.'
+    : 'Team B, place your characters (bottom rows).';
+  renderDeployBoard();
+  renderDeployTokenRow();
+}
+function zoneRows(team){ return team === 'A' ? [0,1] : [7,8]; }
+function renderDeployBoard(){
+  const board = document.getElementById('deploy-board');
+  const zRows = zoneRows(deployTeam);
+  let html = '';
+  for (let y = 0; y < BOARD_SIZE; y++){
+    for (let x = 0; x < BOARD_SIZE; x++){
+      const key = `${x},${y}`;
+      const obstacle = OBSTACLES.has(key);
+      const occupied = battle.units.find(u => u.deployed && u.x === x && u.y === y);
+      const inZone = zRows.includes(y) && !obstacle && !occupied;
+      const classes = ['cell'];
+      if (obstacle) classes.push('obstacle');
+      if (inZone && deployPendingUnit) classes.push('reachable');
+      html += `<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}" onclick="handleDeployClick(${x},${y})">`;
+      if (occupied) html += tokenHtml(occupied, false);
+      html += '</div>';
+    }
+  }
+  board.innerHTML = html;
+}
+function renderDeployTokenRow(){
+  const row = document.getElementById('deploy-token-row');
+  const pending = battle.units.filter(u => u.team === deployTeam && !u.deployed);
+  if (!pending.length){
+    row.innerHTML = '<span class="hint">All of this team placed.</span>';
+    const otherTeam = deployTeam === 'A' ? 'B' : 'A';
+    const otherPending = battle.units.some(u => u.team === otherTeam && !u.deployed);
+    if (otherPending && opponentMode === 'local2p'){
+      row.innerHTML += ` <button class="btn" onclick="startDeploymentFor('${otherTeam}')">Deploy Team ${otherTeam} →</button>`;
+    } else if (otherTeam === 'B' && opponentMode === 'ai'){
+      autoDeployAi();
+      row.innerHTML += ' <button class="btn" onclick="startBattle()">Start Battle</button>';
+    } else {
+      row.innerHTML += ' <button class="btn" onclick="startBattle()">Start Battle</button>';
+    }
+    return;
+  }
+  row.innerHTML = pending.map(u => `<button class="btn secondary" onclick="selectDeployUnit('${u.esoriId}')">Place ${escapeHtml(u.name)} (${POSITIONS[u.position].label})</button>`).join('');
+}
+function selectDeployUnit(esoriId){
+  deployPendingUnit = battle.units.find(u => u.esoriId === esoriId && u.team === deployTeam);
+  renderDeployBoard();
+}
+function handleDeployClick(x, y){
+  if (!deployPendingUnit) return;
+  const key = `${x},${y}`;
+  if (OBSTACLES.has(key)) return;
+  if (!zoneRows(deployTeam).includes(y)) return;
+  if (battle.units.some(u => u.deployed && u.x === x && u.y === y)) return;
+  deployPendingUnit.x = x; deployPendingUnit.y = y; deployPendingUnit.deployed = true;
+  deployPendingUnit = null;
+  renderDeployBoard();
+  renderDeployTokenRow();
+}
+function autoDeployAi(){
+  const spots = [];
+  for (const y of zoneRows('B')) for (let x = 0; x < BOARD_SIZE; x++){
+    const key = `${x},${y}`;
+    if (!OBSTACLES.has(key)) spots.push([x,y]);
+  }
+  battle.units.filter(u => u.team === 'B' && !u.deployed).forEach((u, i) => {
+    const [x,y] = spots[i] || [i, 8];
+    u.x = x; u.y = y; u.deployed = true;
+  });
+}
+
+/* ============================================================
+   BATTLE LOOP
+   ============================================================ */
+function startBattle(){
+  document.getElementById('screen-deploy').style.display = 'none';
+  document.getElementById('screen-battle').style.display = 'block';
+  buildTurnQueue();
+  // advanceTurn() is what normally resets distanceRemaining/hasStruckThisTurn
+  // for whoever's turn is starting, but it's never called for the very first
+  // turn of the battle (there's no prior turn to advance *from*) — without
+  // this, unit #1 would open the battle with 0 movement left.
+  beginUnitTurn(currentUnit());
+  renderBattle();
+  logMsg(`Battle begins. Round ${battle.round}.`);
+  maybeRunAiTurn();
+}
+function beginUnitTurn(u){
+  if (!u) return;
+  u.distanceRemaining = u.distance;
+  u.hasStruckThisTurn = false;
+}
+function activeRoster(){ return battle.units.filter(u => !u.removed); }
+function buildTurnQueue(){
+  // Snapshot order at round start — see the "Known simplifications" note
+  // in this file's changelog for why this doesn't re-sort mid-round.
+  battle.turnQueue = activeRoster()
+    .slice()
+    .sort((a,b) => b.initiative - a.initiative)
+    .map(u => u.esoriId);
+  battle.turnIndex = 0;
+}
+function currentUnit(){
+  if (!battle) return null;
+  const id = battle.turnQueue[battle.turnIndex];
+  return battle.units.find(u => u.esoriId === id) || null;
+}
+function teamAlive(team){
+  return battle.units.some(u => u.team === team && !u.defeated && !u.removed);
+}
+function checkWin(){
+  if (!teamAlive('A')) return 'B';
+  if (!teamAlive('B')) return 'A';
+  return null;
+}
+function advanceTurn(){
+  battle.turnIndex += 1;
+  if (battle.turnIndex >= battle.turnQueue.length){
+    battle.round += 1;
+    battle.units.forEach(u => { if (!u.removed) u.initiative = u.maxInitiative; });
+    buildTurnQueue();
+    logMsg(`— Round ${battle.round} —`);
+  }
+  const u = currentUnit();
+  if (u && (u.defeated || u.removed)){ advanceTurn(); return; }
+  battle.interactionMode = null;
+  beginUnitTurn(u);
+}
+function endTurn(){
+  const winner = checkWin();
+  if (winner) return; // shouldn't happen mid-turn, defensive only
+  advanceTurn();
+  const w = checkWin();
+  if (w){ finishBattle(w); return; }
+  renderBattle();
+  maybeRunAiTurn();
+}
+function finishBattle(winnerTeam){
+  document.getElementById('screen-battle').style.display = 'none';
+  document.getElementById('screen-gameover').style.display = 'block';
+  document.getElementById('gameover-heading').textContent = `Team ${winnerTeam} wins!`;
+}
+function resetToSetup(){
+  battle = null;
+  guestRoster = [];
+  document.getElementById('screen-gameover').style.display = 'none';
+  document.getElementById('screen-setup').style.display = 'block';
+  localRoster = loadLocalRoster();
+  renderTeamPicker('teamA-picker');
+  document.querySelectorAll('#opponent-mode-group .opt-btn').forEach(b => b.classList.remove('sel'));
+  opponentMode = null;
+  document.getElementById('teamB-picker-wrap').style.display = 'none';
+  refreshSetupGate();
+}
+function logMsg(text, team){
+  battle.log.unshift({ text, team });
+  const el = document.getElementById('battle-log');
+  if (el) el.innerHTML = battle.log.map(l => `<div class="${l.team === 'A' ? 'me' : l.team === 'B' ? 'foe' : ''}">${escapeHtml(l.text)}</div>`).join('');
+}
+
+/* ============================================================
+   INTERACTION — human turn
+   ============================================================ */
+function setInteractionMode(mode){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human') return;
+  battle.interactionMode = battle.interactionMode === mode ? null : mode;
+  renderBattle();
+}
+function reachableCells(x0, y0, maxSteps){
+  const occupied = new Set(battle.units.filter(u => u.deployed && !u.removed && !(u.x===x0&&u.y===y0)).map(u => `${u.x},${u.y}`));
+  const dist = {};
+  const key = (x,y) => `${x},${y}`;
+  dist[key(x0,y0)] = 0;
+  let frontier = [[x0,y0]];
+  for (let step = 1; step <= maxSteps; step++){
+    const next = [];
+    for (const [x,y] of frontier){
+      for (let dx=-1; dx<=1; dx++) for (let dy=-1; dy<=1; dy++){
+        if (dx===0 && dy===0) continue;
+        const nx=x+dx, ny=y+dy;
+        if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE) continue;
+        const k = key(nx,ny);
+        if (dist[k] !== undefined) continue;
+        if (OBSTACLES.has(k)) continue;
+        if (occupied.has(k)) continue;
+        dist[k] = step;
+        next.push([nx,ny]);
+      }
+    }
+    frontier = next;
+  }
+  delete dist[key(x0,y0)];
+  return dist;
+}
+function handleBoardClick(x, y){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human' || !battle.interactionMode) return;
+  if (battle.interactionMode === 'move') tryMove(u, x, y);
+  else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
+  else if (battle.interactionMode === 'rally') tryRally(u, x, y);
+}
+function tryMove(u, x, y){
+  const reach = reachableCells(u.x, u.y, u.distanceRemaining);
+  const key = `${x},${y}`;
+  if (reach[key] === undefined) return;
+  u.distanceRemaining -= reach[key];
+  u.x = x; u.y = y;
+  logMsg(`${u.name} moves.`, u.team);
+  renderBattle();
+}
+function tryStrike(u, x, y){
+  if (u.hasStruckThisTurn) return;
+  const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.defeated && !t.removed);
+  if (!target) return;
+  if (!inWeaponRange(u.weaponMain, x-u.x, y-u.y)) return;
+  const dmg = u.dmg;
+  target.life = Math.max(0, target.life - dmg);
+  u.hasStruckThisTurn = true;
+  logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
+  if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+  if (target.life <= 0){
+    if (target.defeated){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
+    else { target.defeated = true; target.distance = 1; logMsg(`${target.name} is Defeated.`, target.team); }
+  }
+  renderBattle();
+  const w = checkWin();
+  if (w) finishBattle(w);
+}
+function tryRally(u, x, y){
+  const target = battle.units.find(t => t.x===x && t.y===y && t.team===u.team && t.defeated && !t.removed);
+  if (!target) return;
+  if (chebyshev(x-u.x, y-u.y) > 1) return;
+  if (u.initiative < 10) return; // flat Rally cost — source text doesn't give an exact number, see MONOLITH_RULESET.md
+  u.initiative -= 10;
+  target.defeated = false;
+  target.rallied = true;
+  target.life = 1;
+  target.distance = computeBattleStats({class:target.class, position:target.position, weapons:{main:target.weaponMain}, rarity:1}).distance;
+  logMsg(`${u.name} rallies ${target.name}.`, u.team);
+  renderBattle();
+}
+
+/* ============================================================
+   AI TURN — movement + strike only in v1 (no ability play yet)
+   ============================================================ */
+function maybeRunAiTurn(){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human'){
+    setTimeout(runAiTurn, 350);
+  }
+}
+function runAiTurn(){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human') {
+    if (!u) return;
+    const enemies = battle.units.filter(t => t.team !== u.team && !t.defeated && !t.removed);
+    if (enemies.length){
+      enemies.sort((a,b) => chebyshev(a.x-u.x,a.y-u.y) - chebyshev(b.x-u.x,b.y-u.y));
+      const target = enemies[0];
+      if (inWeaponRange(u.weaponMain, target.x-u.x, target.y-u.y)){
+        tryStrike(u, target.x, target.y);
+      } else {
+        const reach = reachableCells(u.x, u.y, u.distanceRemaining);
+        let best = null, bestDist = Infinity;
+        for (const key of Object.keys(reach)){
+          const [cx,cy] = key.split(',').map(Number);
+          const d = chebyshev(target.x-cx, target.y-cy);
+          if (d < bestDist){ bestDist = d; best = [cx,cy]; }
+        }
+        if (best) tryMove(u, best[0], best[1]);
+        if (inWeaponRange(u.weaponMain, target.x-u.x, target.y-u.y) && !u.hasStruckThisTurn){
+          tryStrike(u, target.x, target.y);
+        }
+      }
+    }
+    const w = checkWin();
+    if (w){ finishBattle(w); return; }
+    setTimeout(endTurn, 300);
+  }
+}
+
+/* ============================================================
+   RENDER — battle board + HUD
+   ============================================================ */
+function tokenHtml(u, showActive){
+  const initials = u.name.slice(0,2).toUpperCase();
+  const lifePct = Math.max(0, Math.round((u.life / u.maxLife) * 100));
+  const classes = ['token', u.team === 'A' ? 'teamA' : 'teamB'];
+  if (u.defeated) classes.push('defeated');
+  if (showActive) classes.push('active-turn');
+  return `<div class="${classes.join(' ')}" title="${escapeHtml(u.name)}">${initials}</div>
+    <div class="lifebar-wrap"><div class="lifebar-fill ${lifePct<=30?'low':''}" style="width:${lifePct}%"></div></div>`;
+}
+function renderBattle(){
+  if (!battle) return;
+  const active = currentUnit();
+  const board = document.getElementById('battle-board');
+  let reach = {}, targets = [];
+  if (active && active.controller === 'human'){
+    if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, active.distanceRemaining);
+    if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
+      targets = battle.units.filter(t => t.team !== active.team && !t.defeated && !t.removed && inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
+    }
+    if (battle.interactionMode === 'rally'){
+      targets = battle.units.filter(t => t.team === active.team && t.defeated && !t.removed && chebyshev(t.x-active.x, t.y-active.y) <= 1);
+    }
+  }
+  let html = '';
+  for (let y = 0; y < BOARD_SIZE; y++){
+    for (let x = 0; x < BOARD_SIZE; x++){
+      const key = `${x},${y}`;
+      const obstacle = OBSTACLES.has(key);
+      const unit = battle.units.find(u => !u.removed && u.x===x && u.y===y);
+      const classes = ['cell'];
+      if (obstacle) classes.push('obstacle');
+      if (reach[key] !== undefined) classes.push('reachable');
+      if (targets.some(t => t.x===x && t.y===y)) classes.push('targetable');
+      html += `<div class="${classes.join(' ')}" onclick="handleBoardClick(${x},${y})">`;
+      if (unit) html += tokenHtml(unit, active && unit.esoriId === active.esoriId);
+      html += '</div>';
+    }
+  }
+  board.innerHTML = html;
+
+  document.getElementById('hud-round').textContent = battle.round;
+  const hudActive = document.getElementById('hud-active');
+  if (active){
+    hudActive.innerHTML = `<b>${escapeHtml(active.name)}</b> (Team ${active.team}, ${POSITIONS[active.position].label})
+      — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative} · Move left ${active.distanceRemaining}`;
+  }
+  const isHumanTurn = active && active.controller === 'human';
+  document.getElementById('action-move').disabled = !isHumanTurn || active.distanceRemaining <= 0;
+  document.getElementById('action-strike').disabled = !isHumanTurn || active.hasStruckThisTurn;
+  document.getElementById('action-rally').disabled = !isHumanTurn;
+  document.getElementById('action-end').disabled = !isHumanTurn;
+
+  const list = document.getElementById('turn-order-list');
+  list.innerHTML = battle.turnQueue.map(id => {
+    const unit = battle.units.find(u => u.esoriId === id);
+    const classes = [];
+    if (active && id === active.esoriId) classes.push('current');
+    if (unit.defeated || unit.removed) classes.push('defeated');
+    return `<li class="${classes.join(' ')}">${escapeHtml(unit.name)} (${unit.team}) — Ini ${unit.initiative}</li>`;
+  }).join('');
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function init(){
+  localRoster = loadLocalRoster();
+  renderTeamPicker('teamA-picker');
+}
+init();
 </script>
 
 </body>
