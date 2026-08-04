@@ -11,6 +11,14 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.5.0 — 2026-08-04 — New Manage Catalysts screen: single-use, permanent-
+                          for-the-battle stat boosts per MONOLITH_RULESET.md's
+                          Items section (+2 to one of Life/Strike/Distance/
+                          Initiative/Pack — no source amount stated, a
+                          stated default), capped by the character's own
+                          effective Pack stat (computed locally — a small,
+                          duplicated slice of Arena's computeBattleStats,
+                          not the whole function).
   v0.4.0 — 2026-08-04 — New Allocate Stars screen: spend Stars 1-for-1 on
                           Life/Initiative/Strike/Distance/Pack, no respec
                           (a stated default — the ruleset names Stars as
@@ -300,6 +308,20 @@
     </div>
   </div>
 
+  <!-- ============ CATALYSTS ============ -->
+  <div id="catalysts-view" style="display:none;">
+    <div class="panel">
+      <h2 style="margin-top:0;" id="catalysts-heading">Manage Catalysts</h2>
+      <p class="hint">Owned: <span id="catalysts-count"></span>/<span id="catalysts-cap"></span> (Pack). Single-use — consumed when used in battle for a permanent-for-the-battle boost.</p>
+      <div class="opt-group" id="catalysts-owned"></div>
+      <p class="hint" style="margin-top:1rem;">Acquire one:</p>
+      <div class="opt-group" id="catalysts-shop"></div>
+      <div class="nav-bar">
+        <button class="nav-btn primary" onclick="closeCatalystsEditor()">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ WIZARD VIEW ============ -->
   <div id="wizard-view">
     <div class="app">
@@ -496,6 +518,30 @@ const ALLOCATABLE_STATS = {
 };
 
 /* ============================================================
+   CATALYSTS — single-use, permanent-for-the-battle stat boost, per
+   MONOLITH_RULESET.md's Items section. No source doc states an amount —
+   +2 to one of these five stats is a stated default.
+   ============================================================ */
+const CATALYST_TYPES = {
+  'cat-life': { label:'Vital Catalyst', stat:'life', amount:2 },
+  'cat-strike': { label:'Edge Catalyst', stat:'strike', amount:2 },
+  'cat-distance': { label:'Stride Catalyst', stat:'distance', amount:2 },
+  'cat-initiative': { label:'Essence Catalyst', stat:'initiative', amount:2 },
+  'cat-pack': { label:'Satchel Catalyst', stat:'pack', amount:2 },
+};
+function effectivePack(record){
+  // Mirrors the Pack-affecting slice of Arena's computeBattleStats, kept
+  // here too (duplicated, per this repo's no-shared-imports convention)
+  // since the Catalyst picker's cap needs it and Codex has no reason to
+  // run the rest of computeBattleStats.
+  let pack = 3;
+  if (record.position === 'infiltrator') pack += 2;
+  if (record.equipment?.body === 'pouch') pack += 1;
+  pack += record.allocatedStars?.pack || 0;
+  return pack;
+}
+
+/* ============================================================
    ABILITY OPERATORS + CARDS — data-driven, per MONOLITH_RULESET.md's
    "Fundamental Operators" section. Each operator declares a generic
    effect "kind" (mirrored by Arena's small resolver switch) instead of
@@ -649,6 +695,7 @@ function renderRoster(){
         <button class="btn secondary" onclick="openDeckEditor('${r.esoriId}')">Edit Deck</button>
         <button class="btn secondary" onclick="openEquipmentEditor('${r.esoriId}')">Edit Equipment</button>
         <button class="btn secondary" onclick="openStarsAllocator('${r.esoriId}')">Allocate Stars</button>
+        <button class="btn secondary" onclick="openCatalystsEditor('${r.esoriId}')">Manage Catalysts</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','backup')">Export (Backup)</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','share')">Export (Share)</button>
         <button class="btn danger" onclick="deleteEsori('${r.esoriId}')">Delete</button>
@@ -929,6 +976,8 @@ function saveEsori(){
       equipment: { head: null, neck: null, hands: null, feet: null, body: null },
       weapons: { main: wpn, secondary: secondaryWpn },
       allocatedStars: {},
+      catalysts: [],
+      battlesWon: 0,
       notes: '',
     });
   }
@@ -1090,6 +1139,59 @@ function spendStar(stat){
 function closeStarsAllocator(){
   starsAllocatingId = null;
   document.getElementById('stars-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+  refreshHome();
+}
+
+let catalystsEditingId = null;
+function openCatalystsEditor(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  catalystsEditingId = esoriId;
+  document.getElementById('catalysts-heading').textContent = `Manage Catalysts — ${r.name}`;
+  renderCatalystsView();
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('catalysts-view').style.display = 'block';
+}
+function renderCatalystsView(){
+  const r = state.roster.find(x => x.esoriId === catalystsEditingId);
+  if (!r) return;
+  r.catalysts = r.catalysts || [];
+  const cap = effectivePack(r);
+  document.getElementById('catalysts-count').textContent = r.catalysts.length;
+  document.getElementById('catalysts-cap').textContent = cap;
+  document.getElementById('catalysts-owned').innerHTML = r.catalysts.length
+    ? r.catalysts.map((catId, idx) => `<button class="opt-btn" onclick="removeCatalyst(${idx})">
+        <strong>${CATALYST_TYPES[catId]?.label || catId}</strong><span class="opt-sub">Remove</span>
+      </button>`).join('')
+    : '<p class="empty-note">None owned yet.</p>';
+  const atCap = r.catalysts.length >= cap;
+  document.getElementById('catalysts-shop').innerHTML = Object.entries(CATALYST_TYPES).map(([catId, def]) => `
+    <button class="opt-btn" ${atCap ? 'disabled' : ''} onclick="addCatalyst('${catId}')">
+      <strong>${def.label}</strong><span class="opt-sub">+${def.amount} ${def.stat}, single-use</span>
+    </button>`).join('');
+}
+function addCatalyst(catId){
+  const r = state.roster.find(x => x.esoriId === catalystsEditingId);
+  if (!r) return;
+  r.catalysts = r.catalysts || [];
+  if (r.catalysts.length >= effectivePack(r)) return;
+  r.catalysts.push(catId);
+  r.updatedAt = new Date().toISOString();
+  save();
+  renderCatalystsView();
+}
+function removeCatalyst(idx){
+  const r = state.roster.find(x => x.esoriId === catalystsEditingId);
+  if (!r) return;
+  r.catalysts.splice(idx, 1);
+  r.updatedAt = new Date().toISOString();
+  save();
+  renderCatalystsView();
+}
+function closeCatalystsEditor(){
+  catalystsEditingId = null;
+  document.getElementById('catalysts-view').style.display = 'none';
   document.getElementById('home-view').style.display = 'block';
   refreshHome();
 }
@@ -1289,7 +1391,9 @@ window.Codex._test = {
       deck: opts.deck || CARD_LIBRARY.slice(0, 10).map(c => c.id),
       equipment: opts.equipment || { head: null, neck: null, hands: null, feet: null, body: null },
       weapons: { main: opts.weapon, secondary: opts.secondaryWeapon || null },
-      allocatedStars: {},
+      allocatedStars: opts.allocatedStars || {},
+      catalysts: opts.catalysts || [],
+      battlesWon: opts.battlesWon || 0,
       notes: '',
     };
     state.roster.push(record);

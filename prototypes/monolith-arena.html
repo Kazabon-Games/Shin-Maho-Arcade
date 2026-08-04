@@ -11,6 +11,12 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.6.0 — 2026-08-04 — Catalysts: new battle panel, use one for 10 Ini to
+                          apply a permanent-for-the-battle stat boost
+                          (mirrors Codex's CATALYST_TYPES data exactly).
+                          Life/Initiative boosts raise the max, not just
+                          the current value, so a later round-refresh
+                          doesn't erase them.
   v0.5.0 — 2026-08-04 — Open Wonderland wired into battle, within a real
                           permanent boundary stated plainly: the
                           Activation/Effect/Sustain conditions are player-
@@ -342,6 +348,11 @@
           <div id="wonderland-text" class="hint"></div>
           <button class="btn secondary" id="action-wonderland" onclick="toggleOpenWonderland(currentUnit())"></button>
         </div>
+        <div class="panel" id="catalysts-panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Catalysts</h3>
+          <p class="hint" id="catalysts-hint"></p>
+          <div class="opt-group" id="catalysts-battle-group"></div>
+        </div>
         <div class="panel">
           <h3 style="margin-top:0;font-size:.85rem;">Hand</h3>
           <p class="hint" id="hand-hint"></p>
@@ -506,6 +517,19 @@ function applyEquipmentBonuses(stats, equipment){
     if (item) stats[item.stat] = (stats[item.stat] || 0) + item.amount;
   });
 }
+
+/* ============================================================
+   CATALYSTS — identical data to monolith-codex.html's copy. Single-use,
+   permanent-for-the-battle stat boost, per MONOLITH_RULESET.md's Items
+   section (no source amount stated — +2 is a stated default).
+   ============================================================ */
+const CATALYST_TYPES = {
+  'cat-life': { label:'Vital Catalyst', stat:'life', amount:2 },
+  'cat-strike': { label:'Edge Catalyst', stat:'strike', amount:2 },
+  'cat-distance': { label:'Stride Catalyst', stat:'distance', amount:2 },
+  'cat-initiative': { label:'Essence Catalyst', stat:'initiative', amount:2 },
+  'cat-pack': { label:'Satchel Catalyst', stat:'pack', amount:2 },
+};
 
 const PRESET_AI_SQUAD = [
   { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
@@ -705,6 +729,7 @@ function beginDeployment(){
       activePassive: null, passiveNextCost: 15,
       tulpaName: esori.tulpa?.name || '', openWonderland: esori.tulpa?.openWonderland || null,
       openWonderlandActive: false,
+      catalysts: (esori.catalysts || []).slice(),
     };
   };
 
@@ -1119,6 +1144,23 @@ function toggleOpenWonderland(u){
   logMsg(`${u.name}'s Wonderland is now ${u.openWonderlandActive ? 'OPEN' : 'closed'}.`, u.team);
   renderBattle();
 }
+function useCatalyst(u, catalystId){
+  if (!u || u.controller !== 'human') return;
+  const idx = u.catalysts.indexOf(catalystId);
+  if (idx === -1) return;
+  if (u.initiative < 10) return; // "cost 10 Initiative," per MONOLITH_RULESET.md
+  const def = CATALYST_TYPES[catalystId];
+  u.initiative -= 10;
+  u.catalysts.splice(idx, 1);
+  // "Permanent... for the rest of the battle" — for Life/Initiative that
+  // means raising the cap (maxLife/maxInitiative) too, not just the
+  // current value, so a later round-refresh doesn't erase the boost.
+  if (def.stat === 'life'){ u.maxLife += def.amount; u.life += def.amount; }
+  else if (def.stat === 'initiative'){ u.maxInitiative += def.amount; u.initiative += def.amount; }
+  else { u[def.stat] += def.amount; }
+  logMsg(`${u.name} uses ${def.label} (+${def.amount} ${def.stat}, permanent this battle).`, u.team);
+  renderBattle();
+}
 
 /* ============================================================
    ABILITY CARDS — playing a card from hand.
@@ -1455,6 +1497,22 @@ function renderBattle(){
   } else {
     wonderlandText.textContent = '';
     wonderlandBtn.style.display = 'none';
+  }
+
+  const catalystsHint = document.getElementById('catalysts-hint');
+  const catalystsGroup = document.getElementById('catalysts-battle-group');
+  if (active && active.catalysts.length){
+    catalystsHint.textContent = 'Click to use — single-use, permanent for the rest of this battle.';
+    catalystsGroup.innerHTML = active.catalysts.map(catId => {
+      const def = CATALYST_TYPES[catId];
+      const affordable = active.initiative >= 10;
+      return `<button class="opt-btn" ${(blocked || !affordable) ? 'disabled' : ''} onclick="useCatalyst(currentUnit(), '${catId}')">
+        <strong>${def.label}</strong><span class="opt-sub">+${def.amount} ${def.stat} · 10 Ini</span>
+      </button>`;
+    }).join('');
+  } else {
+    catalystsHint.textContent = active ? 'None carried.' : '';
+    catalystsGroup.innerHTML = '';
   }
 
   const handGroup = document.getElementById('hand-card-group');

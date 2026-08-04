@@ -168,7 +168,12 @@ numbers for.
   cell destroys it). Characters starting their turn in the AoE are
   affected.
 - **Catalysts** — single-use, permanent stat boost for the rest of the
-  battle, cost 10 Initiative, resolve like an ability.
+  battle, cost 10 Initiative, resolve like an ability. No source doc
+  states which stats or how much — implemented as +2 to one of Life/
+  Strike/Distance/Initiative/Pack, a stated default. Brought into battle
+  from a character's owned Catalyst inventory, capped by Pack (shared
+  with Talismans, per the Pack stat's own description above — Talismans
+  aren't placeable yet, so Pack is Catalyst-only capacity for now).
 
 ## Combat
 
