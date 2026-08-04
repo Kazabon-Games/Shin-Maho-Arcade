@@ -49,6 +49,24 @@ balanced / needs a specific numeric change / cosmetic-only, no balance
 impact. If you found a compounding-multiplier risk, name every multiplier
 involved, not just the one that prompted the review.
 
+## A real, deliberate tension worth naming (added 2026-08-03)
+
+Real game-designer job postings increasingly list data-driven design
+(using real usage/analytics data to drive balance decisions) as an
+emerging expectation. This studio doesn't have that, and won't by
+default: `security-reviewer`'s own checklist treats any accounts/
+telemetry/analytics addition as a hard gate requiring a real
+data-handling policy *before* it ships, not after — `STUDIO_BIBLE.md`
+§10's standing rule, not this role's own limitation. This is a deliberate
+tradeoff already made elsewhere in the studio's docs, not an unexamined
+gap in game design specifically — the Estimated-vs-Measured discipline
+below (and `difficulty-curve-calibration`) is this studio's actual
+substitute: real human-playtest data, gathered and labeled honestly,
+instead of passive telemetry. Don't read the absence of analytics as
+this role falling short of a real industry bar; it's a privacy-first
+choice this studio made on purpose, at a real cost (slower, sparser
+balance data) it's already accepted.
+
 ## For Game 4 specifically
 
 There is no real playtest data yet by definition. Every pacing/difficulty
@@ -101,10 +119,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

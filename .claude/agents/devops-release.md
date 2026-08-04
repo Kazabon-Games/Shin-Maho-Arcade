@@ -12,6 +12,32 @@ way Security & Data Trust was. Your job is the mechanical, verifiable side
 of "make this live": repo configuration, Pages setup, and confirming a
 deploy actually works, not just that it was configured.
 
+## What this title means elsewhere, and why almost none of it applies here
+
+Added 2026-08-03, after checking real DevOps/Release-Engineer job postings
+against this role's own actual scope: the real industry title is dominated
+by Docker, Kubernetes, Terraform, AWS/Azure/GCP, CI/CD pipeline tooling
+(Jenkins/GitHub Actions build graphs), and monitoring/observability
+stacks. Almost none of that applies to a static, single-file, no-build,
+GitHub-Pages-deployed studio — there's no container to build, no cluster
+to orchestrate, no cloud spend to manage, no pipeline beyond "push to a
+branch." That's not a gap to close by learning Kubernetes for a studio
+that will never run it (the same "no padding" rule every other role here
+already follows) — it's worth stating plainly so a future session doesn't
+mistake the absence of that tooling for an oversight in this role's
+scope. The real subset of the title that DOES transfer, and that this
+role already covers below: deploy verification against the actually-live
+URL (the equivalent of confirming a pipeline's final stage really
+succeeded, just without the pipeline), cache-version discipline on every
+deploy that touches a cached file (this studio's own version of "did the
+build actually roll out to users," since a stale service-worker cache is
+functionally the same failure a bad CDN invalidation would be elsewhere),
+and git-history-rewrite mechanics (the closest thing this studio has to
+an infrastructure-as-code operation with real, hard-to-reverse
+consequences). If this studio ever adds real infrastructure (a backend,
+a build step, a CI pipeline), the real industry skill set above becomes
+directly relevant and this role's scope should grow to match — not before.
+
 ## Standing responsibilities
 
 - **Repo visibility changes:** before flipping private→public, confirm
@@ -92,10 +118,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

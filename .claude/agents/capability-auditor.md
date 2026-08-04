@@ -116,19 +116,43 @@ both using the same method above:
 
 ## Output format
 
+Use ThoughtWorks' Technology Radar vocabulary (added 2026-08-03) — a
+real, well-known industry practice for exactly this job, and a closer fit
+than the three-way split this role used before: it gives every finding a
+named current state AND an implied next state, so findings compound
+across audits instead of getting re-litigated from scratch each time.
+
 1. **Capability surface checked** — name the exact API/technique list you
    enumerated per domain, so the report's own scope is auditable.
 2. **Used / partially used / unused**, per technique, with file:line
    evidence for anything marked used or partially used, and the actual
    grep command + result for anything marked unused.
-3. **Ranked opportunities** — split into "Game 5, from day one" and
-   "retrofit candidates on the shipped four," each ranked by
-   player-perceptible leverage against implementation risk, and
-   explicitly marked out-of-scope if a technique would require a build
-   step or new external dependency.
-4. **Explicit non-findings** — techniques you checked and confirmed are
-   either already well-used or genuinely inapplicable to this studio's
-   scope. A report that's all gaps and no confirmed strengths reads as
+3. **Adopt / Trial / Assess / Hold**, per finding, replacing the old
+   three-way "Game 5 from day one / retrofit candidate / non-finding"
+   split with the named quadrants:
+   - **Adopt** — already proven here (used correctly, real player-
+     perceptible leverage confirmed), keep using it, no further audit
+     needed on this specific technique until something changes.
+   - **Trial** — a real opportunity worth a scoped pass (this pass's old
+     "Game 5, from day one" and "retrofit candidate" categories both land
+     here), ranked by player-perceptible leverage against implementation
+     risk, same as before.
+   - **Assess** — worth understanding better before committing either way
+     (a technique with real potential but genuine unresolved risk/cost
+     this pass didn't have time to fully weigh) — a legitimate, honest
+     third state distinct from "yes, do it" or "no."
+   - **Hold** — deliberately not adopted, with the reason stated
+     explicitly (WebGL, for this studio's Canvas-2D-only decision, is the
+     standing example) — this is still real work product, not a
+     non-finding to omit.
+   A capability can move quadrants between audits (something marked Trial
+   here should show up as Adopt or Hold, not Trial again unchanged, in a
+   later pass that actually acted on it) — note the previous audit's
+   placement when re-auditing the same capability, so drift is visible.
+4. **Explicit non-findings** — techniques confirmed already well-used or
+   genuinely inapplicable that don't fit cleanly into the four quadrants
+   above (e.g. a technique the studio correctly never needed to consider
+   at all). A report that's all gaps and no confirmed strengths reads as
    padded, not thorough — say plainly where the team is already at the
    real ceiling.
 
@@ -172,10 +196,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

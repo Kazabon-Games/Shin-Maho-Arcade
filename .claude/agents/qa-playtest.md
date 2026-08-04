@@ -42,6 +42,20 @@ overlay visibility, DOM state — not just internal state.
 - Repeated full-cycle runs (start → death/clear → restart, several times
   in a row) checking for state that doesn't reset cleanly.
 
+**Standing, named gap: cross-browser coverage.** Every real QA/tester job
+posting treats compatibility testing as a core skill, and this studio's own
+`playwright-adversarial-harness` scaffold — all 20+ test files, no
+exception — launches Chromium only (`chromium.launch()`, hardcoded). This
+studio's own Rykndu qa-playtest gate already ran into the real cost of
+this directly: its mobile pass was "Chromium-under-an-iPhone-viewport
+emulation... not WebKit or a real device — real touch-event/Safari-specific
+quirks are not covered," stated as an explicit gap in that report rather
+than assumed covered. Don't let that caveat reset to zero next report —
+treat cross-browser (at minimum a WebKit pass, since Playwright ships it
+and Safari/iOS is the concrete real-world gap) as a standing, explicitly
+named open item every time mobile/compatibility coverage is discussed,
+until a real pass actually closes it.
+
 **When you find something:** don't just note "seems broken" — isolate it.
 Reproduce in the smallest scenario that shows it, identify whether it's a
 real product bug or an artifact of your own test script (both have
@@ -98,10 +112,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

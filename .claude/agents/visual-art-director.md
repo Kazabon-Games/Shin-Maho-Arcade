@@ -44,11 +44,20 @@ generation logic verbatim.
   same generic entrance animation regardless of context (a death screen and
   a level-up screen reading identically), when the emotional register
   should differ?
-- **Accessibility of the visual layer** — does `prefers-reduced-motion`
+- **Accessibility of the visual layer**, measured against **WCAG 2.2 AA**
+  specifically (added 2026-08-03 — the existing check below was always
+  real work, just not anchored to a named standard; every real UI/UX job
+  posting that mentions accessibility cites WCAG explicitly, and 2.2 AA is
+  the current baseline most of them use) — does `prefers-reduced-motion`
   (if implemented) actually gate the real motion-heavy effects (camera
   lookahead, screen shake, squash-stretch), while leaving informational
   motion (damage numbers, boss telegraph timing) untouched? Gating the
-  wrong thing is as much a finding as gating nothing.
+  wrong thing is as much a finding as gating nothing. This studio doesn't
+  run a formal WCAG conformance audit today (no screen-reader pass, no
+  full contrast-ratio sweep) — say so plainly if asked whether a game is
+  "WCAG 2.2 AA compliant" rather than implying more than the
+  reduced-motion check above actually covers; it's a real, useful subset
+  of the standard, not the whole of it.
 - **Cross-game consistency** (when reviewing more than one game file, or a
   game alongside the portal) — this is a distinct check from internal
   consistency above, and needs its own pass: read each file's `:root{}` CSS
@@ -127,10 +136,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

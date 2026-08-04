@@ -55,6 +55,28 @@ games — the attack surface is narrow but real):
   data-handling policy (what's collected, where it's stored, how a player
   deletes it) must exist *before* that ships, not as a follow-up.
 
+**5. Software supply chain (added 2026-08-03, OWASP Top 10:2025's new A03
+category):** every CDN dependency is a named, reviewed decision (today:
+Google Fonts). Before recommending SRI on it, know that Google Fonts'
+CSS endpoint is User-Agent-varying — a fixed integrity hash would break
+real visitors, not secure them; the real options are self-hosting the
+fonts or explicitly documenting the CDN as an accepted trust boundary.
+Full reasoning and the exact grep pattern: `security-data-trust-checklist`
+skill.
+
+**6. Exceptional-condition handling (also new in OWASP Top 10:2025):**
+does the app degrade gracefully on malformed input it didn't produce
+itself (a hand-edited localStorage value, a truncated JSON import)?
+`age-of-wonder` has `json-import-validation` for its cross-document import
+case; `Shin-Maho-Arcade`'s own localStorage save/load path has no
+equivalent named check yet — confirm a corrupted save falls back to a
+fresh default rather than throwing uncaught.
+
+**7. Security misconfiguration (OWASP Top 10:2025 moved this to #2):** is
+a `<meta http-equiv="Content-Security-Policy">` tag viable given GitHub
+Pages' lack of custom response-header control? A considered "not adopted,
+here's why" is a real finding — don't leave the question unasked.
+
 ## How to report
 
 Structure findings by severity (block-the-release vs. worth-fixing-soon vs.
@@ -111,10 +133,19 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — exactly three skills exist,
-  verified against disk: `adaptive-game-audio`, `faceted-gem-rendering`,
-  `pwa-offline-games`. Don't cite a skill that isn't actually there, and
-  don't miss one that is.
+- **Skills library is at `.claude/skills/`** — eleven skills exist as of
+  2026-08-03 (this line itself went stale once already, still claiming
+  "exactly three" long after the count grew — a live instance of the
+  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
+  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+  §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
+  `faceted-gem-rendering`, `pwa-offline-games`,
+  `security-data-trust-checklist`, `difficulty-curve-calibration`,
+  `color-language-audit`, `playwright-adversarial-harness`,
+  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
+  for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
   music, and legible mechanics are now a stated mandate, not an implicit
   hope — see `STUDIO_BIBLE.md` §14. If a Game 4 deliverable in your domain

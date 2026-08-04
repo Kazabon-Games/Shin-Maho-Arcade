@@ -64,6 +64,50 @@ no-backend — the attack surface is narrow but real):
   collected, where it's stored, how a player deletes it) must exist
   *before* it ships, not as a follow-up task.
 
+**5. Software supply chain (added 2026-08-03, OWASP Top 10:2025 moved this
+to its own top-level category, A03).** Every CDN dependency this studio
+loads today is Google Fonts (`grep -n "fonts\.googleapis\.com\|fonts\.gstatic\.com" *.html`
+— confirmed present in at least `wardfall.html` as of this pass). **Don't
+reach for a blanket "add an `integrity=` attribute" fix here without
+checking first**: `fonts.googleapis.com`'s CSS endpoint serves a
+User-Agent-varying response (different browsers get different `@font-face`
+declarations/formats), so a single fixed SRI hash would break the
+`<link rel="stylesheet">` for some real visitors, not secure it — this is
+a genuine case where the standard mitigation doesn't transfer cleanly, not
+a shortcut to skip the check. The two real options, if this ever needs
+tightening: self-host the font files (removes the CDN trust boundary
+entirely, at the cost of the single-file-no-build convention gaining a
+few binary asset files) or explicitly document the CDN as a reviewed,
+accepted trust boundary (Google's own subresource, not arbitrary
+third-party content) — either is a legitimate call, but it should be a
+named decision in the review output, not silently absent. Confirm no
+*other* CDN dependency has been added without the same review (any hit
+from the third-party-script grep in check 3 that isn't Google Fonts is a
+new case needing its own explicit look, SRI-feasible or not).
+
+**6. Exceptional-condition handling (added 2026-08-03, also new in OWASP
+Top 10:2025).** Confirm the app doesn't silently corrupt state or crash on
+malformed input it didn't produce itself: a hand-edited or truncated
+`localStorage` value, a bad/partial JSON import. `age-of-wonder`'s
+`json-import-validation` skill already covers this for that repo's
+import-across-documents flow — cite it rather than re-deriving the same
+check there. `Shin-Maho-Arcade` has no equivalent named check today for
+its own localStorage save/load path specifically (as distinct from
+`age-of-wonder`'s cross-document import case) — if reviewing a game there,
+confirm a corrupted/manually-edited save value degrades to a fresh-state
+default rather than throwing an uncaught exception on load.
+
+**7. Security misconfiguration (OWASP Top 10:2025 moved this to #2, from
+#5).** GitHub Pages doesn't allow custom HTTP response headers for a
+static site, but a `<meta http-equiv="Content-Security-Policy">` tag is
+still usable and currently absent from every game file checked so far —
+confirm whether one's been considered for the repo under review. A
+confirmed "not adopted, here's why" (e.g. the studio's own inline
+`<script>`/`<style>` convention would need a CSP permissive enough that a
+meta-tag CSP adds little real protection without also restructuring how
+the single-file convention works) is a legitimate, real finding — say so
+explicitly rather than leaving the question unasked.
+
 ## How to report
 
 Severity-tiered (block-the-release / worth-fixing-soon / informational),
