@@ -11,6 +11,16 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.3.0 — 2026-08-04 — Equipment (new Edit Equipment screen, 5 slots/8
+                          items per MONOLITH_RULESET.md's resolved source-
+                          ambiguity design) and a secondary weapon picker
+                          added to the existing Weapon step (content added
+                          to a locked step, not a new step — the wizard's
+                          6-step shape/order is unchanged). Necklace's
+                          "+1 basic ability count" bonus is read as +1
+                          deck-size cap (11 instead of 10); unequipping it
+                          trims an over-cap deck from the end rather than
+                          leaving it silently over cap.
   v0.2.0 — 2026-08-04 — Ability cards: data-driven OPERATORS table (~23 of
                           MONOLITH_RULESET.md's Fundamental Operators —
                           Talisman-dependent, Defensive/Reactive, Utility,
@@ -257,6 +267,19 @@
     </div>
   </div>
 
+  <!-- ============ EQUIPMENT EDITOR ============ -->
+  <div id="equipment-view" style="display:none;">
+    <div class="panel">
+      <h2 style="margin-top:0;" id="equipment-heading">Edit Equipment</h2>
+      <p class="hint">Head and Neck have one item each. Hands, Feet, and Body each offer a choice between two — or leave a slot empty.</p>
+      <div id="equipment-slots"></div>
+      <div class="nav-bar">
+        <button class="nav-btn secondary" onclick="cancelEquipmentEditor()">Cancel</button>
+        <button class="nav-btn primary" onclick="saveEquipmentEditor()">Save Equipment</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ WIZARD VIEW ============ -->
   <div id="wizard-view">
     <div class="app">
@@ -342,6 +365,8 @@
           <h2>Starting Weapon</h2>
           <div class="sub" id="weapon-sub">Options depend on the Class chosen in step 2.</div>
           <div class="opt-group" id="weapon-group"></div>
+          <label class="field-label">Secondary weapon (optional — switching to it mid-battle costs 10 Initiative)</label>
+          <div class="opt-group" id="secondary-weapon-group"></div>
           <div class="nav-bar">
             <span class="nav-note">Step 5 of 6 · Weapon</span>
             <button class="nav-btn" onclick="goTo(3)">← Tulpa</button>
@@ -414,6 +439,30 @@ const WEAPONS = {
   staff: { label:'Staff', range:'1 or 2', note:'—' },
   wand: { label:'Wand', range:'2', note:'+1 Basic Ability range (as main)' },
 };
+
+/* ============================================================
+   EQUIPMENT — 5 slots, 8 total items. See MONOLITH_RULESET.md's
+   Equipment section for the source-ambiguity resolution: Head/Neck have
+   exactly one item each (no in-slot choice), Hands/Feet/Body each offer
+   a real choice between two items/bonuses.
+   ============================================================ */
+const EQUIPMENT_SLOTS = {
+  head: { label:'Head', items: [ { id:'helmet', label:'Helmet', stat:'handSize', amount:1, note:'+1 Hand Size' } ] },
+  neck: { label:'Neck', items: [ { id:'necklace', label:'Necklace', stat:'deckCap', amount:1, note:'+1 deck-size cap' } ] },
+  hands: { label:'Hands', items: [
+    { id:'ring', label:'Ring', stat:'abilityRange', amount:1, note:'+1 Basic Ability Range' },
+    { id:'glove', label:'Glove', stat:'strike', amount:1, note:'+1 Strike' },
+  ]},
+  feet: { label:'Feet', items: [
+    { id:'boots', label:'Boots', stat:'specialMovement', amount:1, note:'+1 Special Movement' },
+    { id:'sandals', label:'Sandals', stat:'distance', amount:1, note:'+1 Distance' },
+  ]},
+  body: { label:'Body', items: [
+    { id:'cloak', label:'Cloak', stat:'talismanAoE', amount:1, note:'+1 Talisman AoE (inert — no Talismans on the grid yet)' },
+    { id:'pouch', label:'Pouch', stat:'pack', amount:1, note:'+1 Pack' },
+  ]},
+};
+function equipmentItemById(slot, id){ return EQUIPMENT_SLOTS[slot]?.items.find(i => i.id === id); }
 
 /* ============================================================
    ABILITY OPERATORS + CARDS — data-driven, per MONOLITH_RULESET.md's
@@ -561,11 +610,13 @@ function renderRoster(){
         <span class="tag">${POSITIONS[r.position]?.label || r.position}</span>
         <span class="tag">Rarity ${r.rarity}</span>
       </div>
-      <div class="tulpa-line">Tulpa: ${escapeHtml(r.tulpa?.name || '—')} · ${WEAPONS[r.weapons?.main]?.label || '—'}</div>
-      <div class="tulpa-line">Grimoire: ${(r.grimoire||[]).length} · Deck: ${(r.deck||[]).length}/10</div>
+      <div class="tulpa-line">Tulpa: ${escapeHtml(r.tulpa?.name || '—')} · ${WEAPONS[r.weapons?.main]?.label || '—'}${r.weapons?.secondary ? ' / ' + WEAPONS[r.weapons.secondary].label : ''}</div>
+      <div class="tulpa-line">Grimoire: ${(r.grimoire||[]).length} · Deck: ${(r.deck||[]).length}/${deckCap(r)}</div>
+      <div class="tulpa-line">Equipped: ${equippedSummary(r)}</div>
       <div class="card-actions">
         <button class="btn secondary" onclick="editEsori('${r.esoriId}')">Edit</button>
         <button class="btn secondary" onclick="openDeckEditor('${r.esoriId}')">Edit Deck</button>
+        <button class="btn secondary" onclick="openEquipmentEditor('${r.esoriId}')">Edit Equipment</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','backup')">Export (Backup)</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','share')">Export (Share)</button>
         <button class="btn danger" onclick="deleteEsori('${r.esoriId}')">Delete</button>
@@ -575,6 +626,11 @@ function renderRoster(){
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function equippedSummary(r){
+  const equipped = Object.entries(r.equipment || {}).filter(([, itemId]) => itemId);
+  if (!equipped.length) return 'none';
+  return equipped.map(([slot, itemId]) => equipmentItemById(slot, itemId)?.label || itemId).join(', ');
 }
 function refreshHome(){
   renderCurrencyStrip();
@@ -602,7 +658,7 @@ function goTo(n){
   if (mpLabel) mpLabel.textContent = SECTION_LABELS[n] || '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
-  if (n === 4) renderWeaponOptions();
+  if (n === 4) { renderWeaponOptions(); renderSecondaryWeaponOptions(); }
   if (n === 5) renderReview();
 }
 
@@ -676,7 +732,30 @@ function renderWeaponOptions(){
 // remember the weapon pick across a Class change so renderWeaponOptions can decide whether it's still valid
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('#weapon-group .opt-btn');
-  if (btn) document.getElementById('weapon-group').dataset.pendingKey = btn.dataset.key;
+  if (btn) { document.getElementById('weapon-group').dataset.pendingKey = btn.dataset.key; renderSecondaryWeaponOptions(); }
+});
+function renderSecondaryWeaponOptions(){
+  const cls = selectedKey('class-group');
+  const group = document.getElementById('secondary-weapon-group');
+  if (!group) return;
+  const main = selectedKey('weapon-group');
+  if (!cls){ group.innerHTML = ''; return; }
+  const options = CLASSES[cls].weapons.filter(w => w !== main);
+  const previouslySelected = group.dataset.pendingKey || '';
+  group.innerHTML = ['<button class="opt-btn" data-key="" onclick="selOpt(\'secondary-weapon-group\', this)">None</button>']
+    .concat(options.map(wKey => {
+      const w = WEAPONS[wKey];
+      return `<button class="opt-btn" data-key="${wKey}" onclick="selOpt('secondary-weapon-group', this)"><strong>${w.label}</strong><span class="opt-sub">Range ${w.range}</span></button>`;
+    })).join('');
+  if (options.includes(previouslySelected)){
+    document.querySelector(`#secondary-weapon-group .opt-btn[data-key="${previouslySelected}"]`)?.classList.add('sel');
+  } else {
+    document.querySelector(`#secondary-weapon-group .opt-btn[data-key=""]`)?.classList.add('sel');
+  }
+}
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('#secondary-weapon-group .opt-btn');
+  if (btn) document.getElementById('secondary-weapon-group').dataset.pendingKey = btn.dataset.key;
 });
 
 function validateDraft(){
@@ -702,6 +781,7 @@ function renderReview(){
   const cls = selectedKey('class-group');
   const pos = selectedKey('position-group');
   const wpn = selectedKey('weapon-group');
+  const secondaryWpn = selectedKey('secondary-weapon-group');
   document.getElementById('review-output').innerHTML = `
     <div class="summary-line"><b>Name:</b> ${escapeHtml(gv('field-name') || '(not set)')}</div>
     <div class="summary-line"><b>Class:</b> ${CLASSES[cls]?.label || '(not set)'}</div>
@@ -711,6 +791,7 @@ function renderReview(){
     <div class="summary-line"><b>Open Wonderland — Effect:</b> ${escapeHtml(gv('field-effect') || '(not set)')}</div>
     <div class="summary-line"><b>Open Wonderland — Sustain:</b> ${escapeHtml(gv('field-sustain') || '(not set)')}</div>
     <div class="summary-line"><b>Starting weapon:</b> ${WEAPONS[wpn]?.label || '(not set)'}</div>
+    <div class="summary-line"><b>Secondary weapon:</b> ${WEAPONS[secondaryWpn]?.label || 'None'}</div>
   `;
 }
 
@@ -726,6 +807,8 @@ function clearWizardFields(){
   document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('sel'));
   document.getElementById('weapon-group').innerHTML = '<p class="hint">Pick a Class in step 2 first, then come back here.</p>';
   document.getElementById('weapon-group').dataset.pendingKey = '';
+  document.getElementById('secondary-weapon-group').innerHTML = '';
+  document.getElementById('secondary-weapon-group').dataset.pendingKey = '';
 }
 function startNewEsori(){
   editingId = null;
@@ -747,6 +830,7 @@ function editEsori(esoriId){
   document.getElementById('field-effect').value = r.tulpa?.openWonderland?.effect || '';
   document.getElementById('field-sustain').value = r.tulpa?.openWonderland?.sustain || '';
   document.getElementById('weapon-group').dataset.pendingKey = r.weapons?.main || '';
+  document.getElementById('secondary-weapon-group').dataset.pendingKey = r.weapons?.secondary || '';
   document.getElementById('home-view').style.display = 'none';
   document.getElementById('wizard-view').style.display = 'block';
   goTo(0);
@@ -767,6 +851,7 @@ function saveEsori(){
   const cls = selectedKey('class-group');
   const pos = selectedKey('position-group');
   const wpn = selectedKey('weapon-group');
+  const secondaryWpn = selectedKey('secondary-weapon-group') || null;
 
   if (editingId){
     const existing = state.roster.find(x => x.esoriId === editingId);
@@ -783,7 +868,7 @@ function saveEsori(){
           sustain: gv('field-sustain'),
         },
       },
-      weapons: { main: wpn, secondary: existing.weapons?.secondary || null },
+      weapons: { main: wpn, secondary: secondaryWpn },
     });
   } else {
     state.roster.push({
@@ -810,7 +895,7 @@ function saveEsori(){
       grimoire: CARD_LIBRARY.map(c => c.id),
       deck: CARD_LIBRARY.slice(0, 10).map(c => c.id),
       equipment: { head: null, neck: null, hands: null, feet: null, body: null },
-      weapons: { main: wpn, secondary: null },
+      weapons: { main: wpn, secondary: secondaryWpn },
       allocatedStars: {},
       notes: '',
     });
@@ -837,28 +922,32 @@ function deleteEsori(esoriId){
    a cap of 10 rather than a bespoke selection widget.
    ============================================================ */
 let deckEditingId = null;
+function deckCap(record){
+  return record.equipment?.neck === 'necklace' ? 11 : 10; // Necklace: +1 deck-size cap, see MONOLITH_RULESET.md's Equipment section
+}
 function openDeckEditor(esoriId){
   const r = state.roster.find(x => x.esoriId === esoriId);
   if (!r) return;
   deckEditingId = esoriId;
   document.getElementById('deck-heading').textContent = `Edit Deck — ${r.name}`;
+  const cap = deckCap(r);
   const pool = r.grimoire && r.grimoire.length ? r.grimoire : CARD_LIBRARY.map(c => c.id);
   document.getElementById('deck-card-group').innerHTML = pool.map(cardId => {
     const card = cardById(cardId);
     if (!card) return '';
     const inDeck = (r.deck || []).includes(cardId);
-    return `<button class="opt-btn ${inDeck ? 'sel' : ''}" data-key="${cardId}" onclick="selMulti('deck-card-group', this, 10); updateDeckCount();">
+    return `<button class="opt-btn ${inDeck ? 'sel' : ''}" data-key="${cardId}" onclick="selMulti('deck-card-group', this, ${cap}); updateDeckCount(${cap});">
       <strong>${escapeHtml(card.name)}</strong>
       <span class="opt-sub">${cardCategory(card)} · ${cardCost(card)} Ini</span>
     </button>`;
   }).join('');
-  updateDeckCount();
+  updateDeckCount(cap);
   document.getElementById('home-view').style.display = 'none';
   document.getElementById('deck-view').style.display = 'block';
 }
-function updateDeckCount(){
+function updateDeckCount(cap){
   const selected = document.querySelectorAll('#deck-card-group .opt-btn.sel');
-  document.getElementById('deck-count').textContent = `${selected.length}/10`;
+  document.getElementById('deck-count').textContent = `${selected.length}/${cap}`;
   const totalCost = [...selected].reduce((sum, btn) => sum + cardCost(cardById(btn.dataset.key)), 0);
   document.getElementById('deck-cost-note').textContent = `Total Initiative cost if all played in one round: ${totalCost}`;
 }
@@ -876,6 +965,59 @@ function saveDeckEditor(){
   save();
   deckEditingId = null;
   document.getElementById('deck-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+  refreshHome();
+}
+
+/* ============================================================
+   EQUIPMENT EDITOR — one opt-group per slot, selOpt (single-select) per
+   slot plus a "None" option so a slot can be left empty; Head/Neck have
+   only one item so their group is really just an on/off toggle.
+   ============================================================ */
+let equipmentEditingId = null;
+function openEquipmentEditor(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  equipmentEditingId = esoriId;
+  document.getElementById('equipment-heading').textContent = `Edit Equipment — ${r.name}`;
+  const current = r.equipment || {};
+  document.getElementById('equipment-slots').innerHTML = Object.entries(EQUIPMENT_SLOTS).map(([slotKey, slot]) => {
+    const groupId = `equip-${slotKey}`;
+    const equippedId = current[slotKey] || null;
+    const noneBtn = `<button class="opt-btn ${!equippedId ? 'sel' : ''}" data-key="" onclick="selOpt('${groupId}', this)">None</button>`;
+    const itemBtns = slot.items.map(item => `<button class="opt-btn ${equippedId === item.id ? 'sel' : ''}" data-key="${item.id}" onclick="selOpt('${groupId}', this)">
+      <strong>${item.label}</strong><span class="opt-sub">${item.note}</span>
+    </button>`).join('');
+    return `<div class="position-slot">
+      <div class="slot-label">${slot.label}</div>
+      <div class="opt-group" id="${groupId}">${noneBtn}${itemBtns}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('equipment-view').style.display = 'block';
+}
+function cancelEquipmentEditor(){
+  equipmentEditingId = null;
+  document.getElementById('equipment-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+}
+function saveEquipmentEditor(){
+  const r = state.roster.find(x => x.esoriId === equipmentEditingId);
+  if (!r) return;
+  const newEquipment = {};
+  Object.keys(EQUIPMENT_SLOTS).forEach(slotKey => {
+    const selected = document.querySelector(`#equip-${slotKey} .opt-btn.sel`)?.dataset.key || null;
+    newEquipment[slotKey] = selected || null;
+  });
+  // If unequipping the Necklace drops the deck below its new cap, trim
+  // from the end rather than leaving an over-cap deck silently in place.
+  const wouldBeCap = newEquipment.neck === 'necklace' ? 11 : 10;
+  if (r.deck.length > wouldBeCap) r.deck = r.deck.slice(0, wouldBeCap);
+  r.equipment = newEquipment;
+  r.updatedAt = new Date().toISOString();
+  save();
+  equipmentEditingId = null;
+  document.getElementById('equipment-view').style.display = 'none';
   document.getElementById('home-view').style.display = 'block';
   refreshHome();
 }
@@ -1073,8 +1215,8 @@ window.Codex._test = {
       },
       grimoire: CARD_LIBRARY.map(c => c.id),
       deck: opts.deck || CARD_LIBRARY.slice(0, 10).map(c => c.id),
-      equipment: { head: null, neck: null, hands: null, feet: null, body: null },
-      weapons: { main: opts.weapon, secondary: null },
+      equipment: opts.equipment || { head: null, neck: null, hands: null, feet: null, body: null },
+      weapons: { main: opts.weapon, secondary: opts.secondaryWeapon || null },
       allocatedStars: {},
       notes: '',
     };

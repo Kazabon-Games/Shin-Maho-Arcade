@@ -11,6 +11,19 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.3.0 — 2026-08-04 — Equipment now actually does something: bonuses
+                          (Ring/Glove/Boots/Sandals/Helmet — Ability
+                          Range, Strike, Special Movement, Distance, Hand
+                          Size) apply in computeBattleStats(), mirroring
+                          the same EQUIPMENT_SLOTS data Codex uses. Hand
+                          size is now a per-unit stat (maxHandSize) instead
+                          of the hardcoded 5 it was before. New "Switch
+                          Weapon" battle action (10 Ini, per the ruleset)
+                          swaps main/secondary and correctly re-applies
+                          each weapon's own "as main" bonus (Dagger +1
+                          Strike, Wand +1 Ability Range) rather than
+                          leaving the old weapon's bonus stuck after the
+                          switch.
   v0.2.1 — 2026-08-04 — AI now plays cards, not just movement/Weapon
                           Strike: a single greedy per-turn decision
                           (activate a Passive if it has none → else play
@@ -277,6 +290,7 @@
             <button class="btn" id="action-move" onclick="setInteractionMode('move')">Move</button>
             <button class="btn" id="action-strike" onclick="setInteractionMode('strike')">Strike</button>
             <button class="btn secondary" id="action-rally" onclick="setInteractionMode('rally')">Rally</button>
+            <button class="btn secondary" id="action-switch-weapon" onclick="switchWeapon(currentUnit())">Switch Weapon (10 Ini)</button>
             <button class="btn danger" id="action-end" onclick="endTurn()">End Turn</button>
           </div>
         </div>
@@ -411,6 +425,38 @@ function cardDescription(card){
   return text;
 }
 const BASE_ABILITY_RANGE = 3; // MONOLITH_RULESET.md never states a base value (only modifiers to it) — a stated default, not a silent guess
+const BASE_HAND_SIZE = 5;
+
+/* ============================================================
+   EQUIPMENT — identical data to monolith-codex.html's copy. See
+   MONOLITH_RULESET.md's Equipment section for the source-ambiguity
+   resolution (5 slots, 8 total items).
+   ============================================================ */
+const EQUIPMENT_SLOTS = {
+  head: { label:'Head', items: [ { id:'helmet', label:'Helmet', stat:'handSize', amount:1 } ] },
+  neck: { label:'Neck', items: [ { id:'necklace', label:'Necklace', stat:'deckCap', amount:1 } ] },
+  hands: { label:'Hands', items: [
+    { id:'ring', label:'Ring', stat:'abilityRange', amount:1 },
+    { id:'glove', label:'Glove', stat:'strike', amount:1 },
+  ]},
+  feet: { label:'Feet', items: [
+    { id:'boots', label:'Boots', stat:'specialMovement', amount:1 },
+    { id:'sandals', label:'Sandals', stat:'distance', amount:1 },
+  ]},
+  body: { label:'Body', items: [
+    { id:'cloak', label:'Cloak', stat:'talismanAoE', amount:1 },
+    { id:'pouch', label:'Pouch', stat:'pack', amount:1 },
+  ]},
+};
+function equipmentItemById(slot, id){ return EQUIPMENT_SLOTS[slot]?.items.find(i => i.id === id); }
+function applyEquipmentBonuses(stats, equipment){
+  if (!equipment) return;
+  Object.entries(equipment).forEach(([slot, itemId]) => {
+    if (!itemId) return;
+    const item = equipmentItemById(slot, itemId);
+    if (item) stats[item.stat] = (stats[item.stat] || 0) + item.amount;
+  });
+}
 
 const PRESET_AI_SQUAD = [
   { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
@@ -548,7 +594,7 @@ function handleGuestImport(){
    BATTLE STATS + WEAPON RANGE
    ============================================================ */
 function computeBattleStats(e){
-  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE };
+  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE, handSize: BASE_HAND_SIZE };
   if (e.class === 'knight') s.strike += 1;
   if (e.class === 'rook') s.specialMovement += 1;
   if (e.class === 'bishop') s.abilityRange += 1;
@@ -557,6 +603,7 @@ function computeBattleStats(e){
   if (e.position === 'infiltrator') s.pack += 2;
   if (e.weapons?.main === 'dagger') s.strike += 1;
   if (e.weapons?.main === 'wand') s.abilityRange += 1;
+  applyEquipmentBonuses(s, e.equipment);
   s.rarity = e.rarity || 1;
   s.dmg = 10 * s.rarity;
   s.critDmg = 15 * s.rarity;
@@ -599,8 +646,9 @@ function beginDeployment(){
       maxLife: stats.life, life: stats.life,
       maxInitiative: stats.initiative, initiative: stats.initiative,
       strike: stats.strike, distance: stats.distance, specialMovement: stats.specialMovement,
-      abilityRange: stats.abilityRange,
-      weaponMain: stats.weaponMain, dmg: stats.dmg, critDmg: stats.critDmg,
+      abilityRange: stats.abilityRange, maxHandSize: stats.handSize,
+      weaponMain: stats.weaponMain, weaponSecondary: esori.weapons?.secondary || null,
+      dmg: stats.dmg, critDmg: stats.critDmg,
       defeated: false, rallied: false, removed: false,
       distanceRemaining: 0, hasStruckThisTurn: false,
       deck: shuffle(startingDeck), hand: [], discard: [],
@@ -740,7 +788,7 @@ function shuffle(arr){
   return a;
 }
 function drawCard(u){
-  if (u.hand.length >= 5) return;
+  if (u.hand.length >= u.maxHandSize) return;
   if (!u.deck.length){
     if (!u.discard.length) return; // nothing left to draw at all
     u.deck = shuffle(u.discard);
@@ -922,6 +970,24 @@ function tryRally(u, x, y){
   target.life = 1;
   target.distance = computeBattleStats({class:target.class, position:target.position, weapons:{main:target.weaponMain}, rarity:1}).distance;
   logMsg(`${u.name} rallies ${target.name}.`, u.team);
+  renderBattle();
+}
+function switchWeapon(u){
+  if (!u || u.controller !== 'human' || !u.weaponSecondary) return;
+  if (u.initiative < 10) return; // "Switching weapons from hand costs 10 initiative," per MONOLITH_RULESET.md
+  u.initiative -= 10;
+  const oldMain = u.weaponMain, newMain = u.weaponSecondary;
+  // "As main" bonuses are tied to whichever weapon is currently equipped
+  // as main, not baked in permanently — undo the outgoing one, apply the
+  // incoming one. Sword's own main-slot bonus (+1 Distance after a hit)
+  // is conditional/dynamic already (see tryStrike), nothing to undo here.
+  if (oldMain === 'dagger') u.strike -= 1;
+  if (oldMain === 'wand') u.abilityRange -= 1;
+  if (newMain === 'dagger') u.strike += 1;
+  if (newMain === 'wand') u.abilityRange += 1;
+  u.weaponMain = newMain;
+  u.weaponSecondary = oldMain;
+  logMsg(`${u.name} switches to ${WEAPONS[newMain].label}.`, u.team);
   renderBattle();
 }
 
@@ -1236,6 +1302,10 @@ function renderBattle(){
   document.getElementById('action-move').disabled = blocked || active.distanceRemaining <= 0;
   document.getElementById('action-strike').disabled = blocked || active.hasStruckThisTurn;
   document.getElementById('action-rally').disabled = blocked;
+  const switchBtn = document.getElementById('action-switch-weapon');
+  switchBtn.style.display = (active && active.weaponSecondary) ? 'inline-block' : 'none';
+  switchBtn.disabled = blocked || !active || active.initiative < 10;
+  if (active?.weaponSecondary) switchBtn.textContent = `Switch to ${WEAPONS[active.weaponSecondary].label} (10 Ini)`;
   document.getElementById('action-end').disabled = blocked;
 
   const handGroup = document.getElementById('hand-card-group');

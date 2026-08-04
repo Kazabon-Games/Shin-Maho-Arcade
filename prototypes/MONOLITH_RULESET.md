@@ -117,12 +117,33 @@ is ever introduced — not currently possible at integer rarity).
 
 ## Equipment (passive, worn before battle)
 
-| Slot pair | Bonus A | Bonus B |
+Source ambiguity, resolved and documented rather than guessed silently:
+`Monolith_Ruleset_Document_v1.pdf`'s own Equipment section lists 4
+cosmetic item names per slot ("Head: Helmet, Circlet, Hood," etc.), but
+`Monolith_Universe.pdf`'s numeric bonus table only ever names 2 of those
+per line, paired as "Item A/Item B: bonus A/bonus B." Read literally, that
+pairing puts Helmet and Necklace in *different* slots (head, neck) with
+one fixed bonus each — no in-slot choice — while Ring/Glove, Boots/
+Sandals, and Cloak/Pouch each name two items *within the same slot*
+(hands, feet, body respectively), giving a real choice between two
+bonuses for those three slots. That's the reading implemented: 5 slots,
+8 total equippable items, exactly as numbered below. Circlet/Hood,
+Amulet/Scarf, Gauntlets/Bracers, Greaves, and Robe/Armor (the other
+cosmetic names `Monolith_Ruleset_Document_v1.pdf` lists) have no stated
+numeric effect in any source doc and are not implemented as distinct
+items — flavor slots without a mechanical hook aren't worth inventing
+numbers for.
+
+| Slot | Item | Bonus |
 |---|---|---|
-| Helmet / Necklace | +1 Hand Size | +1 basic ability count |
-| Ring / Glove | +1 basic ability range | +1 Strike |
-| Boots / Sandals | +1 Special Movement | +1 Distance |
-| Cloak / Pouch | +1 Talisman AoE | +1 Pack |
+| Head | Helmet | +1 Hand Size |
+| Neck | Necklace | +1 basic ability count (read as +1 deck-size cap, 11 instead of 10 — Ultimate-tier cards, where "basic" vs. Ultimate would otherwise matter, aren't implemented yet) |
+| Hands | Ring | +1 Basic Ability Range |
+| Hands | Glove | +1 Strike |
+| Feet | Boots | +1 Special Movement |
+| Feet | Sandals | +1 Distance |
+| Body | Cloak | +1 Talisman AoE (inert until Talismans are placeable on the grid) |
+| Body | Pouch | +1 Pack |
 
 ## Items
 
