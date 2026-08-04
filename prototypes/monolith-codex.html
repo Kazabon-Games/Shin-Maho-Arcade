@@ -142,8 +142,8 @@
   /* ---- roster ---- */
   #home-view h2{margin-top:0;}
   .roster-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.9rem;margin-top:1rem;}
-  .roster-card{background:var(--panel-bg-2);border:1px solid var(--border);border-radius:10px;padding:.9rem;}
-  .roster-card .name{font-weight:700;font-size:1.05rem;}
+  .roster-card{background:var(--panel-bg-2);border:1px solid var(--border);border-radius:10px;padding:.9rem;min-width:0;}
+  .roster-card .name{font-weight:700;font-size:1.05rem;overflow-wrap:break-word;word-break:break-word;}
   .roster-card .tags{display:flex;gap:.4rem;flex-wrap:wrap;margin:.4rem 0;}
   .tag{font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;background:var(--panel-bg);border:1px solid var(--border);border-radius:5px;padding:.15rem .4rem;color:var(--text-mid);}
   .roster-card .tulpa-line{font-size:.78rem;color:var(--text-soft);margin-bottom:.5rem;}
@@ -1046,6 +1046,45 @@ function handleImportFile(){
    local-state-persistence doesn't apply), so init() only needs to
    reflect whatever load() restored into the DOM. Ordering B.
    ============================================================ */
+/* ============================================================
+   TEST HOOKS — playwright-adversarial-harness skill convention: fast,
+   deterministic setup for OTHER tests (e.g. an Arena-focused test that
+   needs "a 3-Esori roster exists" but isn't itself testing wizard
+   creation), never a substitute for driving the wizard/deck-editor
+   through real clicks in a test that IS about those flows.
+   ============================================================ */
+window.Codex = window.Codex || {};
+window.Codex._test = {
+  getState: () => state,
+  getRoster: () => state.roster,
+  clearRoster: () => { state.roster = []; save(); refreshHome(); },
+  quickCreateEsori: (opts) => {
+    const now = new Date().toISOString();
+    const record = {
+      esoriId: uuid(),
+      updatedAt: now,
+      name: opts.name,
+      class: opts.class,
+      position: opts.position,
+      rarity: opts.rarity || 1,
+      tulpa: {
+        name: opts.tulpaName || (opts.name + '-tulpa'),
+        openWonderland: { activation: 'a', effect: 'e', sustain: 's' },
+      },
+      grimoire: CARD_LIBRARY.map(c => c.id),
+      deck: opts.deck || CARD_LIBRARY.slice(0, 10).map(c => c.id),
+      equipment: { head: null, neck: null, hands: null, feet: null, body: null },
+      weapons: { main: opts.weapon, secondary: null },
+      allocatedStars: {},
+      notes: '',
+    };
+    state.roster.push(record);
+    save();
+    refreshHome();
+    return record;
+  },
+};
+
 function init(){
   load();
   buildClassOptions();

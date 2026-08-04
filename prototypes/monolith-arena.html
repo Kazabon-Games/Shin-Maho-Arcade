@@ -1278,6 +1278,20 @@ function renderBattle(){
 /* ============================================================
    INIT
    ============================================================ */
+/* ============================================================
+   TEST HOOKS — playwright-adversarial-harness skill convention. Reading
+   live battle state this way is always fine (that's just an assertion);
+   the actual interactions under test (deploy, move, strike, cast a card)
+   should still go through real page.click() calls, not these.
+   ============================================================ */
+window.Arena = window.Arena || {};
+window.Arena._test = {
+  getBattle: () => battle,
+  getCurrentUnit: () => currentUnit(),
+  getOperators: () => OPERATORS,
+  getCardLibrary: () => CARD_LIBRARY,
+};
+
 function init(){
   localRoster = loadLocalRoster();
   renderTeamPicker('teamA-picker');
