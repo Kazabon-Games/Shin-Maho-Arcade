@@ -11,6 +11,20 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.2.1 — 2026-08-04 — AI now plays cards, not just movement/Weapon
+                          Strike: a single greedy per-turn decision
+                          (activate a Passive if it has none → else play
+                          an Inflict-type Aggressive card on the lowest-
+                          life enemy in range → else Heal the most-wounded
+                          ally in range) added after the existing move/
+                          strike logic, reusing the exact same
+                          finalizeCast()/activatePassiveCard() the human
+                          path uses — not a separate AI-only cast
+                          function. AI explicitly skips OR-modifier cards
+                          (a real two-effect choice it has no basis to
+                          make yet) rather than guessing; still no real
+                          evaluation/lookahead, just a stated priority
+                          order.
   v0.2.0 — 2026-08-04 — Ability cards wired into real battles: units now
                           carry a shuffled deck/hand/discard, draw 1/turn
                           up to hand size 5 (with the "empty deck reshuffles
@@ -923,6 +937,19 @@ function discardCard(u, cardId){
   if (idx !== -1) u.hand.splice(idx, 1);
   u.discard.push(cardId);
 }
+function activatePassiveCard(u, card){
+  if (u.activePassive){
+    logMsg(`${u.name} already has an active Passive — only one at a time.`, u.team);
+    return false;
+  }
+  const cost = cardCost(card);
+  u.initiative -= cost;
+  u.activePassive = card.operatorId;
+  u.passiveNextCost = cost + 10; // this turn's activation is the base cost; sustaining it next turn costs +10 more
+  discardCard(u, card.id);
+  logMsg(`${u.name} activates ${OPERATORS[card.operatorId].name}.`, u.team);
+  return true;
+}
 function playHandCard(cardId){
   const u = currentUnit();
   if (!u || u.controller !== 'human') return;
@@ -933,15 +960,7 @@ function playHandCard(cardId){
   if (u.initiative < cost) return;
 
   if (category === 'passive'){
-    if (u.activePassive){
-      logMsg(`${u.name} already has an active Passive — only one at a time.`, u.team);
-      return;
-    }
-    u.initiative -= cost;
-    u.activePassive = card.operatorId;
-    u.passiveNextCost = cost + 10; // this turn's activation is the base cost; sustaining it next turn costs +10 more
-    discardCard(u, cardId);
-    logMsg(`${u.name} activates ${OPERATORS[card.operatorId].name}.`, u.team);
+    activatePassiveCard(u, card);
     renderBattle();
     return;
   }
@@ -1073,12 +1092,54 @@ function applyOperator(operatorId, caster, target, cost){
 }
 
 /* ============================================================
-   AI TURN — movement + strike only in v1 (no ability play yet)
+   AI TURN — movement, Weapon Strike, and now a single card-play decision
+   per turn (see aiChooseAndPlayCard below). Still a simple greedy
+   heuristic, not a real evaluation/lookahead AI — that's a much bigger
+   scope than "the AI shouldn't just ignore its own hand."
    ============================================================ */
 function maybeRunAiTurn(){
   const u = currentUnit();
   if (!u || u.controller !== 'human'){
     setTimeout(runAiTurn, 350);
+  }
+}
+/* Priority order, cheapest-to-justify first:
+   1. Activate a Passive if it doesn't have one yet (a safe, generically-
+      good opener that never needs a target).
+   2. Play an Aggressive life-damage card (Inflict, or an AND/plain card
+      built on it) on the lowest-life enemy in range — direct progress
+      toward winning.
+   3. Heal the most-wounded ally (self included) in range, if any ally is
+      actually missing life.
+   OR-modifier cards are skipped entirely for the AI — resolving one
+   needs a real choice between two effects, which the AI doesn't have a
+   basis to make yet, so it just plays a different card instead of
+   guessing. This is a stated scope line, not an oversight. */
+function aiChooseAndPlayCard(u){
+  if (!u.hand.length || u.initiative <= 0) return;
+  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCost(c) <= u.initiative);
+  if (!affordable.length) return;
+
+  if (!u.activePassive){
+    const passive = affordable.find(c => cardCategory(c) === 'passive');
+    if (passive){ activatePassiveCard(u, passive); return; }
+  }
+  const enemiesInRange = battle.units.filter(t => t.team !== u.team && !t.defeated && !t.removed && chebyshev(t.x-u.x, t.y-u.y) <= u.abilityRange);
+  if (enemiesInRange.length){
+    const aggCard = affordable.find(c => cardCategory(c) === 'aggressive' && OPERATORS[c.operatorId].kind === 'life-damage');
+    if (aggCard){
+      const target = enemiesInRange.reduce((a,b) => a.life < b.life ? a : b);
+      finalizeCast(u, target, aggCard, cardCost(aggCard));
+      return;
+    }
+  }
+  const woundedAllies = battle.units.filter(t => t.team === u.team && !t.defeated && !t.removed && t.life < t.maxLife && chebyshev(t.x-u.x, t.y-u.y) <= u.abilityRange);
+  if (woundedAllies.length){
+    const healCard = affordable.find(c => c.operatorId === 'heal');
+    if (healCard){
+      const target = woundedAllies.reduce((a,b) => a.life < b.life ? a : b);
+      finalizeCast(u, target, healCard, cardCost(healCard));
+    }
   }
 }
 function runAiTurn(){
@@ -1105,6 +1166,7 @@ function runAiTurn(){
         }
       }
     }
+    if (currentUnit() === u && !u.removed) aiChooseAndPlayCard(u); // still this unit's turn (finishBattle inside tryStrike could have ended it)
     const w = checkWin();
     if (w){ finishBattle(w); return; }
     setTimeout(endTurn, 300);
