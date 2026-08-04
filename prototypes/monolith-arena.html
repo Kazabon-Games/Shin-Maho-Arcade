@@ -11,6 +11,26 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.1 — 2026-08-04 — Worldbreaker pass (47 UI-driven attacks across
+                          both Codex and Arena — empty/whitespace-only
+                          wizard fields, messy real-world strings, XSS
+                          payloads, rapid double-clicks, corrupt/malformed
+                          imports, empty/partial roster states, deploy-zone
+                          misclicks, mobile viewport, theme-toggle spam,
+                          rapid rail navigation, a full post-attack battle
+                          replay to a clean finish) — everything passed
+                          except two real bugs the pass caught and fixed
+                          here: battle-board cells were missing data-x/
+                          data-y (deploy board had them, battle board
+                          didn't — an oversight, not a design choice;
+                          nothing player-visible broke, but it's a real
+                          inconsistency worth fixing on its own), and
+                          tokenHtml()'s two-letter initials were inserted
+                          into innerHTML unescaped (only escapeHtml(u.name)
+                          for the title attribute, not the visible
+                          initials text) — unlikely to be exploitable at
+                          just 2 characters, but genuinely unescaped
+                          user-controlled content in innerHTML regardless.
   v0.1.0 — 2026-08-04 — Phase 2: real 9x9 grid battle engine — team setup
                           (reads the shared local roster straight out of
                           the same 'monolith-esori-chronicles-v1'
@@ -785,7 +805,7 @@ function runAiTurn(){
    RENDER — battle board + HUD
    ============================================================ */
 function tokenHtml(u, showActive){
-  const initials = u.name.slice(0,2).toUpperCase();
+  const initials = escapeHtml(u.name.slice(0,2).toUpperCase());
   const lifePct = Math.max(0, Math.round((u.life / u.maxLife) * 100));
   const classes = ['token', u.team === 'A' ? 'teamA' : 'teamB'];
   if (u.defeated) classes.push('defeated');
@@ -817,7 +837,7 @@ function renderBattle(){
       if (obstacle) classes.push('obstacle');
       if (reach[key] !== undefined) classes.push('reachable');
       if (targets.some(t => t.x===x && t.y===y)) classes.push('targetable');
-      html += `<div class="${classes.join(' ')}" onclick="handleBoardClick(${x},${y})">`;
+      html += `<div class="${classes.join(' ')}" data-x="${x}" data-y="${y}" onclick="handleBoardClick(${x},${y})">`;
       if (unit) html += tokenHtml(unit, active && unit.esoriId === active.esoriId);
       html += '</div>';
     }
