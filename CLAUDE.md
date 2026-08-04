@@ -42,8 +42,18 @@ short on purpose.
   conflicting source PDFs — read its "Source precedence" section before
   trusting any one of those PDFs alone) and `MONOLITH_ESORI_SCHEMA.md`
   (the Esori JSON export/import shape shared by both documents and by the
-  person-to-person Esori-sharing flow). Phase 0 only so far — scaffold
-  and locked docs exist, no real gameplay yet.
+  person-to-person Esori-sharing flow). Past Phase 0 now: Codex has a real
+  creation wizard, roster persistence, a Grimoire/deck editor, and JSON
+  import/export; Arena has a working 9x9 battle engine — movement, weapon
+  strikes, initiative turn order, defeat/rally, and data-driven ability
+  cards (playable by both the human and the AI) — reachable end to end
+  from character creation through a finished battle. `tests/
+  monolith-adversarial.js` covers both documents. Still explicitly out of
+  scope, not silently missing: Talisman-dependent operators (Destroy/
+  Capture/Mojo — Talismans aren't placeable on the grid yet), Defensive/
+  Reactive abilities (need an interrupt/reaction window the turn loop
+  doesn't have), and Ultimate-tier cards — see MONOLITH_RULESET.md's own
+  scope notes.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
