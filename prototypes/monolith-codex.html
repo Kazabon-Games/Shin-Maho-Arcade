@@ -11,6 +11,33 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.2.0 — 2026-08-04 — Ability cards: data-driven OPERATORS table (~23 of
+                          MONOLITH_RULESET.md's Fundamental Operators —
+                          Talisman-dependent, Defensive/Reactive, Utility,
+                          Special, and Ultimate-tier ones deliberately
+                          deferred, named in the OPERATORS comment, not
+                          silently dropped), a CARD_LIBRARY mostly
+                          *generated* straight from that table (one basic
+                          card per operator) plus a handful of hand-
+                          authored AND/OR composed cards, and a cost
+                          function (cardCost()) that derives Initiative
+                          cost from category + modifier rather than being
+                          hand-set per card. New Esori get the full shared
+                          library as their Grimoire and the library's
+                          first 10 cards as a starter deck — there's no
+                          Fragments-unlock system yet (that's the
+                          Currency/progression descope already named in
+                          MONOLITH_RULESET.md), so "earn cards over time"
+                          isn't real yet; "have a legal, playable deck on
+                          day one" is. New Edit Deck screen, capped at 10
+                          via a newly-added selMulti (the multi-step-
+                          intake-form skill's documented pattern existed
+                          only as reference material until this pass —
+                          selOpt made it into the Phase 2 wizard since
+                          Class/Position/Weapon are all single-select, but
+                          nothing before Edit Deck actually needed multi-
+                          select, so selMulti was never written; caught by
+                          testing, not assumed present).
   v0.1.0 — 2026-08-04 — Phase 2: real character-creation wizard (6 steps —
                           Identity/Class/Position/Tulpa/Weapon/Review, per
                           multi-step-intake-form's goTo(n) + selOpt pattern),
@@ -216,6 +243,20 @@
 
   </div>
 
+  <!-- ============ DECK EDITOR ============ -->
+  <div id="deck-view" style="display:none;">
+    <div class="panel">
+      <h2 style="margin-top:0;" id="deck-heading">Edit Deck</h2>
+      <p class="hint">Pick up to 10 cards from the Grimoire below. <span id="deck-count">0/10</span> selected.</p>
+      <div class="opt-group" id="deck-card-group"></div>
+      <div class="nav-bar">
+        <span class="nav-note" id="deck-cost-note"></span>
+        <button class="nav-btn secondary" onclick="cancelDeckEditor()">Cancel</button>
+        <button class="nav-btn primary" onclick="saveDeckEditor()">Save Deck</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ WIZARD VIEW ============ -->
   <div id="wizard-view">
     <div class="app">
@@ -375,6 +416,89 @@ const WEAPONS = {
 };
 
 /* ============================================================
+   ABILITY OPERATORS + CARDS — data-driven, per MONOLITH_RULESET.md's
+   "Fundamental Operators" section. Each operator declares a generic
+   effect "kind" (mirrored by Arena's small resolver switch) instead of
+   bespoke per-card code, so a new card is a data row, not new logic.
+
+   Scope for this pass: the operators that map onto mechanics that
+   already exist in Arena (life/initiative/strike/movement/ability-range,
+   hand/deck/discard, the single active Passive slot). Deliberately NOT
+   included yet, same as MONOLITH_RULESET.md's own "known unresolved
+   gaps": Talisman-dependent operators (Destroy, Capture, Mojo — Talismans
+   aren't placeable on the grid at all yet), Defensive/Reactive operators
+   (Nazar, Parry, Nullify Cost — these trigger on the *opponent's* turn,
+   which needs an interrupt/reaction window Arena's turn loop doesn't have
+   yet), Utility (Glimpse, Scry, Refine), and every Special operator
+   (Rhyzl Step, Daedalus Tesseract, Nhül Partikül, Open Wonderland) plus
+   Ultimate-tier cards and the IF/THEN modifier (both need a condition-
+   evaluation system this pass doesn't build). AND/OR are implemented —
+   they're simple compositions, not conditionals.
+   ============================================================ */
+const OPERATORS = {
+  // Aggressive — target one opponent, 20 Ini base
+  inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
+  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce', stat:'initiative', amount:1 },
+  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce', stat:'strike', amount:1 },
+  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce', stat:'distanceRemaining', amount:1 },
+  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce', stat:'abilityRange', amount:1 },
+  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
+  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
+  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },
+  seal:     { name:'Seal',     category:'aggressive', kind:'deck-discard' },
+  jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
+  banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
+  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
+
+  // Supportive — target one ally, 20 Ini base
+  giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
+  giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
+  heal:       { name:'Heal',        category:'supportive', kind:'life-heal' },
+  giveIni:    { name:'Give Ini',    category:'supportive', kind:'stat-increase', stat:'initiative', amount:1 },
+  giveRange:  { name:'Give Range',  category:'supportive', kind:'stat-increase', stat:'abilityRange', amount:1 },
+  transpose:  { name:'Transpose',   category:'supportive', kind:'swap-position' },
+  accelerate: { name:'Accelerate',  category:'supportive', kind:'extra-turn' },
+
+  // Passive — self only, 15 Ini base (+10/turn to sustain), one active at a time, unmodifiable
+  gather: { name:'Gather', category:'passive', kind:'passive-draw' },
+  regen:  { name:'Regen',  category:'passive', kind:'passive-heal' },
+  evade:  { name:'Evade',  category:'passive', kind:'passive-immune-damage' },
+  shield: { name:'Shield', category:'passive', kind:'passive-immune-effects' },
+};
+const MODIFIERS = {
+  AND: { costDelta: 5 },  // Basic abilities only, per ruleset
+  OR:  { costDelta: 10 },
+};
+// A small hand-authored set demonstrating composed (modifier) cards —
+// everything else in the library is generated straight from OPERATORS
+// below, so the library never hand-duplicates an operator's own name/cost.
+const COMPOSED_CARDS = [
+  { id:'card-inflict-and-afflict', name:'Inflict + Afflict', operatorId:'inflict', modifier:{ type:'AND', operatorId:'afflict' } },
+  { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
+  { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
+];
+const CARD_LIBRARY = [
+  ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
+  ...COMPOSED_CARDS,
+];
+function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
+function cardCategory(card){ return OPERATORS[card.operatorId].category; }
+function cardCost(card){
+  const base = cardCategory(card) === 'passive' ? 15 : 20;
+  const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
+  return base + modDelta;
+}
+function cardDescription(card){
+  const op = OPERATORS[card.operatorId];
+  let text = op.name;
+  if (card.modifier){
+    const modOp = OPERATORS[card.modifier.operatorId];
+    text += card.modifier.type === 'AND' ? ` AND ${modOp.name}` : ` OR ${modOp.name}`;
+  }
+  return text;
+}
+
+/* ============================================================
    STATE + PERSISTENCE — local-state-persistence skill.
    Explicit save() allowlist; load() merges onto defaults rather
    than replacing state outright, so a field added to the code
@@ -441,6 +565,7 @@ function renderRoster(){
       <div class="tulpa-line">Grimoire: ${(r.grimoire||[]).length} · Deck: ${(r.deck||[]).length}/10</div>
       <div class="card-actions">
         <button class="btn secondary" onclick="editEsori('${r.esoriId}')">Edit</button>
+        <button class="btn secondary" onclick="openDeckEditor('${r.esoriId}')">Edit Deck</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','backup')">Export (Backup)</button>
         <button class="btn secondary" onclick="exportEsori('${r.esoriId}','share')">Export (Share)</button>
         <button class="btn danger" onclick="deleteEsori('${r.esoriId}')">Delete</button>
@@ -488,6 +613,20 @@ function gv(id){
 function selOpt(groupId, btn){
   document.querySelectorAll(`#${groupId} .opt-btn`).forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel');
+}
+function selMulti(groupId, btn, maxSelected){
+  const group = document.getElementById(groupId);
+  const already = btn.classList.contains('sel');
+  const selCount = group.querySelectorAll('.opt-btn.sel').length;
+  if (already){
+    btn.classList.remove('sel');
+  } else {
+    if (selCount >= maxSelected){
+      const first = group.querySelector('.opt-btn.sel');
+      if (first) first.classList.remove('sel');
+    }
+    btn.classList.add('sel');
+  }
 }
 function selectedKey(groupId){
   return document.querySelector(`#${groupId} .opt-btn.sel`)?.dataset.key || '';
@@ -662,8 +801,14 @@ function saveEsori(){
           sustain: gv('field-sustain'),
         },
       },
-      grimoire: [],
-      deck: [],
+      // v1 simplification, stated plainly: there's no Fragments-unlock
+      // system wired up yet (that's the Currency/progression descope
+      // named in MONOLITH_RULESET.md), so every new Esori's Grimoire is
+      // the full shared CARD_LIBRARY rather than something earned card by
+      // card. Deck defaults to the library's first 10 so a fresh Esori is
+      // immediately battle-ready; Edit Deck below lets you rebuild it.
+      grimoire: CARD_LIBRARY.map(c => c.id),
+      deck: CARD_LIBRARY.slice(0, 10).map(c => c.id),
       equipment: { head: null, neck: null, hands: null, feet: null, body: null },
       weapons: { main: wpn, secondary: null },
       allocatedStars: {},
@@ -682,6 +827,56 @@ function deleteEsori(esoriId){
   if (!confirm(`Delete ${r.name}? This can't be undone (export a backup first if you want to keep it).`)) return;
   state.roster = state.roster.filter(x => x.esoriId !== esoriId);
   save();
+  refreshHome();
+}
+
+/* ============================================================
+   DECK EDITOR — pick up to 10 cards from the Grimoire (currently: the
+   full shared CARD_LIBRARY, see the v1-simplification note on Grimoire
+   creation above). Reuses selMulti (already defined for the wizard) with
+   a cap of 10 rather than a bespoke selection widget.
+   ============================================================ */
+let deckEditingId = null;
+function openDeckEditor(esoriId){
+  const r = state.roster.find(x => x.esoriId === esoriId);
+  if (!r) return;
+  deckEditingId = esoriId;
+  document.getElementById('deck-heading').textContent = `Edit Deck — ${r.name}`;
+  const pool = r.grimoire && r.grimoire.length ? r.grimoire : CARD_LIBRARY.map(c => c.id);
+  document.getElementById('deck-card-group').innerHTML = pool.map(cardId => {
+    const card = cardById(cardId);
+    if (!card) return '';
+    const inDeck = (r.deck || []).includes(cardId);
+    return `<button class="opt-btn ${inDeck ? 'sel' : ''}" data-key="${cardId}" onclick="selMulti('deck-card-group', this, 10); updateDeckCount();">
+      <strong>${escapeHtml(card.name)}</strong>
+      <span class="opt-sub">${cardCategory(card)} · ${cardCost(card)} Ini</span>
+    </button>`;
+  }).join('');
+  updateDeckCount();
+  document.getElementById('home-view').style.display = 'none';
+  document.getElementById('deck-view').style.display = 'block';
+}
+function updateDeckCount(){
+  const selected = document.querySelectorAll('#deck-card-group .opt-btn.sel');
+  document.getElementById('deck-count').textContent = `${selected.length}/10`;
+  const totalCost = [...selected].reduce((sum, btn) => sum + cardCost(cardById(btn.dataset.key)), 0);
+  document.getElementById('deck-cost-note').textContent = `Total Initiative cost if all played in one round: ${totalCost}`;
+}
+function cancelDeckEditor(){
+  deckEditingId = null;
+  document.getElementById('deck-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
+}
+function saveDeckEditor(){
+  const r = state.roster.find(x => x.esoriId === deckEditingId);
+  if (!r) return;
+  const selected = [...document.querySelectorAll('#deck-card-group .opt-btn.sel')].map(b => b.dataset.key);
+  r.deck = selected;
+  r.updatedAt = new Date().toISOString();
+  save();
+  deckEditingId = null;
+  document.getElementById('deck-view').style.display = 'none';
+  document.getElementById('home-view').style.display = 'block';
   refreshHome();
 }
 

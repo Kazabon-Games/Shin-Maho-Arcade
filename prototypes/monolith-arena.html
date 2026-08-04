@@ -11,6 +11,31 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.2.0 — 2026-08-04 — Ability cards wired into real battles: units now
+                          carry a shuffled deck/hand/discard, draw 1/turn
+                          up to hand size 5 (with the "empty deck reshuffles
+                          discard" rule), and can play Aggressive/
+                          Supportive cards at a target within Ability
+                          Range or activate a Passive on themselves — all
+                          resolved through one generic applyOperator()
+                          switch keyed on each operator's declared "kind"
+                          (mirrors monolith-codex.html's OPERATORS/
+                          CARD_LIBRARY data exactly, duplicated per this
+                          repo's no-shared-imports convention). AND-
+                          modifier cards resolve both operators; OR cards
+                          pause for a real player choice (two buttons, not
+                          an auto-pick) rather than faking the mechanic.
+                          Passive sustain (+10 Ini/turn, escalating, lapses
+                          if unaffordable) and Evade/Shield's damage/effect
+                          immunity are both live. Life-targeting operators
+                          use the card's own paid Initiative cost as the
+                          1:1 damage/heal amount, per MONOLITH_RULESET.md's
+                          "15 initiative equals 15 damage" rule — not a
+                          flat hardcoded number. AI still doesn't play
+                          cards (movement + Weapon Strike only, unchanged
+                          from Phase 2) — teaching the AI to value a hand
+                          of cards is real complexity, deferred on purpose
+                          rather than bolted on half-working.
   v0.1.1 — 2026-08-04 — Worldbreaker pass (47 UI-driven attacks across
                           both Codex and Arena — empty/whitespace-only
                           wizard fields, messy real-world strings, XSS
@@ -242,6 +267,11 @@
           </div>
         </div>
         <div class="panel">
+          <h3 style="margin-top:0;font-size:.85rem;">Hand</h3>
+          <p class="hint" id="hand-hint"></p>
+          <div class="opt-group" id="hand-card-group"></div>
+        </div>
+        <div class="panel">
           <h3 style="margin-top:0;font-size:.85rem;">Turn Order</h3>
           <ul class="turn-order" id="turn-order-list"></ul>
         </div>
@@ -305,10 +335,73 @@ const WEAPONS = {
   dagger: { label:'Dagger' }, projectile: { label:'Projectile' },
   staff: { label:'Staff' }, wand: { label:'Wand' },
 };
+
+/* ============================================================
+   ABILITY OPERATORS + CARDS — identical data to monolith-codex.html's
+   copy (see that file's own comment for scope/deferral notes: Talisman-
+   dependent, Defensive/Reactive, Utility, Special, and Ultimate-tier
+   operators are all deliberately not here yet). Duplicated rather than
+   imported, per this repo's no-shared-imports convention.
+   ============================================================ */
+const OPERATORS = {
+  inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
+  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce', stat:'initiative', amount:1 },
+  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce', stat:'strike', amount:1 },
+  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce', stat:'distanceRemaining', amount:1 },
+  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce', stat:'abilityRange', amount:1 },
+  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
+  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
+  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },
+  seal:     { name:'Seal',     category:'aggressive', kind:'deck-discard' },
+  jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
+  banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
+  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
+
+  giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
+  giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
+  heal:       { name:'Heal',        category:'supportive', kind:'life-heal' },
+  giveIni:    { name:'Give Ini',    category:'supportive', kind:'stat-increase', stat:'initiative', amount:1 },
+  giveRange:  { name:'Give Range',  category:'supportive', kind:'stat-increase', stat:'abilityRange', amount:1 },
+  transpose:  { name:'Transpose',   category:'supportive', kind:'swap-position' },
+  accelerate: { name:'Accelerate',  category:'supportive', kind:'extra-turn' },
+
+  gather: { name:'Gather', category:'passive', kind:'passive-draw' },
+  regen:  { name:'Regen',  category:'passive', kind:'passive-heal' },
+  evade:  { name:'Evade',  category:'passive', kind:'passive-immune-damage' },
+  shield: { name:'Shield', category:'passive', kind:'passive-immune-effects' },
+};
+const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 } };
+const COMPOSED_CARDS = [
+  { id:'card-inflict-and-afflict', name:'Inflict + Afflict', operatorId:'inflict', modifier:{ type:'AND', operatorId:'afflict' } },
+  { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
+  { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
+];
+const CARD_LIBRARY = [
+  ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
+  ...COMPOSED_CARDS,
+];
+function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
+function cardCategory(card){ return OPERATORS[card.operatorId].category; }
+function cardCost(card){
+  const base = cardCategory(card) === 'passive' ? 15 : 20;
+  const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
+  return base + modDelta;
+}
+function cardDescription(card){
+  const op = OPERATORS[card.operatorId];
+  let text = op.name;
+  if (card.modifier){
+    const modOp = OPERATORS[card.modifier.operatorId];
+    text += card.modifier.type === 'AND' ? ` AND ${modOp.name}` : ` OR ${modOp.name}`;
+  }
+  return text;
+}
+const BASE_ABILITY_RANGE = 3; // MONOLITH_RULESET.md never states a base value (only modifiers to it) — a stated default, not a silent guess
+
 const PRESET_AI_SQUAD = [
-  { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'} },
-  { esoriId:'preset-saboteur', name:'Vessa', class:'rook', position:'saboteur', rarity:1, weapons:{main:'dagger'} },
-  { esoriId:'preset-infiltrator', name:'Orune', class:'bishop', position:'infiltrator', rarity:1, weapons:{main:'wand'} },
+  { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
+  { esoriId:'preset-saboteur', name:'Vessa', class:'rook', position:'saboteur', rarity:1, weapons:{main:'dagger'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
+  { esoriId:'preset-infiltrator', name:'Orune', class:'bishop', position:'infiltrator', rarity:1, weapons:{main:'wand'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
 ];
 
 const ROSTER_KEY = 'monolith-esori-chronicles-v1'; // same key Codex writes — read-only here
@@ -441,13 +534,15 @@ function handleGuestImport(){
    BATTLE STATS + WEAPON RANGE
    ============================================================ */
 function computeBattleStats(e){
-  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3 };
+  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE };
   if (e.class === 'knight') s.strike += 1;
   if (e.class === 'rook') s.specialMovement += 1;
+  if (e.class === 'bishop') s.abilityRange += 1;
   if (e.position === 'vanguard') s.life += 20;
   if (e.position === 'saboteur') s.initiative += 20;
   if (e.position === 'infiltrator') s.pack += 2;
   if (e.weapons?.main === 'dagger') s.strike += 1;
+  if (e.weapons?.main === 'wand') s.abilityRange += 1;
   s.rarity = e.rarity || 1;
   s.dmg = 10 * s.rarity;
   s.critDmg = 15 * s.rarity;
@@ -479,6 +574,10 @@ function beginDeployment(){
 
   const makeUnit = (esori, team, controller) => {
     const stats = computeBattleStats(esori);
+    // Fall back to the library's own first-10, same "don't refuse to load
+    // over a missing optional field" rule MONOLITH_ESORI_SCHEMA.md already
+    // states for Arena importing a deck-less Esori.
+    const startingDeck = (esori.deck && esori.deck.length) ? esori.deck.slice() : CARD_LIBRARY.slice(0, 10).map(c => c.id);
     return {
       esoriId: esori.esoriId, name: esori.name, class: esori.class, position: esori.position,
       team, controller,
@@ -486,9 +585,12 @@ function beginDeployment(){
       maxLife: stats.life, life: stats.life,
       maxInitiative: stats.initiative, initiative: stats.initiative,
       strike: stats.strike, distance: stats.distance, specialMovement: stats.specialMovement,
+      abilityRange: stats.abilityRange,
       weaponMain: stats.weaponMain, dmg: stats.dmg, critDmg: stats.critDmg,
       defeated: false, rallied: false, removed: false,
       distanceRemaining: 0, hasStruckThisTurn: false,
+      deck: shuffle(startingDeck), hand: [], discard: [],
+      activePassive: null, passiveNextCost: 15,
     };
   };
 
@@ -502,7 +604,9 @@ function beginDeployment(){
     round: 1,
     turnQueue: [],
     turnIndex: 0,
-    interactionMode: null, // 'move' | 'strike' | 'rally'
+    interactionMode: null, // 'move' | 'strike' | 'rally' | 'cast'
+    castingCardId: null,
+    pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
     log: [],
   };
 
@@ -610,6 +714,39 @@ function beginUnitTurn(u){
   if (!u) return;
   u.distanceRemaining = u.distance;
   u.hasStruckThisTurn = false;
+  drawCard(u);
+  sustainPassive(u);
+}
+function shuffle(arr){
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function drawCard(u){
+  if (u.hand.length >= 5) return;
+  if (!u.deck.length){
+    if (!u.discard.length) return; // nothing left to draw at all
+    u.deck = shuffle(u.discard);
+    u.discard = [];
+  }
+  u.hand.push(u.deck.shift());
+}
+function sustainPassive(u){
+  if (!u.activePassive) return;
+  if (u.initiative >= u.passiveNextCost){
+    u.initiative -= u.passiveNextCost;
+    u.passiveNextCost += 10; // "increase cost by 10 every turn," per MONOLITH_RULESET.md / Monolith_Library.pdf
+    const op = OPERATORS[u.activePassive];
+    if (op.kind === 'passive-draw') drawCard(u); // a second draw this turn, on top of beginUnitTurn's normal one
+    if (op.kind === 'passive-heal') applyLifeHeal(u, 10); // per-turn amount not specified in source — a stated default
+  } else {
+    logMsg(`${u.name}'s ${OPERATORS[u.activePassive].name} lapses — can't afford to sustain it.`, u.team);
+    u.activePassive = null;
+    u.passiveNextCost = 15;
+  }
 }
 function activeRoster(){ return battle.units.filter(u => !u.removed); }
 function buildTurnQueue(){
@@ -684,8 +821,9 @@ function logMsg(text, team){
    ============================================================ */
 function setInteractionMode(mode){
   const u = currentUnit();
-  if (!u || u.controller !== 'human') return;
+  if (!u || u.controller !== 'human' || battle.pendingOr) return;
   battle.interactionMode = battle.interactionMode === mode ? null : mode;
+  battle.castingCardId = null; // leaving 'cast' mode (or entering a different one) drops any in-progress card selection
   renderBattle();
 }
 function reachableCells(x0, y0, maxSteps){
@@ -716,10 +854,11 @@ function reachableCells(x0, y0, maxSteps){
 }
 function handleBoardClick(x, y){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || !battle.interactionMode) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || !battle.interactionMode) return;
   if (battle.interactionMode === 'move') tryMove(u, x, y);
   else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
   else if (battle.interactionMode === 'rally') tryRally(u, x, y);
+  else if (battle.interactionMode === 'cast') tryCast(u, x, y);
 }
 function tryMove(u, x, y){
   const reach = reachableCells(u.x, u.y, u.distanceRemaining);
@@ -730,20 +869,30 @@ function tryMove(u, x, y){
   logMsg(`${u.name} moves.`, u.team);
   renderBattle();
 }
+function applyLifeDamage(target, amount){
+  if (target.activePassive === 'evade'){
+    logMsg(`${target.name}'s Evade nullifies the damage.`, target.team);
+    return;
+  }
+  target.life = Math.max(0, target.life - amount);
+  if (target.life <= 0){
+    if (target.defeated){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
+    else { target.defeated = true; target.distance = 1; logMsg(`${target.name} is Defeated.`, target.team); }
+  }
+}
+function applyLifeHeal(target, amount){
+  target.life = Math.min(target.maxLife, target.life + amount);
+}
 function tryStrike(u, x, y){
   if (u.hasStruckThisTurn) return;
   const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.defeated && !t.removed);
   if (!target) return;
   if (!inWeaponRange(u.weaponMain, x-u.x, y-u.y)) return;
   const dmg = u.dmg;
-  target.life = Math.max(0, target.life - dmg);
   u.hasStruckThisTurn = true;
   logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
   if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
-  if (target.life <= 0){
-    if (target.defeated){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
-    else { target.defeated = true; target.distance = 1; logMsg(`${target.name} is Defeated.`, target.team); }
-  }
+  applyLifeDamage(target, dmg);
   renderBattle();
   const w = checkWin();
   if (w) finishBattle(w);
@@ -760,6 +909,167 @@ function tryRally(u, x, y){
   target.distance = computeBattleStats({class:target.class, position:target.position, weapons:{main:target.weaponMain}, rarity:1}).distance;
   logMsg(`${u.name} rallies ${target.name}.`, u.team);
   renderBattle();
+}
+
+/* ============================================================
+   ABILITY CARDS — playing a card from hand.
+   Aggressive/Supportive: click the card (enters 'cast' mode), then click
+   a valid target on the board, same interaction shape as Strike/Rally.
+   Passive: no board target — resolves immediately against self, since
+   it's a self-buff by definition.
+   ============================================================ */
+function discardCard(u, cardId){
+  const idx = u.hand.indexOf(cardId);
+  if (idx !== -1) u.hand.splice(idx, 1);
+  u.discard.push(cardId);
+}
+function playHandCard(cardId){
+  const u = currentUnit();
+  if (!u || u.controller !== 'human') return;
+  const card = cardById(cardId);
+  if (!card || !u.hand.includes(cardId)) return;
+  const category = cardCategory(card);
+  const cost = cardCost(card);
+  if (u.initiative < cost) return;
+
+  if (category === 'passive'){
+    if (u.activePassive){
+      logMsg(`${u.name} already has an active Passive — only one at a time.`, u.team);
+      return;
+    }
+    u.initiative -= cost;
+    u.activePassive = card.operatorId;
+    u.passiveNextCost = cost + 10; // this turn's activation is the base cost; sustaining it next turn costs +10 more
+    discardCard(u, cardId);
+    logMsg(`${u.name} activates ${OPERATORS[card.operatorId].name}.`, u.team);
+    renderBattle();
+    return;
+  }
+  battle.interactionMode = 'cast';
+  battle.castingCardId = cardId;
+  renderBattle();
+}
+function tryCast(u, x, y){
+  const card = cardById(battle.castingCardId);
+  if (!card) return;
+  const category = cardCategory(card);
+  const target = battle.units.find(t => !t.removed && t.x === x && t.y === y);
+  if (!target) return;
+  if (category === 'aggressive' && (target.team === u.team || target.defeated)) return;
+  if (category === 'supportive' && (target.team !== u.team || target.defeated)) return;
+  if (chebyshev(x - u.x, y - u.y) > u.abilityRange) return;
+  const cost = cardCost(card);
+  if (u.initiative < cost) return;
+
+  if (card.modifier && card.modifier.type === 'OR'){
+    // Real player choice, not an auto-pick — see the OR-choice panel in
+    // renderBattle(). Interaction pauses here until they pick one.
+    battle.pendingOr = { casterId: u.esoriId, targetId: target.esoriId, cardId: card.id, cost };
+    battle.interactionMode = null;
+    battle.castingCardId = null;
+    renderBattle();
+    return;
+  }
+  finalizeCast(u, target, card, cost);
+}
+function resolveOrChoice(chosenOperatorId){
+  const p = battle.pendingOr;
+  if (!p) return;
+  const u = battle.units.find(x => x.esoriId === p.casterId);
+  const target = battle.units.find(x => x.esoriId === p.targetId);
+  const card = cardById(p.cardId);
+  if (!u || !target || !card) { battle.pendingOr = null; renderBattle(); return; }
+  battle.pendingOr = null;
+  finalizeCast(u, target, card, p.cost, chosenOperatorId);
+}
+function finalizeCast(u, target, card, cost, chosenOperatorId){
+  u.initiative -= cost;
+  if (chosenOperatorId){
+    // OR: exactly one of the two operators, never both and never the
+    // card's base operator "by default" — that was a real bug (the base
+    // operator was firing unconditionally here, so an OR card applied
+    // BOTH effects instead of the one actually chosen).
+    applyOperator(chosenOperatorId, u, target, cost);
+  } else {
+    applyOperator(card.operatorId, u, target, cost);
+    if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
+  }
+  discardCard(u, card.id);
+  logMsg(`${u.name} plays ${cardDescription(card)} on ${target.name}.`, u.team);
+  battle.interactionMode = null;
+  battle.castingCardId = null;
+  renderBattle();
+  const w = checkWin();
+  if (w) finishBattle(w);
+}
+
+/* ============================================================
+   OPERATOR RESOLVER — generic over each operator's declared "kind" (see
+   the OPERATORS table's own comment). Adding a new operator that reuses
+   an existing kind needs zero new code here — only a data row.
+   `cost` is only used by the life-targeting kinds, since
+   MONOLITH_RULESET.md ties life effects 1:1 to Initiative spent on the
+   card, not to a fixed per-operator number.
+   ============================================================ */
+function applyOperator(operatorId, caster, target, cost){
+  const op = OPERATORS[operatorId];
+  switch(op.kind){
+    case 'life-damage':
+      applyLifeDamage(target, cost);
+      break;
+    case 'life-heal':
+      applyLifeHeal(target, cost);
+      break;
+    case 'stat-reduce':
+      if (target.activePassive === 'shield'){ logMsg(`${target.name}'s Shield nullifies the effect.`, target.team); break; }
+      target[op.stat] = Math.max(0, target[op.stat] - op.amount);
+      break;
+    case 'stat-increase':
+      target[op.stat] += op.amount;
+      break;
+    case 'stat-set-zero':
+      if (target.activePassive === 'shield'){ logMsg(`${target.name}'s Shield nullifies the effect.`, target.team); break; }
+      target[op.stat] = 0;
+      break;
+    case 'deck-discard':
+      if (target.deck.length) target.discard.push(target.deck.shift());
+      break;
+    case 'hand-discard':
+      if (target.hand.length) target.discard.push(target.hand.shift());
+      break;
+    case 'banish-card': {
+      const pools = [target.hand, target.deck, target.discard].filter(p => p.length);
+      if (pools.length){
+        const pool = pools[Math.floor(Math.random() * pools.length)];
+        pool.splice(Math.floor(Math.random() * pool.length), 1);
+      }
+      break;
+    }
+    case 'discard-passive':
+      target.activePassive = null;
+      target.passiveNextCost = 15;
+      break;
+    case 'swap-position': {
+      const tx = target.x, ty = target.y;
+      target.x = caster.x; target.y = caster.y;
+      caster.x = tx; caster.y = ty;
+      break;
+    }
+    case 'extra-turn': {
+      const idx = battle.turnQueue.indexOf(target.esoriId);
+      if (idx !== -1) battle.turnQueue.splice(idx, 1);
+      battle.turnQueue.splice(battle.turnIndex + 1, 0, target.esoriId);
+      break;
+    }
+    // passive-* kinds aren't one-shot cast effects: activation itself is
+    // handled in playHandCard (sets activePassive), and the ongoing
+    // per-turn effect — Gather's extra draw, Regen's heal, Evade/Shield
+    // being read directly off activePassive by applyLifeDamage/
+    // stat-reduce/stat-set-zero above — lives in sustainPassive(), called
+    // once per turn from beginUnitTurn(). Nothing to do here.
+    default:
+      break;
+  }
 }
 
 /* ============================================================
@@ -818,13 +1128,20 @@ function renderBattle(){
   const active = currentUnit();
   const board = document.getElementById('battle-board');
   let reach = {}, targets = [];
-  if (active && active.controller === 'human'){
+  if (active && active.controller === 'human' && !battle.pendingOr){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, active.distanceRemaining);
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       targets = battle.units.filter(t => t.team !== active.team && !t.defeated && !t.removed && inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
     }
     if (battle.interactionMode === 'rally'){
       targets = battle.units.filter(t => t.team === active.team && t.defeated && !t.removed && chebyshev(t.x-active.x, t.y-active.y) <= 1);
+    }
+    if (battle.interactionMode === 'cast' && battle.castingCardId){
+      const card = cardById(battle.castingCardId);
+      const category = cardCategory(card);
+      targets = battle.units.filter(t => !t.removed && !t.defeated
+        && (category === 'aggressive' ? t.team !== active.team : t.team === active.team)
+        && chebyshev(t.x-active.x, t.y-active.y) <= active.abilityRange);
     }
   }
   let html = '';
@@ -847,14 +1164,44 @@ function renderBattle(){
   document.getElementById('hud-round').textContent = battle.round;
   const hudActive = document.getElementById('hud-active');
   if (active){
+    const passiveNote = active.activePassive ? ` · Passive: ${OPERATORS[active.activePassive].name}` : '';
     hudActive.innerHTML = `<b>${escapeHtml(active.name)}</b> (Team ${active.team}, ${POSITIONS[active.position].label})
-      — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative} · Move left ${active.distanceRemaining}`;
+      — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative}
+      · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
-  document.getElementById('action-move').disabled = !isHumanTurn || active.distanceRemaining <= 0;
-  document.getElementById('action-strike').disabled = !isHumanTurn || active.hasStruckThisTurn;
-  document.getElementById('action-rally').disabled = !isHumanTurn;
-  document.getElementById('action-end').disabled = !isHumanTurn;
+  const blocked = !isHumanTurn || !!battle.pendingOr;
+  document.getElementById('action-move').disabled = blocked || active.distanceRemaining <= 0;
+  document.getElementById('action-strike').disabled = blocked || active.hasStruckThisTurn;
+  document.getElementById('action-rally').disabled = blocked;
+  document.getElementById('action-end').disabled = blocked;
+
+  const handGroup = document.getElementById('hand-card-group');
+  const handHint = document.getElementById('hand-hint');
+  if (battle.pendingOr){
+    const p = battle.pendingOr;
+    const card = cardById(p.cardId);
+    handHint.textContent = 'Choose which effect to apply:';
+    handGroup.innerHTML = `
+      <button class="opt-btn" onclick="resolveOrChoice('${card.operatorId}')"><strong>${OPERATORS[card.operatorId].name}</strong></button>
+      <button class="opt-btn" onclick="resolveOrChoice('${card.modifier.operatorId}')"><strong>${OPERATORS[card.modifier.operatorId].name}</strong></button>
+    `;
+  } else if (!isHumanTurn || !active){
+    handHint.textContent = '';
+    handGroup.innerHTML = '';
+  } else {
+    handHint.textContent = active.hand.length ? 'Click a card, then a highlighted target (Passives apply instantly to yourself).' : 'No cards in hand yet.';
+    handGroup.innerHTML = active.hand.map(cardId => {
+      const card = cardById(cardId);
+      const cost = cardCost(card);
+      const affordable = active.initiative >= cost;
+      const casting = battle.interactionMode === 'cast' && battle.castingCardId === cardId;
+      return `<button class="opt-btn ${casting ? 'sel' : ''}" ${affordable ? '' : 'disabled'} onclick="playHandCard('${cardId}')">
+        <strong>${escapeHtml(cardDescription(card))}</strong>
+        <span class="opt-sub">${cardCategory(card)} · ${cost} Ini</span>
+      </button>`;
+    }).join('');
+  }
 
   const list = document.getElementById('turn-order-list');
   list.innerHTML = battle.turnQueue.map(id => {
