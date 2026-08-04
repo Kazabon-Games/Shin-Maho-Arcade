@@ -11,6 +11,18 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.7.0 — 2026-08-04 — Glimpse/Scry (reveal a random/full opposing hand
+                          via the battle log — no hidden-hand mechanic to
+                          protect here, this is local hotseat/vs-AI, not
+                          networked hidden-information play) and Refine
+                          (self-cast, banishes a random *other* card from
+                          the caster's own hand). finalizeCast() now
+                          discards the played card before resolving its
+                          operator, not after — otherwise Refine's random
+                          pick could banish itself. AI doesn't play any of
+                          these three yet (its existing tiers only look
+                          for Passives, life-damage Aggressives, and
+                          Heal — unchanged scope, not a new gap).
   v0.6.0 — 2026-08-04 — Catalysts: new battle panel, use one for 10 Ini to
                           apply a permanent-for-the-battle stat boost
                           (mirrors Codex's CATALYST_TYPES data exactly).
@@ -444,6 +456,8 @@ const OPERATORS = {
   jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
   banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
   crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
+  glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
+  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -457,6 +471,8 @@ const OPERATORS = {
   regen:  { name:'Regen',  category:'passive', kind:'passive-heal' },
   evade:  { name:'Evade',  category:'passive', kind:'passive-immune-damage' },
   shield: { name:'Shield', category:'passive', kind:'passive-immune-effects' },
+
+  refine: { name:'Refine', category:'utility', kind:'banish-own-random-card' },
 };
 const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 } };
 const COMPOSED_CARDS = [
@@ -1201,6 +1217,13 @@ function playHandCard(cardId){
     renderBattle();
     return;
   }
+  if (category === 'utility'){
+    // Self-cast, no board target — same shape as Passive activation, but
+    // routed through finalizeCast() since Refine has a real one-shot
+    // operator effect (banish-own-random-card), not persistent state.
+    finalizeCast(u, u, card, cost);
+    return;
+  }
   battle.interactionMode = 'cast';
   battle.castingCardId = cardId;
   renderBattle();
@@ -1240,6 +1263,10 @@ function resolveOrChoice(chosenOperatorId){
 }
 function finalizeCast(u, target, card, cost, chosenOperatorId){
   u.initiative -= cost;
+  // Discard the played card *before* resolving its operator(s) — Refine's
+  // "banish a random other card from your own hand" needs the just-played
+  // card already gone, or it could randomly banish itself.
+  discardCard(u, card.id);
   if (chosenOperatorId){
     // OR: exactly one of the two operators, never both and never the
     // card's base operator "by default" — that was a real bug (the base
@@ -1250,7 +1277,6 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     applyOperator(card.operatorId, u, target, cost);
     if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
   }
-  discardCard(u, card.id);
   logMsg(`${u.name} plays ${cardDescription(card)} on ${target.name}.`, u.team);
   if (u.openWonderlandActive && cardCategory(card) === 'supportive'){
     drawCard(u); // "extra draw on Supportives... if Wonderland open," per MONOLITH_RULESET.md
@@ -1319,6 +1345,31 @@ function applyOperator(operatorId, caster, target, cost){
       const idx = battle.turnQueue.indexOf(target.esoriId);
       if (idx !== -1) battle.turnQueue.splice(idx, 1);
       battle.turnQueue.splice(battle.turnIndex + 1, 0, target.esoriId);
+      break;
+    }
+    case 'reveal-random-hand-card': {
+      if (!target.hand.length){ logMsg(`${target.name}'s hand is empty — nothing to Glimpse.`, target.team); break; }
+      const revealed = target.hand[Math.floor(Math.random() * target.hand.length)];
+      logMsg(`${caster.name} glimpses a card in ${target.name}'s hand: ${cardById(revealed)?.name || revealed}.`, caster.team);
+      break;
+    }
+    case 'reveal-full-hand': {
+      const names = target.hand.map(id => cardById(id)?.name || id);
+      logMsg(`${caster.name} scries ${target.name}'s hand: ${names.length ? names.join(', ') : '(empty)'}.`, caster.team);
+      break;
+    }
+    case 'banish-own-random-card': {
+      // caster === target here (Utility cards are self-cast, no board
+      // target) — the played Refine card itself is already out of hand by
+      // the time this runs (finalizeCast discards before resolving,
+      // specifically so this can't accidentally banish itself).
+      if (caster.hand.length){
+        const idx = Math.floor(Math.random() * caster.hand.length);
+        const banished = caster.hand.splice(idx, 1)[0];
+        logMsg(`${caster.name} refines away ${cardById(banished)?.name || banished} from their own hand.`, caster.team);
+      } else {
+        logMsg(`${caster.name} has nothing else in hand to Refine away.`, caster.team);
+      }
       break;
     }
     // passive-* kinds aren't one-shot cast effects: activation itself is

@@ -11,6 +11,17 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.6.0 — 2026-08-04 — Utility operators: Glimpse and Scry (both kept as
+                          Aggressive-targeting per this doc's already-
+                          documented resolution, generated into the
+                          library automatically like every other operator)
+                          and Refine (new 'utility' category — self-cast,
+                          20 Ini stated-default cost, no source number
+                          given for this category). Refine implements only
+                          its unambiguous half (banish a random other card
+                          from your own hand) — the "banish own ally" half
+                          MONOLITH_RULESET.md already flagged as
+                          unresolved stays unresolved and unbuilt.
   v0.5.0 — 2026-08-04 — New Manage Catalysts screen: single-use, permanent-
                           for-the-battle stat boosts per MONOLITH_RULESET.md's
                           Items section (+2 to one of Life/Strike/Distance/
@@ -575,6 +586,8 @@ const OPERATORS = {
   jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
   banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
   crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
+  glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
+  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
@@ -590,6 +603,11 @@ const OPERATORS = {
   regen:  { name:'Regen',  category:'passive', kind:'passive-heal' },
   evade:  { name:'Evade',  category:'passive', kind:'passive-immune-damage' },
   shield: { name:'Shield', category:'passive', kind:'passive-immune-effects' },
+
+  // Utility — self-cast, no board target needed, 20 Ini base (no source
+  // cost stated for this category — a stated default, consistent with
+  // every other unspecified number this session)
+  refine: { name:'Refine', category:'utility', kind:'banish-own-random-card' },
 };
 const MODIFIERS = {
   AND: { costDelta: 5 },  // Basic abilities only, per ruleset

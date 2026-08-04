@@ -266,10 +266,20 @@ an ally an extra action/turn).
 **Passive** (self, always-on, one at a time, unmodifiable): Gather (+draw),
 Regen (+Life/turn), Evade (immune to damage), Shield (immune to effects).
 
-**Utility:** Scry (reveal opponent's cards), Refine (banish your own
+**Utility:** Scry (reveal opponent's cards) and Glimpse (see above — kept
+as Aggressive by the resolution already stated, but implemented; listed
+here too since it's a Utility operator by name) both implemented as
+Aggressive-targeting, revealing info via the battle log (no hidden-hand
+mechanic to protect against here — this is a local hotseat/vs-AI game,
+not networked hidden-information multiplayer, so a shared log is a
+reasonable implementation, not a leak). Refine (banish your own
 card/ally — `Monolith_Library.pdf` marks this "*", i.e. flagged as
-needing a ruling on what "banish own ally" means mechanically; **not yet
-resolved, do not implement Refine's ally-targeting half until it is**).
+needing a ruling on what "banish own ally" means mechanically) is
+implemented for its unambiguous half only: playing it banishes a random
+*other* card from the caster's own hand. **The ally-targeting half is
+still not resolved and still not built** — banishing an ally is a far
+more drastic, differently-scoped effect than banishing a card, and
+guessing at it risks building the wrong mechanic entirely.
 
 **Special** (named, non-generic effects): Rhyzl Step (Special Movement —
 instantaneous relocation), Daedalus Tesseract (localized spacetime
