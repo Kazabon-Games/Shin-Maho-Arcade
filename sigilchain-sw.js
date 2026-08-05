@@ -2,7 +2,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'sigilchain-v3'; // bumped: apex-standard pass — portal card art, round/lifetime stats, expanded achievements, chain-building feedback, reduced-motion fixes, --danger/light-rune color fixes, mood-engine drone, cursed/phase/round-end stingers, per-clear float text, Daily mode + ShareCard
+const CACHE_NAME = 'sigilchain-v4'; // bumped: menu/UI click sound (Music.uiClick), wired into every real .btn/icon-btn/toggle control
 const PRECACHE_URLS = ['./sigilchain.html'];
 
 self.addEventListener('install', (e) => {

@@ -1,7 +1,7 @@
 // Wardfall service worker — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale. Bump CACHE_NAME on any
 // meaningful deploy.
-const CACHE_NAME = 'wardfall-v3'; // bumped: apex-standard pass — urgency (danger line, descend juice, drone curve, cross-device row budget), distinct bomb/rainbow pop juice + censer gradient, round-end stats, ShareCard, seeded Daily Wardfall mode, best-pace HUD delta
+const CACHE_NAME = 'wardfall-v4'; // bumped: added Music.uiClick — quiet/short/low-pitched bell()-derived menu-tap sound wired into every real .btn/.icon-btn/.shop-buy control (and the two settings checkboxes) via event delegation, closing the studio-wide zero-UI-sound gap
 const PRECACHE_URLS = ['./wardfall.html'];
 
 self.addEventListener('install', (e) => {

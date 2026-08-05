@@ -208,9 +208,9 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="stage-badge">STAGE IV</div>
     <div class="tagline">place the wells · become what they pull</div>
     <div class="hint" style="margin-top:-8px;margin-bottom:14px;">Capture debris in your wells before it hits you. Survive as long as you can.</div>
-    <button class="btn primary" onclick="Game.start()">✦ &nbsp;TRIGGER THE INFALL</button>
-    <button class="btn gold" onclick="Shop.open()">◈ &nbsp;FLUX SHOP</button>
-    <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
+    <button class="btn primary" onclick="Music.uiClick(320,0.09); Game.start()">✦ &nbsp;TRIGGER THE INFALL</button>
+    <button class="btn gold" onclick="Music.uiClick(240,0.07); Shop.open()">◈ &nbsp;FLUX SHOP</button>
+    <button class="btn" onclick="Music.uiClick(240,0.07); Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint"><b style="color:var(--ink-mid);">Move:</b> WASD / arrows / joystick<br><b style="color:var(--ink-mid);">Launch a well:</b> click or tap and drag, then release<br>wells pull debris in — and pull you too, including your own</div>
     <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
@@ -222,8 +222,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
     <div class="tagline">the field holds still · nothing falls until you do</div>
-    <button class="btn primary" onclick="Game.togglePause()">RESUME</button>
-    <button class="btn" onclick="Game.abandonRun()">ABANDON RUN</button>
+    <button class="btn primary" onclick="Music.uiClick(320,0.09); Game.togglePause()">RESUME</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Game.abandonRun()">ABANDON RUN</button>
   </div>
 </div>
 
@@ -239,8 +239,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <div class="stat-box"><div class="v gold" id="dFlux">+0</div><div class="k">flux gathered</div></div>
     </div>
     <div class="hint" id="dRecord" style="color:var(--gold);"></div>
-    <button class="btn primary" onclick="Game.start()">↻ &nbsp;RUN AGAIN</button>
-    <button class="btn" onclick="Game.toMenu()">MENU</button>
+    <button class="btn primary" onclick="Music.uiClick(320,0.09); Game.start()">↻ &nbsp;RUN AGAIN</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Game.toMenu()">MENU</button>
   </div>
 </div>
 
@@ -258,9 +258,9 @@ textarea.form-input{min-height:70px;resize:vertical;}
     </div>
     <div class="settings-row">
       <label for="reducedMotionToggle">Reduce motion</label>
-      <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
+      <input type="checkbox" id="reducedMotionToggle" onchange="Music.uiClick(200,0.06); Settings.setReducedMotion(this.checked)">
     </div>
-    <button class="btn" onclick="Settings.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Settings.close()">BACK</button>
   </div>
 </div>
 
@@ -270,7 +270,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <h2>✦ WHAT THE FIELD REMEMBERS ✦</h2>
     <div class="ach-progress" id="achProgress"></div>
     <div id="achRows"></div>
-    <button class="btn" onclick="Achievements.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Achievements.close()">BACK</button>
   </div>
 </div>
 
@@ -281,7 +281,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="tagline">cosmetic only · never changes what the wells do</div>
     <div class="shard-count">◈ <span id="shopFlux">0</span> flux</div>
     <div id="shopRows"></div>
-    <button class="btn" onclick="Shop.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Shop.close()">BACK</button>
   </div>
 </div>
 
@@ -290,26 +290,26 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
     <h2>REPORT ISSUE</h2>
     <div class="bugcat">
-      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
-      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
-      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
-      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+      <button class="btn sel" data-cat="Bug" onclick="Music.uiClick(200,0.06); Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Music.uiClick(200,0.06); Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Music.uiClick(200,0.06); Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Music.uiClick(200,0.06); Bugrep.cat(this)">… Other</button>
     </div>
     <input class="form-input" id="bugTitle" placeholder="Short title">
     <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
-    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <button class="btn primary" onclick="Music.uiClick(320,0.09); Bugrep.save()">SAVE REPORT</button>
     <div id="bugList"></div>
-    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
-    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+    <button class="btn" onclick="Music.uiClick(240,0.08); Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Music.uiClick(170,0.08); Bugrep.close()">CLOSE</button>
   </div>
 </div>
 
 <div class="meta-row">
-  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">INFALL v1.0.0</div>
-  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
-  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
-  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
-  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">INFALL v1.1.0</div>
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'; Music.uiClick(260,0.07)" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="icon-btn" onclick="Music.uiClick(260,0.07); FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" onclick="Music.uiClick(240,0.07); Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="icon-btn" onclick="Music.uiClick(240,0.07); Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
 </div>
 
 <script>
@@ -318,6 +318,30 @@ textarea.form-input{min-height:70px;resize:vertical;}
    INFALL — CHANGE LOG
    (one line per change, most recent on top)
 
+   v1.1.0 — 2026-08-05 — Menu/UI click sound, closing the studio-wide
+                          zero-UI-sound gap confirmed by the
+                          game-audio-production-suite skill's capability
+                          audit (Part B). Added Music.uiClick(freq, dur) —
+                          bell()'s own fundamental+overtone sine-pair
+                          idiom, reused verbatim, but quieter (0.1 vs
+                          bell's 0.22), shorter (60-90ms vs bell's
+                          350-1100ms), lower-pitched (140-320Hz vs bell's
+                          220-880Hz range), and skipping bell()'s
+                          duckPump/reverb send (a rapid run of menu clicks
+                          pumping the music bus on every tap would read as
+                          broken, not as feedback). Self-primes the
+                          AudioContext (ensureCtx + resume-if-suspended)
+                          since several wired controls — Shop/Achievements/
+                          Settings/Bugrep open from the main menu — can be
+                          the very first click of a session, before
+                          Game.start() ever runs. Wired into every real
+                          .btn/icon-btn/toggle control except the outbound
+                          "Back to the Arcade" link (navigates away before
+                          a one-shot could finish) and the two volume
+                          sliders (continuous oninput, not discrete
+                          clicks). Music.stingerAchievement() and the rest
+                          of the mood engine are untouched — a separate,
+                          already-working category per the audit.
    v1.0.0 — 2026-07-11 — Initial build, matching GAME_4_PILLARS.md exactly:
                           Cinder/Well/debris pull-law physics (wells→
                           particles only, no mutual N-body per the resolved
@@ -1617,6 +1641,38 @@ const Music = (function(){
     o1.start(t); o2.start(t);
     o1.stop(t + (dur||1.0) + 0.05); o2.stop(t + (dur||1.0) + 0.05);
   }
+  // uiClick — menu/UI click primitive (v1.1.0, game-audio-production-suite
+  // skill Part A/D: "the single highest-leverage, lowest-cost gap" —
+  // "wiring, not new synthesis"). Same fundamental+~2x-overtone sine-pair
+  // idiom as bell(), deliberately quieter (0.1 vs bell's 0.22 default vol),
+  // shorter (60-120ms vs bell's 350-1100ms), and lower-pitched (150-320Hz
+  // vs bell's 220-880Hz range) so it reads as an interface tick, not a
+  // musical event — and skips bell()'s duckPump/reverb send on purpose:
+  // ducking the music bus on every single menu click (these can fire in
+  // rapid succession, e.g. bug-report category taps) would read as the
+  // pump effect firing constantly, not as UI feedback. Self-primes the
+  // AudioContext (ensureCtx + resume-if-suspended) rather than assuming
+  // Music.start() already ran, because every wired control this feeds is
+  // itself a real user gesture — some (Shop/Achievements/Settings/Bugrep
+  // open from the main menu) can be the very first click of the session,
+  // before Game.start() ever creates the context.
+  function uiClick(freq, dur){
+    ensureCtx();
+    if(ctx.state === 'suspended') ctx.resume();
+    if(muted) return;
+    const t = ctx.currentTime;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.1, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (dur || 0.08));
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = freq || 200;
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = (freq || 200) * 2.01;
+    const g2 = ctx.createGain(); g2.gain.value = 0.28;
+    o2.connect(g2); g2.connect(g); o1.connect(g);
+    o1.start(t); o2.start(t);
+    o1.stop(t + (dur||0.08) + 0.05); o2.stop(t + (dur||0.08) + 0.05);
+  }
   // heavier = lower, lighter = higher — the direct physical intuition (§4)
   function massToFreq(mass){
     const t = clamp((mass - 1) / 7, 0, 1);
@@ -1819,13 +1875,14 @@ const Music = (function(){
 
   return {
     start, stop, setMuted, isMuted, toggleMute, setMusicVol, setSfxVol, stingerAchievement,
-    ensureCtx,
+    ensureCtx, uiClick,
     _test: {
       massToFreq, bpmFromEnergy, MAX_MERGE_STEP,
       get energyTier(){return energyTier;}, get hullTier(){return hullTier;},
       isDroneActive: () => isDroneActive,
       droneGainValue: () => droneGain ? droneGain.gain.value : null,
       droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null,
+      uiClickAudible: () => !!ctx && !muted,
     },
   };
 })();
@@ -1983,9 +2040,9 @@ const Shop = (function(){
       const active = owned && Persist.data.cosmetics[item.cosmeticKey] === item.cosmeticValue;
       const affordable = Persist.data.flux >= item.cost;
       let action;
-      if(!owned) action = `<button class="shop-buy" ${affordable?'':'disabled'} onclick="Shop.buy('${item.id}')">${item.cost} ◈</button>`;
+      if(!owned) action = `<button class="shop-buy" ${affordable?'':'disabled'} onclick="Music.uiClick(320,0.09); Shop.buy('${item.id}')">${item.cost} ◈</button>`;
       else if(active) action = '<span style="color:var(--ok);font-family:var(--mono);font-size:.75rem;">ACTIVE</span>';
-      else action = `<button class="shop-buy" onclick="Shop.equip('${item.id}')">EQUIP</button>`;
+      else action = `<button class="shop-buy" onclick="Music.uiClick(260,0.08); Shop.equip('${item.id}')">EQUIP</button>`;
       return `<div class="shop-row ${owned?'owned':''} ${active?'active':''}">
         <div><div style="font-weight:700;">${escapeHtml(item.name)}</div><div style="color:var(--ink-soft);font-size:.75rem;">${escapeHtml(item.desc)}</div></div>
         ${action}
@@ -2074,7 +2131,7 @@ const Bugrep = (function(){
   function renderList(){
     const l = loadAll();
     document.getElementById('bugList').innerHTML = l.map((r,i) => `
-      <div class="bug-item"><span class="del" onclick="Bugrep.del(${i})">remove</span>
+      <div class="bug-item"><span class="del" onclick="Music.uiClick(140,0.07); Bugrep.del(${i})">remove</span>
         <div class="cat">${escapeHtml(r.category)}</div><strong>${escapeHtml(r.title)}</strong>
         ${r.details ? `<div style="opacity:.75;margin-top:2px;">${escapeHtml(r.details)}</div>` : ''}
       </div>`).join('');

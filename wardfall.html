@@ -151,12 +151,12 @@ body.reduced-motion .panel{
     <div class="stat-line">Best score <b id="menuBestVal">0</b></div>
     <div class="stat-line">Shards <b id="menuShardsVal">0</b></div>
     <div class="stat-line" id="menuDailyRow"><span id="menuDailyLabel">Day #0 best</span> <b id="menuDailyBestVal">0</b></div>
-    <button class="btn" onclick="Game.startRound()" aria-label="Start a run">SOUND THE WARDFALL</button>
-    <button class="btn" onclick="Game.startRound({daily:true})" aria-label="Play today's Wardfall — a shared board everyone sees the same day">☀ TODAY'S WARDFALL</button>
-    <button class="btn" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
-    <button class="btn" onclick="Shop.open()" aria-label="Shop">✦ SHARD SHOP</button>
-    <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
-    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+    <button class="btn" data-sfx="primary" onclick="Game.startRound()" aria-label="Start a run">SOUND THE WARDFALL</button>
+    <button class="btn" data-sfx="primary" onclick="Game.startRound({daily:true})" aria-label="Play today's Wardfall — a shared board everyone sees the same day">☀ TODAY'S WARDFALL</button>
+    <button class="btn" data-sfx="nav" onclick="Achievements.open()" aria-label="Achievements">🏆 ACHIEVEMENTS</button>
+    <button class="btn" data-sfx="nav" onclick="Shop.open()" aria-label="Shop">✦ SHARD SHOP</button>
+    <button class="btn" data-sfx="nav" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
+    <a class="btn" data-sfx="nav" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
   </div>
 </div>
 
@@ -166,7 +166,7 @@ body.reduced-motion .panel{
     <div class="tagline">what the censer keeps of you</div>
     <div class="ach-progress" id="achProgress"></div>
     <div id="achRows"></div>
-    <button class="btn" onclick="Achievements.close()" aria-label="Back">BACK</button>
+    <button class="btn" data-sfx="back" onclick="Achievements.close()" aria-label="Back">BACK</button>
   </div>
 </div>
 
@@ -176,16 +176,16 @@ body.reduced-motion .panel{
     <div class="tagline">cosmetic only — never changes how the censer plays</div>
     <div class="stat-line">Shards <b id="shopShardsVal">0</b></div>
     <div id="shopRows"></div>
-    <button class="btn" onclick="Shop.close()" aria-label="Back">BACK</button>
+    <button class="btn" data-sfx="back" onclick="Shop.close()" aria-label="Back">BACK</button>
   </div>
 </div>
 
 <div class="overlay" id="pauseOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
-    <button class="btn" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
-    <button class="btn" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
-    <button class="btn" onclick="Game.showMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
+    <button class="btn" data-sfx="nav" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
+    <button class="btn" data-sfx="nav" onclick="Settings.open()" aria-label="Settings">SETTINGS</button>
+    <button class="btn" data-sfx="back" onclick="Game.showMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
   </div>
 </div>
 
@@ -200,10 +200,10 @@ body.reduced-motion .panel{
     <div class="stat-line">Best combo <b id="bestComboVal">0</b></div>
     <div class="stat-line">Shards earned <b id="shardsEarnedVal">0</b></div>
     <div class="stat-line" id="dailyResultRow" style="display:none;"><span id="dailyDayLabel">Day #0 best</span> <b id="dailyBestVal">0</b></div>
-    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
-    <button class="btn" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
-    <button class="btn" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
-    <button class="btn" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
+    <button class="btn" data-sfx="nav" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn" data-sfx="nav" onclick="ShareCard.copyText().then(ok => { this.textContent = ok ? '✓ COPIED' : '✗ COPY FAILED'; setTimeout(()=>{ this.textContent='📋 COPY RESULT TEXT'; }, 1500); })" aria-label="Copy result as text">📋 COPY RESULT TEXT</button>
+    <button class="btn" data-sfx="primary" onclick="Game.startRound({daily: Game.isDailyMode()})" aria-label="Replay">REPLAY</button>
+    <button class="btn" data-sfx="back" onclick="Game.showMenu()" aria-label="Back to menu">MENU</button>
   </div>
 </div>
 
@@ -221,20 +221,25 @@ body.reduced-motion .panel{
     </div>
     <div class="settings-row">
       <label for="reducedMotionToggle">Reduce motion</label>
-      <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
+      <input type="checkbox" id="reducedMotionToggle" data-sfx="toggle" onchange="Settings.setReducedMotion(this.checked)">
     </div>
     <div class="settings-row">
       <label for="colorblindToggle">Colorblind-safe palette</label>
-      <input type="checkbox" id="colorblindToggle" onchange="Settings.setColorblind(this.checked)">
+      <input type="checkbox" id="colorblindToggle" data-sfx="toggle" onchange="Settings.setColorblind(this.checked)">
     </div>
-    <button class="btn" onclick="Settings.close()" aria-label="Back">BACK</button>
+    <button class="btn" data-sfx="back" onclick="Settings.close()" aria-label="Back">BACK</button>
   </div>
 </div>
 
 <div class="meta-row">
+  <!-- data-sfx deliberately omitted here: this button IS the audio on/off
+       control, so a click cue on it would be self-referential (and, on
+       the unmute path, silent anyway — bell()/uiClick gate on the muted
+       flag, which this very click is in the middle of flipping) — the
+       icon swap (🔊/🔇) is its own immediate feedback instead. -->
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
-  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
-  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="icon-btn" data-sfx="nav" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" data-sfx="nav" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
 </div>
 
 <script>
@@ -1610,6 +1615,18 @@ const Music = (function(){
     const o = ctx.createOscillator(); o.type='square'; o.frequency.setValueAtTime(500,t); o.frequency.exponentialRampToValueAtTime(180,t+0.04);
     o.connect(g); o.start(t); o.stop(t+0.06);
   }
+  // uiClick — the studio-wide UI-sound gap closed here (game-audio-
+  // production-suite skill, Part B/D: "zero, everywhere, no exceptions").
+  // Deliberate wiring, not new synthesis: same bell()-style fundamental +
+  // ~2x overtone sine pair as every stinger below, just self-gated to stay
+  // beneath them — freq stays <=200Hz (below missBell's 220, the game's
+  // previously-quietest/lowest cue), dur stays 60-100ms (vs. 0.3-1.3s for
+  // real stingers), vol stays <=0.075 (below missBell's 0.08, previously
+  // the quietest real cue in the file). ensureCtx() self-gates exactly like
+  // orbBell/missBell/etc. below it, so this is safe to call from a menu
+  // click that happens before any round (and thus before Game.startRound's
+  // own Music.ensureCtx()) has ever run.
+  function uiClick(freq, dur, vol){ ensureCtx(); bell(freq||175, dur||0.08, vol||0.055); }
   const COLOR_ROOT = { sapphire: 300, amethyst: 340, teal: 260 };
   function orbBell(colorKey){ ensureCtx(); bell(COLOR_ROOT[colorKey]||300, 0.5, 0.18); }
   function missBell(){ ensureCtx(); bell(220, 0.35, 0.08); }
@@ -1663,7 +1680,7 @@ const Music = (function(){
   Events.on('descend', ()=> descentWarning());
   Events.on('roundEnd', ()=> roundEndCue());
 
-  return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish,
+  return { ensureCtx, toggleMute, setMusicVolume, setSfxVolume, shotClick, setDroneActive, updateDrone, achieveFlourish, uiClick,
     _test: { isMuted: () => muted, isStarted: () => started, droneGainValue: () => droneGain ? droneGain.gain.value : null, isDroneActive: () => droneActive,
       droneFilterFreq: () => droneFilter ? droneFilter.frequency.value : null } };
 })();
@@ -1938,7 +1955,7 @@ const Shop = (function(){
       return `<div class="shop-row ${owned?'owned':''}">
         <div><div style="font-weight:700;">${escapeHtml(item.name)}</div><div style="color:var(--ink-soft);font-size:.75rem;">${escapeHtml(item.desc)}</div></div>
         ${owned ? '<span style="color:var(--ok);font-family:var(--mono);font-size:.75rem;">OWNED</span>'
-                : `<button class="shop-buy" ${affordable?'':'disabled'} onclick="Shop.buy('${item.id}')">${item.cost} ✦</button>`}
+                : `<button class="shop-buy" data-sfx="buy" ${affordable?'':'disabled'} onclick="Shop.buy('${item.id}')">${item.cost} ✦</button>`}
       </div>`;
     }).join('');
   }
@@ -1966,6 +1983,50 @@ const FullscreenCtrl = (function(){
   }
   return { toggle };
 })();
+
+/* =====================================================================
+   UI-CLICK WIRING — closes the studio-wide "zero UI sound anywhere" gap
+   (game-audio-production-suite skill, Part B/D) for this game. Delegated
+   listeners rather than editing every .btn's own onclick: (1) .shop-buy
+   buttons are torn down and rebuilt by Shop.render() on every open/buy,
+   so a directly-attached listener would need re-attaching after every
+   render — delegation on a static ancestor sidesteps that entirely; and
+   (2) tests/wardfall-adversarial.js selects buttons by their exact
+   onclick attribute value (e.g. button[onclick="Settings.open()"]) —
+   leaving those attributes untouched keeps this change invisible to that
+   suite. data-sfx picks the preset per control (see UI_SFX_PRESETS); a
+   control with no data-sfx attribute (the mute button, the two volume
+   sliders) is deliberately unwired, not missed — see each one's own
+   comment. Real user gestures only: both listeners are click/change on
+   controls a person just interacted with, and Music.uiClick's own
+   ensureCtx() call is the same self-gating idiom orbBell/missBell/etc.
+   already use, so this never tries to touch the AudioContext before one
+   exists.
+===================================================================== */
+const UI_SFX_PRESETS = {
+  primary: [200, 0.10, 0.075], // commits to something (start/replay a run)
+  nav:     [175, 0.08, 0.055], // open a menu/panel, or a non-committal action
+  back:    [145, 0.07, 0.045], // close/back/quit — lowest-pitched of the set
+  buy:     [190, 0.09, 0.065], // shop purchase confirm
+  toggle:  [155, 0.06, 0.045], // settings checkbox flip
+};
+// .btn/.icon-btn/.shop-buy only — the two checkboxes below are handled by
+// their own 'change' listener instead, so a single toggle click doesn't
+// double-fire (a checkbox click event would also match a bare [data-sfx]
+// selector here, since both inputs carry data-sfx="toggle" for the
+// 'change' listener's benefit).
+document.addEventListener('click', (e)=>{
+  const el = e.target.closest('.btn, .icon-btn, .shop-buy');
+  if(!el || !el.dataset.sfx || el.disabled) return;
+  const preset = UI_SFX_PRESETS[el.dataset.sfx] || UI_SFX_PRESETS.nav;
+  Music.uiClick(preset[0], preset[1], preset[2]);
+});
+['reducedMotionToggle','colorblindToggle'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=>{
+    const preset = UI_SFX_PRESETS.toggle;
+    Music.uiClick(preset[0], preset[1], preset[2]);
+  });
+});
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;
 document.getElementById('menuShardsVal').textContent = Persist.data.shards;

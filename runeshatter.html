@@ -146,7 +146,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 
 <canvas id="gameCanvas"></canvas>
 
-<button class="hud-pause-btn" id="pauseBtn" onclick="Game.togglePause()" aria-label="Pause">❚❚</button>
+<button class="hud-pause-btn" id="pauseBtn" onclick="Music.uiClick();Game.togglePause()" aria-label="Pause">❚❚</button>
 <div id="hud">
   <div class="hud-left">
     <div id="scoreVal">0</div>
@@ -164,18 +164,18 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Runeshatter mode select">
     <h1>RUNESHATTER</h1>
     <div class="tagline">shatter the cluster, chain the blast</div>
-    <button class="btn" id="resumeBtn" style="display:none;" onclick="Game.resumeSession()">▶ RESUME SAVED RUN</button>
-    <button class="mode-card" onclick="Game.startEndless()" aria-label="Endless mode">
+    <button class="btn" id="resumeBtn" style="display:none;" onclick="Music.uiClick(262,0.09);Game.resumeSession()">▶ RESUME SAVED RUN</button>
+    <button class="mode-card" onclick="Music.uiClick(262,0.09);Game.startEndless()" aria-label="Endless mode">
       <div class="mode-name">ENDLESS</div>
       <div class="mode-desc">no limit — chase the highest score you can before the board turns hostile</div>
       <div class="mode-best">Best score <b id="bestEndless">0</b></div>
     </button>
-    <button class="mode-card" onclick="Nav.goTo('levelSelect')" aria-label="Levels mode">
+    <button class="mode-card" onclick="Music.uiClick();Nav.goTo('levelSelect')" aria-label="Levels mode">
       <div class="mode-name">LEVELS</div>
       <div class="mode-desc">20 hand-authored boards, tightening move budgets, rising tile tiers</div>
       <div class="mode-best">Furthest level reached <b id="bestLevels">0</b></div>
     </button>
-    <button class="mode-card" onclick="Game.startTimed()" aria-label="Timed Survival mode">
+    <button class="mode-card" onclick="Music.uiClick(262,0.09);Game.startTimed()" aria-label="Timed Survival mode">
       <div class="mode-name">TIMED SURVIVAL</div>
       <div class="mode-desc">a running clock, an escalating board — survive it</div>
       <div class="mode-best">Best score <b id="bestTimed">0</b></div>
@@ -190,7 +190,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <h2>✦ LEVEL SELECT ✦</h2>
     <div class="tagline">unlock the next by completing the last</div>
     <div class="level-grid" id="levelGrid"></div>
-    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back">BACK</button>
+    <button class="btn" onclick="Music.uiClick(165,0.08);Nav.goTo('modeSelect')" aria-label="Back">BACK</button>
   </div>
 </div>
 
@@ -198,9 +198,9 @@ textarea.form-input{min-height:70px;resize:vertical;}
 <div class="overlay" id="pauseOverlay">
   <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
-    <button class="btn" onclick="Game.togglePause()" aria-label="Resume">RESUME</button>
-    <button class="btn" onclick="Game.endRunFromPause()" aria-label="End run">END RUN</button>
-    <button class="btn" onclick="Game.quitToMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
+    <button class="btn" onclick="Music.uiClick(262,0.09);Game.togglePause()" aria-label="Resume">RESUME</button>
+    <button class="btn" onclick="Music.uiClick(165,0.08);Game.endRunFromPause()" aria-label="End run">END RUN</button>
+    <button class="btn" onclick="Music.uiClick(165,0.08);Game.quitToMenu()" aria-label="Quit to menu">QUIT TO MENU</button>
   </div>
 </div>
 
@@ -213,8 +213,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="stat-line">Score <b id="resultsScore">0</b></div>
     <div class="stat-line" id="resultsLevelRow" style="display:none;">Level <b id="resultsLevel">—</b></div>
     <div class="stat-line" id="resultsOutcomeRow" style="display:none;">Outcome <b id="resultsOutcome">—</b></div>
-    <button class="btn" onclick="Game.playAgain()" aria-label="Play again">PLAY AGAIN</button>
-    <button class="btn" onclick="Nav.goTo('modeSelect')" aria-label="Back to mode select">MODE SELECT</button>
+    <button class="btn" onclick="Music.uiClick(262,0.1);Game.playAgain()" aria-label="Play again">PLAY AGAIN</button>
+    <button class="btn" onclick="Music.uiClick();Nav.goTo('modeSelect')" aria-label="Back to mode select">MODE SELECT</button>
   </div>
 </div>
 
@@ -224,24 +224,24 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
     <h2>REPORT ISSUE</h2>
     <div class="bugcat">
-      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
-      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
-      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
-      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+      <button class="btn sel" data-cat="Bug" onclick="Music.uiClick(220,0.06);Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Music.uiClick(220,0.06);Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Music.uiClick(220,0.06);Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Music.uiClick(220,0.06);Bugrep.cat(this)">… Other</button>
     </div>
     <input class="form-input" id="bugTitle" placeholder="Short title">
     <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
-    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <button class="btn primary" onclick="Music.uiClick(262,0.1);Bugrep.save()">SAVE REPORT</button>
     <div id="bugList"></div>
-    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
-    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+    <button class="btn" onclick="Music.uiClick();Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Music.uiClick(165,0.08);Bugrep.close()">CLOSE</button>
   </div>
 </div>
 
 <div class="meta-row">
-  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute" aria-label="Mute">🔊</button>
-  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
-  <div class="version-marker" id="versionMarker">RUNESHATTER v0.6.1</div>
+  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'; Music.uiClick()" title="Mute" aria-label="Mute">🔊</button>
+  <button class="icon-btn" onclick="Music.uiClick();Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <div class="version-marker" id="versionMarker">RUNESHATTER v0.6.2</div>
 </div>
 
 <script>
@@ -249,6 +249,52 @@ textarea.form-input{min-height:70px;resize:vertical;}
 /* =====================================================================
    RUNESHATTER — CHANGE LOG
    (one line per change, most recent on top)
+
+   v0.6.2 — 2026-08-05 — UI click sound, closing this game's share of the
+                          studio-wide "zero UI sound anywhere" gap
+                          (game-audio-production-suite skill, Part B —
+                          confirmed zero across all 6 games, every
+                          .btn/menu/settings/pause onclick called a state/
+                          logic function directly with no accompanying
+                          audio). Added Music.uiClick(freq, dur) next to
+                          bell() (:1559+) — deliberately NOT a new synthesis
+                          voice, it's bell() itself called with defaults
+                          tuned quieter/shorter/lower than every existing
+                          bell()-based cue (220Hz/vol 0.09/~80ms, vs.
+                          plainMatchClink's 480-648Hz/vol 0.11/260ms and
+                          tierUpFanfare's 220Hz+/vol 0.16+), routed through
+                          the same sfxGain->master bus via bell()'s own
+                          wiring. Unlike every other SFX function here it
+                          also calls ensureCtx() itself — a menu click is
+                          often the player's first real gesture on the
+                          page, before any mode-card would otherwise start
+                          the AudioContext — so this doubles as an earlier,
+                          equally-valid audio-start gesture, not a bypass
+                          of the user-gesture requirement. Wired into all
+                          20 real static controls: the HUD pause icon,
+                          mode-select's 3 mode cards + Resume Saved Run,
+                          level-select's Back, the pause overlay's 3
+                          buttons, results' Play Again/Mode Select, the bug
+                          reporter's 4 category toggles + Save/Export/
+                          Close, and the mute + report-issue icon buttons
+                          (mute plays the click AFTER Music.toggleMute() so
+                          muting itself stays silent and only unmuting
+                          audibly confirms). Left unwired: the "Back to the
+                          Arcade" link (navigates away immediately — no
+                          time for a one-shot to render before unload) and
+                          the dynamically-rendered per-row bug-report
+                          "remove" link (minor dev-tool action, not in the
+                          same class as the rest). No runeshatter-sw.js
+                          exists for this game (unlike Games 1-4, it isn't
+                          precached by any service worker — confirmed by
+                          grep, portal-sw.js doesn't reference
+                          runeshatter.html either) so no CACHE_NAME bump
+                          applies here. Verified live via Playwright:
+                          clicking each wired control schedules real
+                          connected oscillator/gain nodes on sfxGain, and
+                          Music._test.uiClickCount() increments once per
+                          click; 53/53 adversarial + 41/41 audio tests
+                          still passing.
 
    v0.6.1 — 2026-08-03 — Three bugs fixed, found by a dedicated bug-squasher
                           (qa-playtest) pass specifically targeting v0.6.0's
@@ -1486,6 +1532,7 @@ const Music = (function(){
   let heat = 0;          // decaying chain-heat driver, 0..1
   let lastUrgency = 0;   // exposed for verification only
   let lastDistortionAmount = 0;
+  let uiClickCount = 0;   // exposed for verification only — counts real (non-muted, ctx-backed) uiClick() plays
   const HEAT_DECAY_PER_SEC = 0.9; // ~1.8s to decay from full heat to silence
 
   // ---- graph setup — every primitive below is copied verbatim from the
@@ -1572,6 +1619,36 @@ const Music = (function(){
     g.connect(wet); wet.connect(reverb);
     o1.start(t); o2.start(t);
     o1.stop(t+(dur||1.0)+0.05); o2.stop(t+(dur||1.0)+0.05);
+  }
+
+  // shared UI click — the studio-wide UI-sound gap fix (game-audio-
+  // production-suite skill, Part A's "UI sound" row / Part B: "confirmed
+  // zero across all 6 games and every menu/settings/pause control in the
+  // studio's history... the single largest, cheapest, most universally-
+  // applicable gap this audit found"). Deliberately NOT a new synthesis
+  // voice — this IS bell(), just called with defaults tuned quieter,
+  // shorter, and lower-pitched than every other bell()-based cue already
+  // in this module: plainMatchClink sits at 480-648Hz/vol 0.11/260ms,
+  // tierUpFanfare's lowest note is 220Hz/vol 0.16+, so this primitive's own
+  // 220Hz/vol 0.09/~80ms default reads as distinctly smaller and duller
+  // than either, per the skill's explicit "no new synthesis technique
+  // needed" instruction. Routed through sfxGain -> master, same bus as
+  // every other one-shot in this module, via bell()'s own wiring.
+  //
+  // Unlike every other SFX function in this module, this one also calls
+  // ensureCtx() itself instead of relying on Game to have called it first:
+  // a plain menu click (BACK, CLOSE, a bug-report category toggle) is
+  // often the player's very FIRST real gesture on the page, well before
+  // any mode-card would otherwise create the AudioContext. ensureCtx() is
+  // explicitly idempotent and re-checked on every call (see its own
+  // comment above), so calling it here, inside a real onclick handler, is
+  // the earliest correct place to lazily start audio — not a shortcut
+  // around the user-gesture requirement, an actual instance of it.
+  function uiClick(freq, dur){
+    ensureCtx();
+    if(muted) return;
+    uiClickCount++;
+    bell(freq || 220, dur || 0.08, 0.09);
   }
 
   // filtered-noise-burst helper — same pattern as playHat/playClap in
@@ -1908,7 +1985,7 @@ const Music = (function(){
   Events.on('match:plain', (p) => plainMatchClink(p.cleared));
 
   return {
-    ensureCtx, toggleMute, setMusicVolume, setSfxVolume,
+    ensureCtx, toggleMute, setMusicVolume, setSfxVolume, uiClick,
     _test: {
       isMuted: () => muted,
       isStarted: () => started,
@@ -1923,6 +2000,7 @@ const Music = (function(){
       distortionAmount: () => lastDistortionAmount,
       heatValue: () => heat,
       urgencyValue: () => lastUrgency,
+      uiClickCount: () => uiClickCount,
     },
   };
 })();

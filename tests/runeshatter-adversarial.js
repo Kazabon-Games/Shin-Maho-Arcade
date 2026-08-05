@@ -285,7 +285,7 @@ function checkerboardPattern(overrides){
   console.log('13. Full UI flow — mode select -> game -> a real swap -> pause -> results reachable');
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof Game !== 'undefined');
-  await page.click('button[onclick="Game.startEndless()"]');
+  await page.click('button[aria-label="Endless mode"]');
   await page.waitForTimeout(150);
   ok(await page.isVisible('#hud'), 'HUD is visible once a run starts');
   ok(!(await page.isVisible('#modeSelectScreen')), 'mode-select screen is hidden once a run starts');
@@ -305,7 +305,7 @@ function checkerboardPattern(overrides){
   await page.click('#pauseBtn');
   await page.waitForTimeout(100);
   ok(await page.isVisible('#pauseOverlay'), 'pause overlay opens from the in-game pause button');
-  await page.click('button[onclick="Game.endRunFromPause()"]');
+  await page.click('button[aria-label="End run"]');
   await page.waitForTimeout(150);
   ok(await page.isVisible('#resultsScreen'), 'ending a run from pause reaches the results screen');
   await checkOverflow('results');
@@ -313,7 +313,7 @@ function checkerboardPattern(overrides){
   console.log('14. Level select — locked/unlocked/completed rendering reflects highScores.levels');
   await page.evaluate(() => { Persist.data.highScores.levels = 3; Persist.save(); Nav.goTo('modeSelect'); });
   await page.waitForTimeout(100);
-  await page.click('.mode-card[onclick="Nav.goTo(\'levelSelect\')"]');
+  await page.click('.mode-card[aria-label="Levels mode"]');
   await page.waitForTimeout(100);
   const levelTiles = await page.evaluate(() => Array.from(document.querySelectorAll('.level-tile')).map(el => ({
     completed: el.classList.contains('completed'), locked: el.classList.contains('locked'), disabled: el.disabled,

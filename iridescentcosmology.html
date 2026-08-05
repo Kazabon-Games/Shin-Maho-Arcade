@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.14.0</title>
+<title>IRIDESCENT COSMOLOGY v2.15.0</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,47 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.15.0 — 2026-08-05 — UI click sound: the studio-wide zero-UI-sound gap
+                          confirmed by the game-audio-production-suite
+                          skill's audit (Part B) — no menu-nav, hover,
+                          confirm/cancel, or settings-toggle sound anywhere,
+                          every .btn/menu onclick calling straight into game
+                          state with nothing wired for audio. Fixed as
+                          wiring, not new synthesis: added Music.uiClick
+                          (freq, dur), reusing bell()'s own fundamental +
+                          ~2x-overtone sine-pair idiom, just pitched down,
+                          run dry (no reverb send), and trimmed to ~70-90ms
+                          at well under bell()'s volume, so it reads as a
+                          UI tick and never competes with the existing
+                          levelup/elite/boss/victory stingers. Routes
+                          through the same sfxGain bus bell() already uses —
+                          same mute flag, same SFX volume slider, no new
+                          node hung off master. Wired into every menu-nav,
+                          confirm/cancel, settings-toggle, bug-report, and
+                          shop-purchase control (pause/resume, start/
+                          abandon run, shop/achievements/evolutions/
+                          settings/bug-report open+close, share, menu
+                          return, mute/fullscreen icon toggles, bug-report
+                          category tabs/save/export, Grimoire Research
+                          purchases). Deliberately left unwired: the dash
+                          button (continuous real-time gameplay input, not
+                          a menu control — would spam every dash and
+                          compete with combat audio, outside the audit's
+                          named gap), the level-up/chest/relic pick-cards
+                          (a different, non-.btn control class, and the
+                          choice's own payoff bell already plays close to
+                          that moment — a second click voice there risks
+                          reading as competing with the reward chime rather
+                          than a neutral tick), and the bug-report "remove"
+                          list-item link (a plain text span, not a .btn —
+                          minor, low-stakes list housekeeping, not a
+                          primary control). Confirmed audibly gated behind
+                          the file's existing first-user-gesture
+                          AudioContext creation (ensureAudio() on the first
+                          pointerdown) — no change to that gating, and
+                          uiClick's own `if(!ctx||muted) return` guard
+                          matches bell()'s.
 
   v2.14.0 — 2026-07-29 — New system: Relics and ground helpers. Producer
                           ask: "modifiers in the form of items that interact
@@ -1845,7 +1886,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="hpbar"><div id="hpFill" style="width:100%"></div></div>
     <div class="xpbar"><div id="xpFill" style="width:0%"></div></div>
     <div class="hud-stats"><span id="hudKills">☠ 0</span><span id="hudShards" style="color:var(--gold)">◆ 0</span></div>
-    <button id="pauseBtn" onclick="Game.togglePause()">⏸ pause</button>
+    <button id="pauseBtn" onclick="Music.uiClick();Game.togglePause()">⏸ pause</button>
   </div>
   <div class="hud-right">
     <div id="hudTimer">0:00</div>
@@ -1866,13 +1907,13 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <h1>IRIDESCENT COSMOLOGY</h1>
     <div class="stage-badge">STAGE I</div>
     <div class="tagline">the cosmology is open · survive its hunger</div>
-    <button class="btn primary" onclick="Game.start()">✦ &nbsp;OPEN THE COSMOLOGY</button>
-    <button class="btn gold" onclick="Shop.open()">📖 &nbsp;GRIMOIRE</button>
-    <button class="btn" onclick="Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
-    <button class="btn" onclick="EvoLibrary.open()">✦ &nbsp;EVOLUTIONS</button>
+    <button class="btn primary" onclick="Music.uiClick();Game.start()">✦ &nbsp;OPEN THE COSMOLOGY</button>
+    <button class="btn gold" onclick="Music.uiClick();Shop.open()">📖 &nbsp;GRIMOIRE</button>
+    <button class="btn" onclick="Music.uiClick();Achievements.open()">🏆 &nbsp;ACHIEVEMENTS</button>
+    <button class="btn" onclick="Music.uiClick();EvoLibrary.open()">✦ &nbsp;EVOLUTIONS</button>
     <div class="stat-grid" id="menuBest"></div>
     <div class="hint">WASD / arrows to move · spells cast themselves<br>on touch: drag the joystick<br><span style="color:var(--neon2)">master a spell and its matching passive — together, they evolve</span></div>
-    <a class="btn" href="index.html" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
+    <a class="btn" href="index.html" onclick="Music.uiClick(150,0.09)" style="text-align:center;text-decoration:none;" aria-label="Back to the arcade">← Back to the Arcade</a>
   </div>
 </div>
 
@@ -1890,8 +1931,8 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Paused">
     <h2>PAUSED</h2>
     <div class="tagline">the cosmology waits · nothing moves until you do</div>
-    <button class="btn primary" onclick="Game.togglePause()">RESUME</button>
-    <button class="btn" onclick="Game.abandonRun()">CLOSE THE COSMOLOGY</button>
+    <button class="btn primary" onclick="Music.uiClick();Game.togglePause()">RESUME</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Game.abandonRun()">CLOSE THE COSMOLOGY</button>
   </div>
 </div>
 
@@ -1907,9 +1948,9 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <div class="stat-box"><div class="v gold" id="dShards">+0</div><div class="k">essence gathered</div></div>
     </div>
     <div class="hint" id="dRecord" style="color:var(--gold);margin-bottom:12px;"></div>
-    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
-    <button class="btn primary" onclick="Game.start()">↻ &nbsp;OPEN IT AGAIN</button>
-    <button class="btn" onclick="Game.toMenu()">MENU</button>
+    <button class="btn" onclick="Music.uiClick();ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn primary" onclick="Music.uiClick();Game.start()">↻ &nbsp;OPEN IT AGAIN</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Game.toMenu()">MENU</button>
   </div>
 </div>
 
@@ -1928,9 +1969,9 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <div class="stat-box"><div class="v" id="clearKills">0</div><div class="k">Husks destroyed</div></div>
     </div>
     <div class="stat-box" style="margin:10px 0 16px;"><div class="v gold" id="clearShards">+0</div><div class="k">essence gathered</div></div>
-    <button class="btn" onclick="ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
-    <button class="btn primary" onclick="Game.start()">↻ &nbsp;RUN AGAIN</button>
-    <button class="btn" onclick="Game.toMenu()">MENU</button>
+    <button class="btn" onclick="Music.uiClick();ShareCard.share()" aria-label="Share this run">⤴ &nbsp;SHARE RESULT</button>
+    <button class="btn primary" onclick="Music.uiClick();Game.start()">↻ &nbsp;RUN AGAIN</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Game.toMenu()">MENU</button>
   </div>
 </div>
 
@@ -1941,7 +1982,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="tagline">essence trades for permanence · spend with intent</div>
     <div class="shard-count">✦ <span id="shopShards">0</span> essence</div>
     <div id="shopRows"></div>
-    <button class="btn" onclick="Shop.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Shop.close()">BACK</button>
   </div>
 </div>
 
@@ -1952,7 +1993,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="tagline">what the hunger remembers of you</div>
     <div class="ach-progress" id="achProgress"></div>
     <div id="achRows"></div>
-    <button class="btn" onclick="Achievements.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Achievements.close()">BACK</button>
   </div>
 </div>
 
@@ -1969,7 +2010,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
     <div class="tagline">master a spell and its matching passive — together, they evolve</div>
     <div class="ach-progress" id="evoLibProgress"></div>
     <div id="evoLibRows"></div>
-    <button class="btn" onclick="EvoLibrary.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);EvoLibrary.close()">BACK</button>
   </div>
 </div>
 
@@ -1978,26 +2019,26 @@ textarea.form-input{min-height:70px;resize:vertical;}
   <div class="panel" role="dialog" aria-modal="true" aria-label="Report an issue">
     <h2>REPORT ISSUE</h2>
     <div class="bugcat">
-      <button class="btn sel" data-cat="Bug" onclick="Bugrep.cat(this)">🐛 Bug</button>
-      <button class="btn" data-cat="Balance" onclick="Bugrep.cat(this)">⚖ Balance</button>
-      <button class="btn" data-cat="Suggestion" onclick="Bugrep.cat(this)">💡 Idea</button>
-      <button class="btn" data-cat="Other" onclick="Bugrep.cat(this)">… Other</button>
+      <button class="btn sel" data-cat="Bug" onclick="Music.uiClick();Bugrep.cat(this)">🐛 Bug</button>
+      <button class="btn" data-cat="Balance" onclick="Music.uiClick();Bugrep.cat(this)">⚖ Balance</button>
+      <button class="btn" data-cat="Suggestion" onclick="Music.uiClick();Bugrep.cat(this)">💡 Idea</button>
+      <button class="btn" data-cat="Other" onclick="Music.uiClick();Bugrep.cat(this)">… Other</button>
     </div>
     <input class="form-input" id="bugTitle" placeholder="Short title">
     <textarea class="form-input" id="bugDetails" placeholder="What happened?"></textarea>
-    <button class="btn primary" onclick="Bugrep.save()">SAVE REPORT</button>
+    <button class="btn primary" onclick="Music.uiClick();Bugrep.save()">SAVE REPORT</button>
     <div id="bugList"></div>
-    <button class="btn" onclick="Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
-    <button class="btn" onclick="Bugrep.close()">CLOSE</button>
+    <button class="btn" onclick="Music.uiClick();Bugrep.exportAll()" id="bugExportBtn">⬇ EXPORT REPORTS</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Bugrep.close()">CLOSE</button>
   </div>
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.14.0</div>
-  <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
-  <button class="icon-btn" onclick="FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
-  <button class="icon-btn" onclick="Settings.open()" title="Settings" aria-label="Settings">⚙</button>
-  <button class="icon-btn" onclick="Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.15.0</div>
+  <button class="icon-btn" onclick="Music.uiClick();this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
+  <button class="icon-btn" onclick="Music.uiClick();FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
+  <button class="icon-btn" onclick="Music.uiClick();Settings.open()" title="Settings" aria-label="Settings">⚙</button>
+  <button class="icon-btn" onclick="Music.uiClick();Bugrep.open()" title="Report an issue" aria-label="Report an issue">⚑<span class="bugrep-badge" id="bugBadge">0</span></button>
 </div>
 
 <!-- SETTINGS -->
@@ -2017,7 +2058,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
       <label for="reducedMotionToggle">Reduce motion</label>
       <input type="checkbox" id="reducedMotionToggle" onchange="Settings.setReducedMotion(this.checked)">
     </div>
-    <button class="btn" onclick="Settings.close()">BACK</button>
+    <button class="btn" onclick="Music.uiClick(150,0.09);Settings.close()">BACK</button>
   </div>
 </div>
 
@@ -6583,6 +6624,43 @@ const Music = (function(){
     o1.stop(t+(dur||1.4)+0.05); o2.stop(t+(dur||1.4)+0.05);
   }
 
+  // uiClick — the studio-wide zero-UI-sound gap named in the
+  // game-audio-production-suite skill (Part B): every real .btn/menu control
+  // in this file called its state function directly with no accompanying
+  // audio at all. This is wiring, not new synthesis — same fundamental +
+  // ~2x-overtone sine-pair idiom as bell() above, just pitched down, run
+  // dry (no reverb send; a menu click doesn't want a stinger's room tail)
+  // and trimmed to ~70-100ms at a fraction of bell()'s volume so it reads as
+  // a UI tick and never competes with or is confused for the levelup/
+  // elite/boss/victory stingers, which keep bell() to themselves. Routes to
+  // sfxGain exactly like bell() does — same bus, same mute flag, same SFX
+  // volume slider — no new gain node hung off master.
+  // lastUiClickAt/uiClickCount exist purely for the test harness: a one-shot
+  // voice's nodes are GC'd the instant they finish, so there is no live node
+  // to read back after the fact the way _test.droneGain() reads a sustained
+  // one — this is the same "expose real state, not an intent flag" posture
+  // as debugTickCount above, just for a discrete event instead of a loop.
+  let uiClickCount = 0, lastUiClickAt = null, lastUiClickFreq = null;
+  function uiClick(freq, dur){
+    if(!ctx || muted) return;
+    const t = ctx.currentTime;
+    const f = freq || 220;
+    const d = dur || 0.08;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.085, t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+d);
+    g.connect(sfxGain);
+    const o1 = ctx.createOscillator(); o1.type='sine'; o1.frequency.value=f;
+    const o2 = ctx.createOscillator(); o2.type='sine'; o2.frequency.value=f*2.01;
+    const g2 = ctx.createGain(); g2.gain.value = 0.28;
+    o2.connect(g2); g2.connect(g);
+    o1.connect(g);
+    o1.start(t); o2.start(t);
+    o1.stop(t+d+0.02); o2.stop(t+d+0.02);
+    uiClickCount++; lastUiClickAt = t; lastUiClickFreq = f;
+  }
+
   // near-death tension pulse — a low sine "heartbeat" thump (same
   // pitch-envelope idiom as playKick below), scaled 0..1 by how deep into
   // the danger zone HP is. Runs on sfxGain, not musicGain, so it reads as
@@ -7636,7 +7714,9 @@ const Music = (function(){
     setBranch,
     setMusicVolume,
     setSfxVolume,
+    uiClick,
     _test: { isMuted: () => muted, isStarted: () => started, intensity: () => intensity, bpm: () => BPM,
+      uiClickCount: () => uiClickCount, lastUiClickAt: () => lastUiClickAt, lastUiClickFreq: () => lastUiClickFreq,
       isScheduling: () => schedulerHandle !== null, currentStep: () => step,
       droneGain: () => drone ? drone.gain.gain.value : null, tickCount: () => debugTickCount,
       phraseBar: () => phraseBar, bossMode: () => bossMode, section: () => section,
@@ -7919,7 +7999,7 @@ const Shop = (function(){
           <div class="shop-desc">${def.desc}</div>
           <div class="shop-pips">${Array.from({length:maxRank},(_,i)=>`<div class="pip ${i<rank?'on':''}"></div>`).join('')}</div>
         </div>
-        <button class="shop-buy" onclick="Shop.buy('${key}')" ${afford?'':'disabled'}>${maxed?'MAX':'✦ '+cost}</button>
+        <button class="shop-buy" onclick="Music.uiClick();Shop.buy('${key}')" ${afford?'':'disabled'}>${maxed?'MAX':'✦ '+cost}</button>
       </div>`;
     }).join('');
   }

@@ -47,7 +47,7 @@ function ok(cond, label){
   await checkOverflow('menu');
 
   console.log('2. Settings persistence');
-  await page.click('button[onclick="Settings.open()"]');
+  await page.click('button[onclick*="Settings.open()"]');
   await page.waitForTimeout(150);
   await page.fill('#musicVolSlider', '0.2');
   await page.dispatchEvent('#musicVolSlider', 'input');
@@ -55,7 +55,7 @@ function ok(cond, label){
   await page.dispatchEvent('#sfxVolSlider', 'input');
   await page.check('#reducedMotionToggle');
   await page.dispatchEvent('#reducedMotionToggle', 'change');
-  await page.click('button[onclick="Settings.close()"]');
+  await page.click('button[onclick*="Settings.close()"]');
   await page.waitForTimeout(100);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('infall-save-v1')).settings);
   ok(saved.musicVol===0.2 && saved.sfxVol===0.7 && saved.reducedMotion===true, 'settings persisted to localStorage');
@@ -204,16 +204,16 @@ function ok(cond, label){
 
   console.log('11. Achievements panel renders all defs without crashing');
   await page.evaluate(() => { Game.abandonRun(); });
-  await page.click('button[onclick="Achievements.open()"]');
+  await page.click('button[onclick*="Achievements.open()"]');
   await page.waitForTimeout(150);
   ok(await page.isVisible('#achieveOverlay'), 'achievements overlay opens');
   const achRowCount = await page.evaluate(() => document.querySelectorAll('.ach-row').length);
   ok(achRowCount === 10, 'all 10 achievement defs render (got '+achRowCount+')');
-  await page.click('button[onclick="Achievements.close()"]');
+  await page.click('button[onclick*="Achievements.close()"]');
 
   console.log('12. Shop — cosmetics only, respects affordability, genuinely wired to render state');
   await page.evaluate(() => { Persist.data.flux = 100; Persist.save(); });
-  await page.click('button[onclick="Shop.open()"]');
+  await page.click('button[onclick*="Shop.open()"]');
   await page.waitForTimeout(150);
   ok(await page.isVisible('#shopOverlay'), 'shop overlay opens');
   await page.evaluate(() => Shop.buy('trail_ember'));
@@ -222,7 +222,7 @@ function ok(cond, label){
   await page.evaluate(() => Shop.equip('trail_ember'));
   const equippedCosmetic = await page.evaluate(() => Persist.data.cosmetics.trail);
   ok(equippedCosmetic === 'ember', 'equipping a purchased cosmetic actually updates Persist.data.cosmetics (got '+equippedCosmetic+')');
-  await page.click('button[onclick="Shop.close()"]');
+  await page.click('button[onclick*="Shop.close()"]');
 
   console.log('13. Audio drone gating (no per-frame write survives a game-over fade) — read the actual AudioParam values, per §4\'s bug-prevention note, not inferred from the automation code');
   await page.evaluate(() => Game.toMenu());
@@ -263,7 +263,7 @@ function ok(cond, label){
 
   console.log('14. Mobile viewport overflow across menu/playing/paused/death');
   await checkOverflow('death overlay');
-  await page.click('button[onclick="Game.toMenu()"]');
+  await page.click('button[onclick*="Game.toMenu()"]');
   await page.waitForTimeout(150);
   await checkOverflow('menu (post-run)');
   await page.evaluate(() => Game.start());

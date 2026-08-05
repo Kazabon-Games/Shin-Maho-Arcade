@@ -51,7 +51,7 @@ function ok(cond, label){
   await checkOverflow('menu');
 
   console.log('2. Settings persistence');
-  await page.click('button[onclick="Settings.open()"]');
+  await page.click('#menuOverlay button[onclick*="Settings.open()"]');
   await page.waitForTimeout(150);
   await page.fill('#musicVolSlider', '0.2');
   await page.dispatchEvent('#musicVolSlider', 'input');
@@ -59,7 +59,7 @@ function ok(cond, label){
   await page.dispatchEvent('#sfxVolSlider', 'input');
   await page.check('#reducedMotionToggle');
   await page.dispatchEvent('#reducedMotionToggle', 'change');
-  await page.click('button[onclick="Settings.close()"]');
+  await page.click('#settingsOverlay button[onclick*="Settings.close()"]');
   await page.waitForTimeout(100);
   const settingsSaved = await page.evaluate(() => JSON.parse(localStorage.getItem('sigilchain-save-v1')).settings);
   ok(settingsSaved.musicVol===0.2 && settingsSaved.sfxVol===0.7 && settingsSaved.reducedMotion===true, 'settings persisted to localStorage');
