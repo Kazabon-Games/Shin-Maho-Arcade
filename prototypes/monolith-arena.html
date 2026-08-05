@@ -11,6 +11,43 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.11.0 — 2026-08-05 — GDD v2.0 correctness pass: a real
+                          Monolith_Master_GDD_v2.0.docx surfaced this
+                          session, explicitly superseding all prior
+                          reconciliation. Six confirmed bugs fixed against
+                          it: (1) Rally is a free action, not 10 Ini.
+                          (2) Rally-once-per-battle is now actually
+                          enforced (target search excludes .rallied units;
+                          the permanent-removal check in applyLifeDamage
+                          now keys off .rallied, not .defeated, since
+                          Rally resets .defeated to false — the old check
+                          would have let a Rallied unit cycle through
+                          Defeated indefinitely instead of ever being
+                          removed). (3) Infiltrator's Position bonus is
+                          +2 Controlled Talisman (a new stat, capped at
+                          board-simultaneous Talismans per unit — enforced
+                          in tryPlaceTalisman), not +2 Pack. (4) Defeated
+                          (not yet removed) units are now legal Strike
+                          targets — striking one removes them permanently
+                          regardless of damage; they were previously
+                          filtered out of tryStrike's target search
+                          entirely, making this GDD-documented tactic
+                          unreachable. (5) A newly placed Talisman is
+                          inert until the *placer's own* next turn begins
+                          (beginUnitTurn activates a unit's own talismans
+                          before resolving anyone's AoE) — previously any
+                          unit's next turn, in initiative order, could
+                          trigger a Talisman placed moments earlier by
+                          someone else. (6) Projectile's stated Critical
+                          Hit condition (range 4, straight line, 15x
+                          Rarity) is implemented; Spear's ("crit on cell 2
+                          if cell 1 hit") is not — it needs a two-target
+                          Strike declaration, a different mechanic, not a
+                          formula fix, so it's deferred rather than
+                          guessed at. Also surfaced but NOT fixed this
+                          pass, flagged in MONOLITH_RULESET.md instead:
+                          the GDD's 20:1 stat-reduction ratio for Hinder/
+                          Obstruct/Occlude (currently still a flat -1).
   v0.10.0 — 2026-08-04 — Defensive/Reactive: Nazar, Parry, Nullify Cost,
                           Mojo. Nazar/Parry/Nullify Cost are "readied" on
                           play (self-cast, 20 Ini, no board target, pushed
@@ -813,13 +850,17 @@ function handleGuestImport(){
    BATTLE STATS + WEAPON RANGE
    ============================================================ */
 function computeBattleStats(e){
-  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, abilityRange: BASE_ABILITY_RANGE, handSize: BASE_HAND_SIZE, talismanAoE: TALISMAN_AOE };
+  const s = { life:100, initiative:60, strike:1, specialMovement:2, distance:4, pack:3, controlledTalisman:1, abilityRange: BASE_ABILITY_RANGE, handSize: BASE_HAND_SIZE, talismanAoE: TALISMAN_AOE };
   if (e.class === 'knight') s.strike += 1;
   if (e.class === 'rook') s.specialMovement += 1;
   if (e.class === 'bishop') s.abilityRange += 1;
   if (e.position === 'vanguard') s.life += 20;
   if (e.position === 'saboteur') s.initiative += 20;
-  if (e.position === 'infiltrator') s.pack += 2;
+  // Infiltrator's bonus is +2 Controlled Talisman, not +2 Pack — corrected
+  // per GDD §4.3: Pack (carry capacity) and Controlled Talisman (how many
+  // can be simultaneously active on the field) are distinct stats, and
+  // every canonical Infiltrator (NLDR) is built around the latter.
+  if (e.position === 'infiltrator') s.controlledTalisman += 2;
   if (e.weapons?.main === 'dagger') s.strike += 1;
   if (e.weapons?.main === 'wand') s.abilityRange += 1;
   applyEquipmentBonuses(s, e.equipment);
@@ -842,6 +883,21 @@ function inWeaponRange(weapon, dx, dy){
     case 'projectile': return isStraightLine(dx, dy) && cheb >= 3 && cheb <= 4;
     default: return false;
   }
+}
+// Critical Hits — GDD §4.5 states a crit condition for Projectile
+// ("critical at range 4 in a straight line") and Spear ("critical on the
+// 2nd cell if the 1st cell target was hit"). Only Projectile is
+// implemented here: it's a single-target condition that fits the
+// existing single-target Strike model directly. Spear's condition
+// requires hitting two targets in one Strike declaration (cell 1 then
+// cell 2) — a genuinely different, multi-target mechanic this build
+// doesn't have yet, not a quick formula fix; deferred, not guessed at.
+// Sword/Dagger/Staff/Wand have no stated crit condition in GDD §4.5 at
+// all, so they never critical — not an omission, there's nothing to
+// implement.
+function isCriticalStrike(weapon, dx, dy){
+  if (weapon === 'projectile') return isStraightLine(dx, dy) && chebyshev(dx, dy) === 4;
+  return false;
 }
 
 /* ============================================================
@@ -867,6 +923,7 @@ function beginDeployment(){
       maxInitiative: stats.initiative, initiative: stats.initiative,
       strike: stats.strike, distance: stats.distance, specialMovement: stats.specialMovement,
       abilityRange: stats.abilityRange, maxHandSize: stats.handSize, talismanAoE: stats.talismanAoE,
+      controlledTalisman: stats.controlledTalisman,
       weaponMain: stats.weaponMain, weaponSecondary: esori.weapons?.secondary || null,
       dmg: stats.dmg, critDmg: stats.critDmg,
       defeated: false, rallied: false, removed: false,
@@ -1006,6 +1063,12 @@ function beginUnitTurn(u){
   u.hasStruckThisTurn = false;
   drawCard(u);
   sustainPassive(u);
+  // "A Talisman placed this turn is inert until the start of the placing
+  // character's next turn," per GDD §5.1 — activate any of this unit's
+  // own still-inert Talismans right as their own next turn begins, before
+  // checking AoE. This is keyed to the placer specifically, not to
+  // whichever unit's turn happens to come up next in initiative order.
+  battle.talismans.forEach(t => { if (t.placerId === u.esoriId && !t.active) t.active = true; });
   resolveTalismanAoE(u);
 }
 function resolveTalismanAoE(u){
@@ -1015,6 +1078,7 @@ function resolveTalismanAoE(u){
   // still works exactly the same way (ownership is by team, not by a
   // specific caster).
   battle.talismans.forEach(t => {
+    if (!t.active) return; // still inert this round — see beginUnitTurn
     if (t.nullified) return; // Mojo'd — stays on the board, but inert
     if (chebyshev(u.x - t.x, u.y - t.y) > t.aoe) return;
     const def = TALISMAN_TYPES[t.typeId];
@@ -1242,7 +1306,13 @@ function applyLifeDamage(target, amount){
   }
   target.life = Math.max(0, target.life - amount);
   if (target.life <= 0){
-    if (target.defeated){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
+    // Removal is keyed on having already used their one Rally (GDD §7.4:
+    // "already been Rallied and enters Defeated state again cannot be
+    // Rallied again... removed permanently"), not on already being
+    // Defeated — target.defeated resets to false on Rally, so checking
+    // that flag here would let a Rallied character go back to plain
+    // Defeated state indefinitely instead of ever being removed.
+    if (target.rallied){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
     else { target.defeated = true; target.distance = 1; logMsg(`${target.name} is Defeated.`, target.team); }
   }
 }
@@ -1252,14 +1322,30 @@ function applyLifeHeal(target, amount){
 function tryStrike(u, x, y){
   if (u.hasStruckThisTurn) return;
   if (!inWeaponRange(u.weaponMain, x-u.x, y-u.y)) return;
-  const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.defeated && !t.removed);
+  const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.removed);
   if (target){
-    const dmg = u.dmg;
     u.hasStruckThisTurn = true;
+    if (target.defeated){
+      // GDD §8.2: "declares a Weapon Strike against them while in
+      // Defeated State... removes them" — the act of striking removes
+      // them permanently, not a damage/life-total check (they're already
+      // at 0 Life). No Parry interception here — reflecting a removal,
+      // rather than a damage number, isn't a mechanic this build defines;
+      // a stated scope simplification, not an oversight.
+      target.removed = true;
+      logMsg(`${u.name} strikes ${target.name} and removes them from the battle permanently.`, u.team);
+      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+      renderBattle();
+      const w = checkWin();
+      if (w) finishBattle(w);
+      return;
+    }
+    const crit = isCriticalStrike(u.weaponMain, x-u.x, y-u.y);
+    const dmg = crit ? u.critDmg : u.dmg;
     const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
     if (parryIdx !== -1){
       target.readiedDefensives.splice(parryIdx, 1);
-      logMsg(`${target.name}'s Parry reflects ${u.name}'s strike for ${dmg}.`, target.team);
+      logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
       if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
       applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
       renderBattle();
@@ -1267,7 +1353,7 @@ function tryStrike(u, x, y){
       if (w) finishBattle(w);
       return;
     }
-    logMsg(`${u.name} strikes ${target.name} for ${dmg}.`, u.team);
+    logMsg(`${u.name} strikes ${target.name}${crit?' — Critical!':''} for ${dmg}.`, u.team);
     if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
     applyLifeDamage(target, dmg);
     renderBattle();
@@ -1288,11 +1374,11 @@ function tryStrike(u, x, y){
   renderBattle();
 }
 function tryRally(u, x, y){
-  const target = battle.units.find(t => t.x===x && t.y===y && t.team===u.team && t.defeated && !t.removed);
-  if (!target) return;
+  const target = battle.units.find(t => t.x===x && t.y===y && t.team===u.team && t.defeated && !t.removed && !t.rallied);
+  if (!target) return; // "Each character may only be Rallied once per battle," per GDD §7.4
   if (chebyshev(x-u.x, y-u.y) > 1) return;
-  if (u.initiative < 10) return; // flat Rally cost — source text doesn't give an exact number, see MONOLITH_RULESET.md
-  u.initiative -= 10;
+  // Free action, per GDD v2.0 §7.4 — no Initiative cost. Proximity (adjacency,
+  // checked above) is the stated risk/cost instead.
   target.defeated = false;
   target.rallied = true;
   target.life = 1;
@@ -1379,14 +1465,21 @@ function tryPlaceTalisman(u, x, y){
   if (battle.talismans.some(t => t.x === x && t.y === y)) return;
   if (chebyshev(x - u.x, y - u.y) > TALISMAN_PLACE_RANGE) return;
   if (u.initiative < TALISMAN_PLACE_COST) return;
+  // "A character cannot have more Talismans active on the battlefield at
+  // once than their Controlled Talisman stat allows... Placing a new
+  // Talisman beyond this limit requires deactivating or losing an
+  // existing one first," per GDD §5.1 — counted against this placer's own
+  // Talismans currently on the board (active or still-inert), not Pack.
+  if (battle.talismans.filter(t => t.placerId === u.esoriId).length >= u.controlledTalisman) return;
   const idx = u.talismanInventory.indexOf(typeId);
   if (idx === -1) return;
   u.talismanInventory.splice(idx, 1);
   u.initiative -= TALISMAN_PLACE_COST;
   // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
   // at placement time — the bonus belongs to who placed it, not to
-  // whichever character later triggers it.
-  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, x, y, typeId, aoe: u.talismanAoE });
+  // whichever character later triggers it. active:false until the
+  // placer's own next turn begins — see beginUnitTurn.
+  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, placerId: u.esoriId, x, y, typeId, aoe: u.talismanAoE, active: false });
   logMsg(`${u.name} places a ${TALISMAN_TYPES[typeId].label}.`, u.team);
   battle.interactionMode = null;
   battle.placingTalismanType = null;
@@ -1853,7 +1946,9 @@ function renderBattle(){
   if (active && active.controller === 'human' && !battle.pendingOr){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, active.distanceRemaining);
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
-      targets = battle.units.filter(t => t.team !== active.team && !t.defeated && !t.removed && inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
+      // Defeated (not yet removed) enemies are legal Strike targets too —
+      // GDD §8.2, removes them permanently. Not filtered out here.
+      targets = battle.units.filter(t => t.team !== active.team && !t.removed && inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
       // Weapon Strike also destroys an unoccupied cell's Talisman — see tryStrike.
       talismanTargets = battle.talismans.filter(t => inWeaponRange(active.weaponMain, t.x-active.x, t.y-active.y));
     }

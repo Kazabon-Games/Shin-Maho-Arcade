@@ -77,7 +77,7 @@ reference. Where they conflict, this is the resolution order:
 | Weapon Rarity | 1 | scales weapon damage |
 | Ability Range | — | per-ability, modified by class/weapon/equipment |
 | Hand Size | 5 | max cards in hand; draw 1/turn |
-| Controlled Talisman | — | number of talismans a character may control |
+| Controlled Talisman | 1 | max Talismans a character can have *active* on the field at once — distinct from Pack (carry capacity); a character may carry more in Pack than they can activate simultaneously |
 
 Rarity progression (battles-to-level, source table): R2 at 1 battle, R3 at
 2, R4 at 3, R5 at 5, R6 at 8, R7 at 9, R8 at 11, R9 at 13. ("O A" in the
@@ -113,7 +113,16 @@ does exist here.
 |---|---|---|
 | Vanguard | +20 Life | front line |
 | Saboteur | +20 Initiative | midrange support |
-| Infiltrator | +2 Pack | backline control |
+| Infiltrator | +2 Controlled Talisman | backline control |
+
+**Correction (Master GDD v2.0 §4.3):** Infiltrator's bonus was originally
+implemented here as +2 Pack. The GDD explicitly revises this to +2
+Controlled Talisman — Pack (carry capacity) and Controlled Talisman
+(simultaneous-active-on-field cap) are two distinct stats, and every
+canonical Infiltrator example (NLDR, whose Open Wonderland requires
+controlling 3+ Talismans at once) is built around Talisman count on the
+field, not carry capacity. Pack is fixed by base value and Equipment
+only, unaffected by Position, per the same GDD section.
 
 ## Weapons
 
@@ -165,7 +174,13 @@ numbers for.
 
 - **Talismans** — placed on the grid, range 4 to place, area of effect 1,
   cost 5 Initiative. Persist until struck (declaring a Strike against the
-  cell destroys it). Characters starting their turn in the AoE are
+  cell destroys it). **A newly placed Talisman is inert until the start
+  of the placing character's own next turn — it has no effect during the
+  turn it's placed, and this is keyed specifically to the placer's own
+  next turn, not to whichever unit's turn happens to come next in
+  initiative order** (Master GDD v2.0 §5.1 — a correction; a prior pass
+  of this doc had every Talisman live immediately on placement).
+  Characters starting their turn in an *active* Talisman's AoE are
   affected. No source doc says *how* they're affected beyond "buffs,
   debuffs, or other effects" — implemented as two concrete types, a
   stated design decision: **Ward** (allies of the owner who start their
@@ -213,18 +228,41 @@ numbers for.
   (Passives, Talismans), check Open Wonderland sustain conditions, reshuffle
   discard into deck if a player's deck is empty.
 - **Damage rule:** effects targeting Life are **1:1 with Initiative spent**
-  (a 15-Initiative Inflict deals 15 damage). **Every other stat effect is
-  capped at −1 per instance**, regardless of Initiative spent (an Obstruct
-  costs Initiative for the *ability*, but only ever removes 1 point of
-  Movement per resolution — it does not scale with cost the way Life
-  damage does). This is the single easiest rule to get wrong porting from
-  the source text; implement the cap explicitly, don't infer it from the
-  Life formula.
+  (a 15-Initiative Inflict deals 15 damage). Every other stat effect is
+  currently implemented as a flat **−1 per instance**, regardless of
+  Initiative spent — this is the pre-GDD reading. **Master GDD v2.0
+  §11.1 actually specifies a 20:1 ratio for these** ("every 20 Ini spent
+  beyond an ability's base cost reduces the relevant stat by 1 additional
+  point" — Hinder/Obstruct/Occlude and their Ultimate pairs), which is a
+  materially different resolution model than a flat −1 and hasn't been
+  implemented yet — flagged here as a **known, real correction still
+  owed**, not folded into the flat-−1 code silently. Do not assume flat
+  −1 is still correct; it's the outdated reading.
+- **Critical Hits:** 1.5× damage (10×Rarity → 15×Rarity). Per Master GDD
+  v2.0 §4.5, only Projectile ("critical at range 4 in a straight line")
+  and Spear ("critical on the 2nd cell if the 1st cell target was hit")
+  have a stated crit condition. Projectile's is implemented (a
+  single-target condition, fits the existing Strike model directly).
+  Spear's is **not** — it requires hitting two targets in one Strike
+  declaration (cell 1, then cell 2), a genuinely different multi-target
+  mechanic, not a quick formula fix; deferred, not guessed at. Sword/
+  Dagger/Staff/Wand have no stated crit condition at all and never
+  critical — nothing to implement there.
 - **Defeated state:** Life reaches 0 → Defeated. Cannot move/attack/play
-  abilities, Distance locked to 1. Can be **rallied** by an ally (ally
-  spends their turn + some Initiative) back to 1 Life, with abilities and
-  strikes restored — **once per character**. A second fatal hit removes
-  them from the battlefield permanently for that match.
+  abilities, Distance locked to 1. Remains a legal Weapon Strike target
+  while Defeated — **declaring a Strike against a Defeated character
+  removes them from the battlefield permanently, regardless of damage
+  amount** (Master GDD v2.0 §8.2 — a corrected rule; a prior pass of this
+  doc had Defeated units untargetable by Strikes entirely, which made
+  this removal mechanic unreachable). Can be **rallied** by an adjacent
+  ally back to 1 Life, with abilities and strikes restored — **once per
+  character per battle, and a free action (no Initiative cost)** per GDD
+  §7.4 (a prior pass of this doc charged a stated-default 10 Ini; the GDD
+  gives Rally an explicit cost, so that default is retired). A character
+  who has already used their Rally and is Defeated a second time is
+  removed from the battlefield permanently on their next fatal hit, same
+  as any other Defeated character reaching a second fatal hit without
+  ever having been rallied at all.
 - **Victory:** defeat all opponents, or fulfil the scenario's stated
   objective.
 

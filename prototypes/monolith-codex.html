@@ -11,6 +11,15 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.10.0 — 2026-08-05 — GDD v2.0 correctness pass (see Arena's matching
+                          entry for the full list). Codex-side changes:
+                          Infiltrator's displayed bonus corrected from
+                          "+2 Pack" to "+2 Controlled Talisman"; effectivePack()
+                          no longer adds an Infiltrator bonus (Pack is
+                          fixed by base value + Equipment only per GDD
+                          §4.3); Cloak's "inert" note removed (Talismans
+                          are placeable now); Spear's crit note marked
+                          not-yet-implemented rather than stated as fact.
   v0.9.0 — 2026-08-04 — Defensive/Reactive operators: Nazar, Parry, Mojo,
                           Nullify Cost added to OPERATORS (this doc only
                           needs the data — names, categories, costs — for
@@ -529,13 +538,13 @@ const CLASSES = {
 const POSITIONS = {
   vanguard: { label:'Vanguard', bonus:'+20 Life', role:'front line' },
   saboteur: { label:'Saboteur', bonus:'+20 Initiative', role:'midrange support' },
-  infiltrator: { label:'Infiltrator', bonus:'+2 Pack', role:'backline control' },
+  infiltrator: { label:'Infiltrator', bonus:'+2 Controlled Talisman', role:'backline control' },
 };
 const WEAPONS = {
   sword: { label:'Sword', range:'1', note:'+1 Distance after a hit (as main)' },
-  spear: { label:'Spear', range:'2 (line)', note:'Crits cell 2 if cell 1 was hit' },
+  spear: { label:'Spear', range:'2 (line)', note:'Crits cell 2 if cell 1 was hit (not yet implemented in Arena — needs a two-target Strike, not a formula fix)' },
   dagger: { label:'Dagger', range:'1', note:'+1 Strike (as main)' },
-  projectile: { label:'Projectile', range:'3–4', note:'Crits cell 4, straight line only' },
+  projectile: { label:'Projectile', range:'3–4', note:'Crits at range 4, straight line only' },
   staff: { label:'Staff', range:'1 or 2', note:'—' },
   wand: { label:'Wand', range:'2', note:'+1 Basic Ability range (as main)' },
 };
@@ -558,7 +567,7 @@ const EQUIPMENT_SLOTS = {
     { id:'sandals', label:'Sandals', stat:'distance', amount:1, note:'+1 Distance' },
   ]},
   body: { label:'Body', items: [
-    { id:'cloak', label:'Cloak', stat:'talismanAoE', amount:1, note:'+1 Talisman AoE (inert — no Talismans on the grid yet)' },
+    { id:'cloak', label:'Cloak', stat:'talismanAoE', amount:1, note:'+1 Talisman AoE' },
     { id:'pouch', label:'Pouch', stat:'pack', amount:1, note:'+1 Pack' },
   ]},
 };
@@ -591,9 +600,11 @@ function effectivePack(record){
   // Mirrors the Pack-affecting slice of Arena's computeBattleStats, kept
   // here too (duplicated, per this repo's no-shared-imports convention)
   // since the Catalyst/Talisman pickers' cap needs it and Codex has no
-  // reason to run the rest of computeBattleStats.
+  // reason to run the rest of computeBattleStats. Pack is fixed by base
+  // value and Equipment only, per GDD §4.3/§5 — Position does NOT affect
+  // it (Infiltrator's bonus lands on Controlled Talisman instead, a
+  // separate stat that only matters in-battle).
   let pack = 3;
-  if (record.position === 'infiltrator') pack += 2;
   if (record.equipment?.body === 'pouch') pack += 1;
   pack += record.allocatedStars?.pack || 0;
   return pack;

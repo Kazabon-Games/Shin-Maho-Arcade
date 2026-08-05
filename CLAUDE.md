@@ -63,7 +63,26 @@ short on purpose.
   its two blind spots against Target-All Ultimates/Talisman AoE ticks,
   Refine's ally-targeting half) plus the three under-specified Special
   operators (Rhyzl Step, Daedalus Tesseract, Nhül Partikül) — see each
-  doc's own scope notes for the exact line.
+  doc's own scope notes for the exact line. As of 2026-08-05, a real
+  `Monolith_Master_GDD_v2.0.docx` surfaced — explicitly "supersedes all
+  prior documents" — along with several more-mature prior prototype
+  builds (a single-file "Shell," a further-along single-file "Build 3"
+  with a working automatic Wonderland-condition tracker and a generic
+  Defensive interrupt system, plus standalone Tulpa/Ability/Grimoire/
+  Operators module drafts). `MONOLITH_RULESET.md` is being reconciled
+  against the GDD in place rather than replaced outright, since this
+  repo's Talisman/Ultimate/Defensive work is real and tested — first
+  pass fixed six confirmed correctness bugs the GDD exposed (Rally cost,
+  Infiltrator's stat, Defeated-unit Strike targeting, Talisman placement
+  delay, Projectile's Critical Hit). Still open: porting the GDD's 20:1
+  stat-reduction ratio (currently a flat −1, a real correction still
+  owed — see MONOLITH_RULESET.md's Combat section), Spear's two-target
+  crit, position-selection-at-deployment instead of locked-at-creation,
+  and porting Build 3's automatic Wonderland-condition tracker and
+  generic Defensive-trigger system in place of the current two-hardcoded-
+  interception-point version. The GDD's Section 12 also has three fully
+  rule-audited canon Grimoires (Ala zyu Haad, Rykndu, NLDR) worth seeding
+  as real characters — not done yet.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
