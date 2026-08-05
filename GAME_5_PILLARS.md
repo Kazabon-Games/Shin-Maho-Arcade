@@ -430,6 +430,30 @@ the task report as judgment calls a human listening pass may still want to
 move. That listening pass — not this section, and not a green test run —
 is the actual gate for calling this feature done.
 
+**The listening pass happened, and it's a real win — recorded here, not
+just in a chat log.** Producer verdict, verbatim: *"that sounds
+beautiful... genuinely feels nice[,] the choice of 'instruments' were
+peak[,] the pacing and gravity top notch."* Merged to `main` on first
+listen — none of the "judgment calls a human listening pass may still
+want to move" (FM brightness, reverb size, inter-voice balance) needed
+moving. Three concrete takeaways worth carrying into future work, not
+just filed as praise: (1) **instrument/voice CHOICE was named ahead of
+technique** — the six-voice split (sub-bass anchor / chorused pad / FM
+lead / FM countermelody / free pulse / shimmer), each with a distinct
+job, read as more "produced" than any single technique executed
+perfectly would have; (2) **pacing** — the real 32s Intro→Statement→
+Build→Full→Tail arc (not a static loop) was explicitly called out,
+confirming the "a new instrument arriving is where depth comes from"
+principle actually lands, not just holds up on paper; (3) **"gravity"**
+— the sub-bass anchor sharing `Music`'s own C2/G2 pitches, never
+stopping, dry and centered, is very likely what's being named here: a
+persistent low-end foundation reads as weight/seriousness the way a pad
+alone doesn't. All three are now named explicitly in
+`.claude/agents/audio-designer.md`'s own grounding precedents, alongside
+this role's existing hard-lesson examples — the first genuinely positive
+precedent in that role's history, not just another "here's what went
+wrong."
+
 **Full regression** (all 13 prior `tests/rig-*.js` suites, 297+ assertions,
 plus the new `tests/rig-title-theme.js`) re-run clean. Two pre-existing,
 narrow-timing-margin flakes were found and characterized during this

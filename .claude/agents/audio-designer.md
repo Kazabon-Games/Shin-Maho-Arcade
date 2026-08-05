@@ -43,6 +43,39 @@ scratch.
   same way a technical polish pass and an identity pass are different work
   requiring different kinds of changes.
 
+## A real win, not just hard lessons (added 2026-08-04)
+
+Every precedent above is a lesson pulled from something going wrong first.
+Rykndu's title-screen `TitleTheme` (a from-scratch six-voice composition —
+sub-bass anchor, chorused unison pad, FM lead quoting the game's own
+signature motif, FM countermelody, free-timed pulse, shimmer — built
+specifically to sound produced, not synthesized) cleared its own bar on
+the first real human listening pass, no revision needed: *"that sounds
+beautiful... genuinely feels nice[,] the choice of 'instruments' were
+peak[,] the pacing and gravity top notch."* Three concrete, reusable
+takeaways from that feedback, not just praise to file away:
+
+- **Voice CHOICE was named ahead of technique.** Six distinct voices, each
+  with a distinct job, read as more "produced" than one technique executed
+  perfectly would have. When scoping a new piece, decide the *cast* first
+  (what role does each voice play) before tuning any single voice's
+  synthesis parameters.
+- **Pacing — a real section arc, not a static loop — was explicitly
+  called out.** A fixed Intro→Statement→Build→Full→Tail timeline (new
+  material actually arriving partway through, not everything present from
+  bar one) is what "produced" sounded like here, confirming the general
+  principle (see the standing discipline above on identity vs. fidelity)
+  in a case where it was tested against a real ear, not just asserted.
+- **"Gravity" almost certainly names the never-stopped sub-bass anchor** —
+  a continuous low voice, dry and centered, that's never restarted for
+  the module's whole lifetime. A persistent low-end foundation read as
+  weight/seriousness in a way no amount of pad/lead polish alone would
+  have. Worth reaching for by default on future pieces aiming for a
+  "serious"/"weighty" register, not just Rykndu's own tonal identity.
+
+Full record: `GAME_5_PILLARS.md` §8 and
+`prototypes/rykndu-assets/music/MUSIC_DIRECTION.md` (Shin-Maho-Arcade).
+
 ## Output
 
 For a build/extend task: implemented code plus a live-verification report

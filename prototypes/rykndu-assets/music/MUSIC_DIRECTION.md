@@ -313,3 +313,14 @@ checkpoints (0.850 just before stop → 0.847 → 0.582 → 0.258 → 0.0001 acr
 ~1.7s after stop) confirming a genuine, monotonic scheduled fade, not an
 instant cut or a stuck ramp — see `tests/rig-title-theme.js` §7 for the
 exact assertion.
+
+**The real listening pass** — the one thing none of the above could
+verify — happened, and cleared the bar on first listen: *"that sounds
+beautiful... genuinely feels nice[,] the choice of 'instruments' were
+peak[,] the pacing and gravity top notch."* None of the by-ear judgment
+calls above (the 2.0/0.9 FM indices, the 1.3s reverb tail, the six-voice
+gain balance) needed a revision pass. Merged to `main` on this verdict.
+See `GAME_5_PILLARS.md` §8's own closing note for the three concrete
+lessons pulled out of this feedback for future compositions (voice
+choice over technique, a real section arc over a static loop, a
+never-stopped sub-bass anchor for perceived "weight").
