@@ -413,13 +413,108 @@ Each Tulpa has one unique Open Wonderland ability with three parts:
 2. **Effect** — a rule-breaking/rule-altering effect, active for as long
    as the Wonderland stays open.
 3. **Sustain Condition** — an action that must be repeated each turn to
-   keep it open.
+   keep it open (or, for at least one canonical example, an action that
+   *closes* it — see Ala zyu Haad below, a genuinely different shape).
 
 Several operators and ability costs key off "if Wonderland open" (extra
-draw on Supportives, special declarations on Basics, Target All /
-single-target-defeat / extra-effect on Ultimates) — Open Wonderland state
-is a real, checked condition, not flavor text, and needs to be modeled as
-first-class battle state per character, not inferred.
+draw on Supportives, IF WONDERLAND OPEN on Basics/Ultimates, Auto-Win on
+Ultimates) — Open Wonderland state is a real, checked condition, not
+flavor text, and needs to be modeled as first-class battle state per
+character, not inferred.
+
+### v1: self-declared (still the default for freeform Wonderlands)
+
+Activation/Effect/Sustain are, in general, player-authored free text —
+code fundamentally cannot parse or evaluate arbitrary prose ("when I
+remember my sister's promise"). The only honest mechanism for a
+genuinely narrative condition is a self-declared toggle: the player
+attests their stated condition was met, the same way a tabletop GM would
+trust a player's call. This remains the default and the fallback for
+every Wonderland that doesn't opt into the structured layer below.
+
+### v2: structured, auto-tracked conditions
+
+**Not every real Wonderland is actually unparseable prose.** Master GDD
+v2.0 §9.3's four canonical examples are all built from concrete,
+countable in-battle actions — "three turns without a Weapon Strike,"
+"control 3+ Talismans," "no weapons equipped" — not GM judgment calls.
+Treating every Wonderland as equally unknowable was an overcorrection.
+`monolith-codex.html`'s Tulpa wizard now offers an *optional* structured
+picker alongside the free-text fields: when a Tulpa's Activation/Sustain
+match one of the vocabulary entries below, Arena checks and opens/closes
+the Wonderland automatically — no toggle, no honor system, for that
+Tulpa. Free text stays required regardless (it's still what's shown to
+the player and in the UI) — the structured pick is a parallel, optional
+layer that makes it *also* mechanically real, not a replacement for the
+description.
+
+**Activation conditions** (checked eagerly — the instant they're met,
+mid-turn, so activating feels like a real moment rather than a
+next-turn surprise):
+
+| `kind` | Meaning | GDD example |
+|---|---|---|
+| `agg-abilities-in-turn` | Play N Aggressive abilities in one turn | Rykndu — Crimson Moon |
+| `no-weapons-equipped` | No weapon currently equipped | Aria — Flying Stance |
+| `controlled-talisman-threshold` | Control N+ Talismans simultaneously | NLDR — Shadow Sovereign |
+| `named-ability-played` | A specific, named ability card is played | Ala zyu Haad — Singular Entity ("Daedalus Tesseract only") |
+
+`no-weapons-equipped` is implemented as a real check (`!u.weaponMain`)
+but is **currently unreachable in play** — no action in this build ever
+unequips a weapon (Switch Weapon swaps to the secondary, it never clears
+`weaponMain`). Wired anyway, for when/if an Unequip action exists,
+rather than omitted — a stated scope note, not a guess dressed up as a
+feature. `named-ability-played` is implemented generically (matches any
+card id), but Ala zyu Haad's actual "Daedalus Tesseract" card doesn't
+exist in this build's `CARD_LIBRARY` yet (it's a named Ultimate combining
+Root + Seal via IF/THEN — GDD §11.9's own note — not yet authored), so
+it's demonstrated in this project's own tests against a stand-in card
+id, not literally "Daedalus Tesseract."
+
+**Sustain/close conditions:**
+
+| `kind` | Meaning | Check timing |
+|---|---|---|
+| `weapon-strike-per-turn` | Must declare ≥1 Weapon Strike every turn | start of holder's own next turn, against last turn |
+| `movement-per-turn` | Must declare Movement every turn | start of holder's own next turn, against last turn |
+| `talisman-at-round-end` | Must control N+ Talismans at round end | round rollover |
+| `close-on-weapon-strike` | Closes the instant a Weapon Strike is declared | immediate, in `tryStrike` |
+
+**The GDD's own `[UNRESOLVED]` ruling, made here:** §9.1/§7.5/§16 flag
+that the source design never specifies exactly when a sustain check
+happens within a turn, or whether re-opening a closed Wonderland needs
+the full Activation Condition again or something lighter. This project's
+ruling: **sustain conditions of the "do X every turn" shape are checked
+at the start of the holder's own next turn, evaluating what happened
+during the turn that just ended** (a per-turn boolean flag, reset for
+the new turn right after the check) — they cannot honestly be evaluated
+any earlier, since the turn in question isn't over yet. **Re-opening
+after a close always requires the full Activation Condition again from
+scratch** — no separate "lighter" re-open path exists, because inventing
+one with zero source guidance is a bigger leap than reusing the one
+check function a Wonderland already has. `close-on-weapon-strike` and
+`talisman-at-round-end` are exceptions to the "next turn" timing because
+their own shape gives a more natural moment to check (immediately on the
+triggering strike; at the round boundary, since "at round end" is
+explicit in the condition's own name) — see the table above.
+
+**Effects** (the mechanically real half — Effect stays free text always,
+but picking one of these makes it *also* do something):
+
+| `effectId` | Mechanical effect | GDD example |
+|---|---|---|
+| `all-crits` | Every Weapon Strike is a Critical Hit | Rykndu — Crimson Moon |
+| `unlimited-distance` | Movement is not capped by the Distance stat | Aria — Flying Stance |
+| `direct-damage-aggressive` | Every Aggressive card also deals Life damage equal to its own Initiative cost | Ala zyu Haad — Singular Entity |
+| `talisman-aoe-plus-one` | +1 AoE on Talismans placed while open (not retroactive) | NLDR — Shadow Sovereign |
+
+`direct-damage-aggressive` is a **stated interpretation**, not a literal
+reading — GDD §9.3 says only "Aggressive Abilities deal direct damage"
+without specifying an amount or whether it replaces or adds to the
+card's own effect. Implemented as an additive bonus equal to the card's
+own Initiative cost (reusing the existing 1:1 Life-damage-per-Initiative
+convention already established for Inflict), stacked on top of the
+card's normal effect, not a replacement.
 
 ## Currencies (out-of-battle progression)
 

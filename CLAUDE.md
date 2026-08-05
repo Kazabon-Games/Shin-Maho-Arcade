@@ -74,15 +74,25 @@ short on purpose.
   repo's Talisman/Ultimate/Defensive work is real and tested — first
   pass fixed six confirmed correctness bugs the GDD exposed (Rally cost,
   Infiltrator's stat, Defeated-unit Strike targeting, Talisman placement
-  delay, Projectile's Critical Hit). Still open: porting the GDD's 20:1
-  stat-reduction ratio (currently a flat −1, a real correction still
-  owed — see MONOLITH_RULESET.md's Combat section), Spear's two-target
-  crit, position-selection-at-deployment instead of locked-at-creation,
-  and porting Build 3's automatic Wonderland-condition tracker and
-  generic Defensive-trigger system in place of the current two-hardcoded-
-  interception-point version. The GDD's Section 12 also has three fully
-  rule-audited canon Grimoires (Ala zyu Haad, Rykndu, NLDR) worth seeding
-  as real characters — not done yet.
+  delay, Projectile's Critical Hit). Second pass built "Open Wonderland
+  v2": an optional structured Activation/Sustain/Effect layer in Codex's
+  Tulpa wizard, on top of (not replacing) the original free-text/self-
+  declared toggle — when a Tulpa opts in, Arena auto-tracks and opens/
+  closes it for real, no honor system, covering all four of GDD §9.3's
+  canonical Wonderlands (Rykndu, Aria, NLDR, and a stand-in for Ala zyu
+  Haad's named-ability trigger, since her actual "Daedalus Tesseract"
+  card isn't authored yet). Makes a concrete ruling for the GDD's own
+  `[UNRESOLVED]` sustain-check-timing question — see
+  MONOLITH_RULESET.md's Open Wonderland section. Still open: porting the
+  GDD's 20:1 stat-reduction ratio (currently a flat −1, a real correction
+  still owed — see MONOLITH_RULESET.md's Combat section), Spear's
+  two-target crit, position-selection-at-deployment instead of locked-
+  at-creation, and porting Build 3's generic Defensive-trigger
+  (`declareAction`) system in place of the current two-hardcoded-
+  interception-point version — Wonderland v2 reused Build 3's *condition-
+  tracking* idea but not that particular piece. The GDD's Section 12 also
+  has three fully rule-audited canon Grimoires (Ala zyu Haad, Rykndu,
+  NLDR) worth seeding as real characters — not done yet.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

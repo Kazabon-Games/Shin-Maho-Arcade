@@ -11,6 +11,40 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.12.0 — 2026-08-05 — Open Wonderland v2: real automatic tracking for
+                          Wonderlands whose Tulpa opted into a structured
+                          condition in Codex, replacing the self-declared
+                          toggle entirely for those (untracked Wonderlands
+                          are unaffected — still the original toggle).
+                          Activation conditions (agg-abilities-in-turn,
+                          no-weapons-equipped, controlled-talisman-
+                          threshold, named-ability-played) check eagerly,
+                          the instant they're met — see
+                          checkWonderlandActivation, called from
+                          finalizeCast, playUltimateCard's Target-All
+                          path, and tryPlaceTalisman. Sustain conditions
+                          of the "every turn" shape (weapon-strike-per-
+                          turn, movement-per-turn) are evaluated at the
+                          start of the holder's own next turn against
+                          what happened last turn (checkWonderlandSustain
+                          AtTurnStart, called from beginUnitTurn before
+                          that turn's counters reset) — talisman-at-
+                          round-end checks at round rollover instead, and
+                          close-on-weapon-strike checks immediately in
+                          tryStrike. Four effects wired to real mechanics:
+                          all-crits (tryStrike's crit check), unlimited-
+                          distance (tryMove/reachableCells via a new
+                          effectiveDistanceRemaining() that swaps in a
+                          BOARD_SIZE²-sized budget), direct-damage-
+                          aggressive (finalizeCast, a stated bonus-damage
+                          interpretation — GDD doesn't specify an amount),
+                          talisman-aoe-plus-one (tryPlaceTalisman, only
+                          affects Talismans placed while open, same
+                          placement-time-capture rule Cloak's bonus
+                          already uses). See MONOLITH_RULESET.md for the
+                          full vocabulary and the ruling this makes for
+                          the GDD's own unresolved sustain-timing
+                          question.
   v0.11.0 — 2026-08-05 — GDD v2.0 correctness pass: a real
                           Monolith_Master_GDD_v2.0.docx surfaced this
                           session, explicitly superseding all prior
@@ -557,6 +591,70 @@ const WEAPONS = {
 };
 
 /* ============================================================
+   OPEN WONDERLAND — STRUCTURED CONDITIONS ("Wonderland v2"). Identical
+   data to monolith-codex.html's copy (the labels only matter there, for
+   the picker UI) — this file is where the `kind`s actually get checked
+   and the `effectId`s actually do something. See MONOLITH_RULESET.md's
+   Open Wonderland section for the check-timing ruling this implements:
+   activation conditions are checked eagerly (the instant they're met,
+   mid-turn where relevant) so activating feels like a real moment, not a
+   next-turn surprise; sustain conditions of the "do X every turn" shape
+   can only be evaluated in arrears, so they're checked at the start of
+   the holder's own next turn against what happened on their last one.
+   Untracked (activationCond null) Wonderlands are entirely unaffected —
+   still the original self-declared toggle, see toggleOpenWonderland.
+   ============================================================ */
+const WONDERLAND_ACTIVATION_CONDS = {
+  'agg-abilities-in-turn': { needsCount:true },
+  'no-weapons-equipped': { needsCount:false },
+  'controlled-talisman-threshold': { needsCount:true },
+  'named-ability-played': { needsCard:true },
+};
+const WONDERLAND_SUSTAIN_CONDS = {
+  'weapon-strike-per-turn': { needsCount:false },
+  'movement-per-turn': { needsCount:false },
+  'talisman-at-round-end': { needsCount:true },
+  'close-on-weapon-strike': { needsCount:false },
+};
+function checkWonderlandActivation(u){
+  if (u.openWonderlandActive || !u.wonderlandActivationCond) return;
+  const cond = u.wonderlandActivationCond;
+  let met = false;
+  switch(cond.kind){
+    case 'agg-abilities-in-turn': met = u.wonderlandProgress.aggInTurn >= cond.count; break;
+    case 'no-weapons-equipped': met = !u.weaponMain; break; // reachable only if a future action can ever unequip a weapon — none exists yet, see MONOLITH_RULESET.md
+    case 'controlled-talisman-threshold': met = battle.talismans.filter(t => t.placerId === u.esoriId).length >= cond.count; break;
+    case 'named-ability-played': met = u.wonderlandProgress.lastCardPlayedId === cond.cardId; break;
+  }
+  if (met){
+    u.openWonderlandActive = true;
+    logMsg(`${u.name}'s Wonderland (${u.tulpaName}) OPENS.`, u.team);
+    renderBattle();
+  }
+}
+// Called from beginUnitTurn BEFORE that turn's counters reset — evaluates
+// what happened during u's own turn that just ended.
+function checkWonderlandSustainAtTurnStart(u){
+  if (!u.openWonderlandActive || !u.wonderlandSustainCond) return;
+  const cond = u.wonderlandSustainCond;
+  let sustained;
+  switch(cond.kind){
+    case 'weapon-strike-per-turn': sustained = u.wonderlandProgress.weaponStrikeThisTurn; break;
+    case 'movement-per-turn': sustained = u.wonderlandProgress.movedThisTurn; break;
+    default: return; // talisman-at-round-end (round rollover) and close-on-weapon-strike (immediate, in tryStrike) are checked elsewhere, not here
+  }
+  if (!sustained){
+    u.openWonderlandActive = false;
+    logMsg(`${u.name}'s Wonderland closes — its sustain condition wasn't met last turn.`, u.team);
+  }
+}
+function resetWonderlandTurnCounters(u){
+  u.wonderlandProgress.aggInTurn = 0;
+  u.wonderlandProgress.movedThisTurn = false;
+  u.wonderlandProgress.weaponStrikeThisTurn = false;
+}
+
+/* ============================================================
    ABILITY OPERATORS + CARDS — identical data to monolith-codex.html's
    copy (see that file's own comment for the current scope line:
    Defensive/Reactive and the Rhyzl-Step/Daedalus-Tesseract/Nhül-Partikül
@@ -932,6 +1030,15 @@ function beginDeployment(){
       activePassive: null, passiveNextCost: 15,
       tulpaName: esori.tulpa?.name || '', openWonderland: esori.tulpa?.openWonderland || null,
       openWonderlandActive: false,
+      // Wonderland v2 — structured, auto-tracked conditions. Null means
+      // "not tracked," which falls back entirely to the pre-existing
+      // self-declared toggle (see toggleOpenWonderland). See the big
+      // comment above WONDERLAND_ACTIVATION_CONDS for the full design.
+      wonderlandActivationCond: esori.tulpa?.openWonderland?.activationCond || null,
+      wonderlandSustainCond: esori.tulpa?.openWonderland?.sustainCond || null,
+      wonderlandEffectId: esori.tulpa?.openWonderland?.effectId || null,
+      wonderlandAuto: !!(esori.tulpa?.openWonderland?.activationCond),
+      wonderlandProgress: { aggInTurn: 0, movedThisTurn: false, weaponStrikeThisTurn: false, lastCardPlayedId: null },
       catalysts: (esori.catalysts || []).slice(),
       talismanInventory: (esori.talismans || []).slice(),
       readiedDefensives: [], // { operatorId, cardId } — see the Defensive/Reactive comment near playHandCard
@@ -1070,6 +1177,11 @@ function beginUnitTurn(u){
   // whichever unit's turn happens to come up next in initiative order.
   battle.talismans.forEach(t => { if (t.placerId === u.esoriId && !t.active) t.active = true; });
   resolveTalismanAoE(u);
+  if (u.wonderlandAuto){
+    checkWonderlandSustainAtTurnStart(u); // reads last turn's counters, may close it
+    resetWonderlandTurnCounters(u); // then reset for the turn that's starting now
+    checkWonderlandActivation(u); // state-based conditions (no-weapons-equipped, controlled-talisman-threshold) as a safety net — most already fire eagerly at the moment they're met
+  }
 }
 function resolveTalismanAoE(u){
   // "Characters starting their turn in the AoE are affected" — per
@@ -1151,6 +1263,17 @@ function advanceTurn(){
   if (battle.turnIndex >= battle.turnQueue.length){
     battle.round += 1;
     battle.units.forEach(u => { if (!u.removed) u.initiative = u.maxInitiative; });
+    // "talisman-at-round-end" sustain — the one Wonderland-tracking check
+    // that isn't per-turn, so it lives at round rollover rather than in
+    // beginUnitTurn/checkWonderlandSustainAtTurnStart.
+    battle.units.forEach(u => {
+      if (u.removed || !u.openWonderlandActive || u.wonderlandSustainCond?.kind !== 'talisman-at-round-end') return;
+      const count = battle.talismans.filter(t => t.placerId === u.esoriId).length;
+      if (count < u.wonderlandSustainCond.count){
+        u.openWonderlandActive = false;
+        logMsg(`${u.name}'s Wonderland closes — fewer than ${u.wonderlandSustainCond.count} Talismans controlled at round end.`, u.team);
+      }
+    });
     buildTurnQueue();
     logMsg(`— Round ${battle.round} —`);
   }
@@ -1255,6 +1378,12 @@ function setInteractionMode(mode){
   battle.placingTalismanType = null;
   renderBattle();
 }
+function hasWonderlandEffect(u, effectId){ return !!(u?.openWonderlandActive && u.wonderlandEffectId === effectId); }
+// "Unlimited Distance" (Aria's Flying Stance effect) — BOARD_SIZE*BOARD_SIZE
+// is more than enough to reach any cell on a 9x9 grid in one declaration,
+// standing in for "no cap" without needing reachableCells to special-case
+// an actual Infinity.
+function effectiveDistanceRemaining(u){ return hasWonderlandEffect(u, 'unlimited-distance') ? BOARD_SIZE * BOARD_SIZE : u.distanceRemaining; }
 function reachableCells(x0, y0, maxSteps){
   const occupied = new Set(battle.units.filter(u => u.deployed && !u.removed && !(u.x===x0&&u.y===y0)).map(u => `${u.x},${u.y}`));
   const dist = {};
@@ -1291,11 +1420,12 @@ function handleBoardClick(x, y){
   else if (battle.interactionMode === 'place-talisman') tryPlaceTalisman(u, x, y);
 }
 function tryMove(u, x, y){
-  const reach = reachableCells(u.x, u.y, u.distanceRemaining);
+  const reach = reachableCells(u.x, u.y, effectiveDistanceRemaining(u));
   const key = `${x},${y}`;
   if (reach[key] === undefined) return;
-  u.distanceRemaining -= reach[key];
+  if (!hasWonderlandEffect(u, 'unlimited-distance')) u.distanceRemaining -= reach[key];
   u.x = x; u.y = y;
+  if (u.wonderlandProgress) u.wonderlandProgress.movedThisTurn = true;
   logMsg(`${u.name} moves.`, u.team);
   renderBattle();
 }
@@ -1325,6 +1455,11 @@ function tryStrike(u, x, y){
   const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.removed);
   if (target){
     u.hasStruckThisTurn = true;
+    if (u.wonderlandProgress) u.wonderlandProgress.weaponStrikeThisTurn = true;
+    if (u.openWonderlandActive && u.wonderlandSustainCond?.kind === 'close-on-weapon-strike'){
+      u.openWonderlandActive = false;
+      logMsg(`${u.name}'s Wonderland closes — a Weapon Strike was declared.`, u.team);
+    }
     if (target.defeated){
       // GDD §8.2: "declares a Weapon Strike against them while in
       // Defeated State... removes them" — the act of striking removes
@@ -1340,7 +1475,7 @@ function tryStrike(u, x, y){
       if (w) finishBattle(w);
       return;
     }
-    const crit = isCriticalStrike(u.weaponMain, x-u.x, y-u.y);
+    const crit = isCriticalStrike(u.weaponMain, x-u.x, y-u.y) || hasWonderlandEffect(u, 'all-crits');
     const dmg = crit ? u.critDmg : u.dmg;
     const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
     if (parryIdx !== -1){
@@ -1368,6 +1503,11 @@ function tryStrike(u, x, y){
   if (talIdx === -1) return;
   const tal = battle.talismans[talIdx];
   u.hasStruckThisTurn = true;
+  if (u.wonderlandProgress) u.wonderlandProgress.weaponStrikeThisTurn = true;
+  if (u.openWonderlandActive && u.wonderlandSustainCond?.kind === 'close-on-weapon-strike'){
+    u.openWonderlandActive = false;
+    logMsg(`${u.name}'s Wonderland closes — a Weapon Strike was declared.`, u.team);
+  }
   battle.talismans.splice(talIdx, 1);
   logMsg(`${u.name} strikes and destroys a ${TALISMAN_TYPES[tal.typeId].label}.`, u.team);
   if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
@@ -1477,12 +1617,18 @@ function tryPlaceTalisman(u, x, y){
   u.initiative -= TALISMAN_PLACE_COST;
   // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
   // at placement time — the bonus belongs to who placed it, not to
-  // whichever character later triggers it. active:false until the
-  // placer's own next turn begins — see beginUnitTurn.
-  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, placerId: u.esoriId, x, y, typeId, aoe: u.talismanAoE, active: false });
+  // whichever character later triggers it. "Talisman AoE +1" (NLDR's
+  // Shadow Sovereign effect) stacks the same way, only for Talismans
+  // placed while it's open — a talisman placed before it opened keeps
+  // its smaller AoE, matching how Cloak's bonus already only applies at
+  // placement time, not retroactively. active:false until the placer's
+  // own next turn begins — see beginUnitTurn.
+  const aoeBonus = hasWonderlandEffect(u, 'talisman-aoe-plus-one') ? 1 : 0;
+  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, placerId: u.esoriId, x, y, typeId, aoe: u.talismanAoE + aoeBonus, active: false });
   logMsg(`${u.name} places a ${TALISMAN_TYPES[typeId].label}.`, u.team);
   battle.interactionMode = null;
   battle.placingTalismanType = null;
+  checkWonderlandActivation(u); // "Control N or more Talismans simultaneously" — check the instant this placement could cross the threshold
   renderBattle();
 }
 
@@ -1599,6 +1745,8 @@ function playUltimateCard(u, card, cost){
     if (!targets.length){ logMsg(`${u.name} has no valid targets in range for ${card.name}.`, u.team); return; }
     u.initiative -= cost;
     discardCard(u, card.id);
+    if (u.wonderlandProgress) u.wonderlandProgress.lastCardPlayedId = card.id;
+    checkWonderlandActivation(u);
     targets.forEach(t => card.effects.forEach(opId => applyOperator(opId, u, t, cost)));
     logMsg(`${u.name} unleashes ${card.name} on all ${targets.length} valid target(s) in range.`, u.team);
     renderBattle();
@@ -1668,6 +1816,20 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   // "banish a random other card from your own hand" needs the just-played
   // card already gone, or it could randomly banish itself.
   discardCard(u, card.id);
+  // Wonderland v2 tracking — counts the *declaration* of the card, same
+  // as everywhere else "played"/"declared" language is used in the GDD;
+  // not conditioned on whether it goes on to resolve (e.g. gets
+  // nullified by a Defensive response). Guarded on wonderlandProgress
+  // existing — the committed adversarial suite calls finalizeCast
+  // directly against a deliberately minimal synthetic {initiative, hand,
+  // discard} fixture (not a full makeUnit() unit) to test it as a pure
+  // resolver function, and that fixture has no reason to carry Wonderland
+  // state at all.
+  if (u.wonderlandProgress){
+    u.wonderlandProgress.lastCardPlayedId = card.id;
+    if (cardCategory(card) === 'aggressive') u.wonderlandProgress.aggInTurn += 1;
+    checkWonderlandActivation(u);
+  }
   // Defensive interception: an incoming Aggressive card against a target
   // with a readied Nazar/Nullify Cost is nullified before its effect(s)
   // resolve. The played card is still spent either way — only the
@@ -1699,6 +1861,17 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   } else {
     applyOperator(card.operatorId, u, target, cost);
     if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
+  }
+  // "Aggressive Abilities deal direct damage" (Ala zyu Haad's Singular
+  // Entity effect) — a stated interpretation, since GDD §9.3 doesn't spell
+  // out what "direct damage" adds on top of an Aggressive card's own
+  // effect: every Aggressive card ALSO deals Life damage equal to its own
+  // Initiative cost, stacked on top of whatever it already does. Only
+  // against unit targets — a Talisman (Destroy/Capture/Mojo) has no Life
+  // to damage.
+  if (cardCategory(card) === 'aggressive' && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
+    applyLifeDamage(target, cost);
+    logMsg(`${u.name}'s open Wonderland makes ${cardDescription(card)} deal ${cost} direct damage too.`, u.team);
   }
   const targetLabel = target.name || TALISMAN_TYPES[target.typeId]?.label || 'a target';
   logMsg(`${u.name} plays ${cardDescription(card)} on ${targetLabel}.`, u.team);
@@ -1944,7 +2117,7 @@ function renderBattle(){
   const board = document.getElementById('battle-board');
   let reach = {}, targets = [], talismanTargets = [], placeCells = [];
   if (active && active.controller === 'human' && !battle.pendingOr){
-    if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, active.distanceRemaining);
+    if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, effectiveDistanceRemaining(active));
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       // Defeated (not yet removed) enemies are legal Strike targets too —
       // GDD §8.2, removes them permanently. Not filtered out here.
@@ -2025,11 +2198,16 @@ function renderBattle(){
   const wonderlandBtn = document.getElementById('action-wonderland');
   const wonderlandText = document.getElementById('wonderland-text');
   if (active && active.openWonderland){
+    const autoNote = active.wonderlandAuto
+      ? `<br><i>Tracking:</i> automatic — <b style="color:${active.openWonderlandActive?'var(--gold)':'inherit'}">${active.openWonderlandActive ? 'OPEN' : 'closed'}</b>`
+      : '';
     wonderlandText.innerHTML = `<b>${escapeHtml(active.tulpaName)}</b><br>
       <i>Activation:</i> ${escapeHtml(active.openWonderland.activation)}<br>
       <i>Effect:</i> ${escapeHtml(active.openWonderland.effect)}<br>
-      <i>Sustain:</i> ${escapeHtml(active.openWonderland.sustain)}`;
-    wonderlandBtn.style.display = 'inline-block';
+      <i>Sustain:</i> ${escapeHtml(active.openWonderland.sustain)}${autoNote}`;
+    // Auto-tracked Wonderlands have no manual toggle at all — the whole
+    // point is that opening/closing is a real check, not a click.
+    wonderlandBtn.style.display = active.wonderlandAuto ? 'none' : 'inline-block';
     wonderlandBtn.disabled = blocked;
     wonderlandBtn.textContent = active.openWonderlandActive ? 'Close Wonderland' : 'Open Wonderland (self-declared)';
   } else {

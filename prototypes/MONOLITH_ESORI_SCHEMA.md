@@ -58,6 +58,24 @@ both documents' import code can share one parser.
 | `openWonderland.activation` | string | required — free text description is fine, this is authored content, not a parsed rule |
 | `openWonderland.effect` | string | required |
 | `openWonderland.sustain` | string | required |
+| `openWonderland.activationCond` | `{ kind, count?, cardId? }` or `null` | optional — see below |
+| `openWonderland.sustainCond` | `{ kind, count? }` or `null` | optional — see below |
+| `openWonderland.effectId` | string or `null` | optional — see below |
+
+**"Wonderland v2" structured-tracking fields** (`activationCond`/
+`sustainCond`/`effectId`): the three free-text fields above are always
+required and always the authored flavor text a player wrote/reads —
+they never go away. These three are a layer *on top*: when
+`activationCond` is a real object (not `null`/absent), Arena checks it
+automatically instead of relying on the self-declared toggle, using one
+of the `kind`s in `monolith-codex.html`'s `WONDERLAND_ACTIVATION_CONDS`/
+`WONDERLAND_SUSTAIN_CONDS`/`WONDERLAND_EFFECTS` tables (mirrored in
+`monolith-arena.html`, which is also where the `kind`s are actually
+evaluated). Absent or `null` on any of the three is a fully supported,
+common case — it's the *original* behavior every Esori saved before this
+existed already has, not a degraded fallback. See
+`MONOLITH_RULESET.md`'s Open Wonderland section for the full vocabulary
+and the check-timing ruling.
 
 **Optional — safe, meaningful defaults, missing ≠ broken record:**
 
