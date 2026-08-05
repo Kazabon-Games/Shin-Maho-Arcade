@@ -35,10 +35,34 @@ to catch.
      rendering discipline.
    - **Web Audio API:** the full node graph beyond gain/oscillator/
      compressor/convolver already in use — `WaveShaperNode` (distortion
-     curves), every `BiquadFilterNode` type (not just lowpass),
-     `PannerNode`/spatial audio, `AudioWorklet`, `IIRFilterNode`,
-     per-node automation curve types beyond linear/exponential ramps
-     (`setValueCurveAtTime`), `ChannelSplitterNode`/`ChannelMergerNode`.
+     curves, confirmed in-use for tension-gated whole-bus drive in 3 of 6
+     games as of 2026-08-04, but never for steady-state per-voice
+     saturation/warmth — check which one you're finding), every
+     `BiquadFilterNode` type (confirmed as of 2026-08-04: lowpass/
+     highpass/bandpass/notch are in use; lowshelf/highshelf/peaking/
+     allpass are not), `PannerNode`/real 3D spatial audio (confirmed
+     in-use in exactly one file, `runeshatter.html` — the "one file, most
+     recently worked on" propagation-not-absence case, see method item 2),
+     `AudioWorklet` (confirmed zero usage as of 2026-08-04 — see
+     `game-audio-production-suite`'s own Assess-tier writeup for why it's
+     genuinely usable within single-file-no-build via an inline Blob URL,
+     not actually blocked by that constraint), `IIRFilterNode`,
+     `ChannelSplitterNode`/`ChannelMergerNode` (confirmed zero), per-node
+     automation curve types beyond linear/exponential ramps
+     (`setValueCurveAtTime`, confirmed in-use in the same one file as
+     `PannerNode` above), **`PeriodicWave`/wavetable synthesis** (confirmed
+     zero — every oscillator in the studio's history uses only the 4
+     built-in types), **a delay line with feedback into its own input**
+     (Karplus-Strong/physical-modeling synthesis — confirmed zero; the
+     studio's one `DelayNode` as of 2026-08-04 is a one-way chorus send,
+     not a feedback loop, don't mistake the two patterns for each other),
+     **parallel comb + series allpass filters** (Schroeder/FDN algorithmic
+     reverb — confirmed zero, every reverb in the studio uses convolution
+     exclusively), **staggered short `AudioBufferSourceNode`s** (granular
+     synthesis — confirmed zero). Full detail, real Web Audio
+     implementation sketches, and Adopt/Trial/Assess/Hold placement for
+     all of the above: `game-audio-production-suite` skill — read it
+     before re-deriving this list from scratch on the next audit.
    - **HTML/CSS:** `filter`/`backdrop-filter`, blend modes
      (`mix-blend-mode`), `clip-path`, `@property` + animating custom
      properties, container queries, the Web Animations API
@@ -196,17 +220,18 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — eleven skills exist as of
-  2026-08-03 (this line itself went stale once already, still claiming
-  "exactly three" long after the count grew — a live instance of the
-  exact copy-drift risk `STUDIO_BIBLE.md` §17 already names for this
-  shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
+- **Skills library is at `.claude/skills/`** — twelve skills exist as of
+  2026-08-04 (this line itself has now gone stale twice before this edit
+  — first claiming "exactly three," then "eleven" — a live, recurring
+  instance of the exact copy-drift risk `STUDIO_BIBLE.md` §17 names for
+  this shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
   §12 is the actual canonical index). Studio-wide: `adaptive-game-audio`,
   `faceted-gem-rendering`, `pwa-offline-games`,
   `security-data-trust-checklist`, `difficulty-curve-calibration`,
   `color-language-audit`, `playwright-adversarial-harness`,
   `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
-  `safe-keyed-reimport` (`age-of-wonder` only), `cross-game-ui-modules`
+  `safe-keyed-reimport` (`age-of-wonder` only),
+  `game-audio-production-suite`/`cross-game-ui-modules`
   (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
   for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
