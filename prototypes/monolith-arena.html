@@ -11,6 +11,21 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.13.0 — 2026-08-05 — GDD-correct stat-reduction ratios. Afflict was
+                          miscategorized under the same flat -1 'stat-
+                          reduce' kind as Hinder/Obstruct/Occlude — split
+                          into stat-reduce-1to1 (Afflict, matching GDD
+                          §11.1's "Life and Initiative... 1:1 with
+                          Initiative spent," i.e. behaves like Inflict)
+                          and stat-reduce-20to1 (Hinder/Obstruct/Occlude,
+                          max(1, floor(cost/20))). No visible behavior
+                          change for any card at exactly base cost (floor
+                          still yields 1) — only diverges once cost
+                          crosses 40, e.g. an Ultimate using one of these
+                          as a main effect at 50 Ini. Updated the
+                          committed suite's synthetic AND-card fixture
+                          (Afflict now -25 Initiative on a 25-Ini card,
+                          not -1).
   v0.12.0 — 2026-08-05 — Open Wonderland v2: real automatic tracking for
                           Wonderlands whose Tulpa opted into a structured
                           condition in Codex, replacing the self-declared
@@ -665,10 +680,10 @@ function resetWonderlandTurnCounters(u){
    ============================================================ */
 const OPERATORS = {
   inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
-  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce', stat:'initiative', amount:1 },
-  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce', stat:'strike', amount:1 },
-  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce', stat:'distanceRemaining', amount:1 },
-  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce', stat:'abilityRange', amount:1 },
+  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce-1to1', stat:'initiative' },
+  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce-20to1', stat:'strike' },
+  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce-20to1', stat:'distanceRemaining' },
+  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce-20to1', stat:'abilityRange' },
   disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
   root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
   blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },
@@ -1903,9 +1918,29 @@ function applyOperator(operatorId, caster, target, cost){
     case 'life-heal':
       applyLifeHeal(target, cost);
       break;
-    case 'stat-reduce':
+    case 'stat-reduce-1to1':
+      // Afflict (Initiative) — GDD §11.1: "Life and Initiative follow a
+      // 1:1 ratio with Initiative spent," same rule as Inflict/Heal, NOT
+      // the 20:1 ratio below. Was previously lumped into a single flat
+      // -1 'stat-reduce' kind shared with Hinder/Obstruct/Occlude — a
+      // real correction, not a rename.
       if (target.activePassive === 'shield'){ logMsg(`${target.name}'s Shield nullifies the effect.`, target.team); break; }
-      target[op.stat] = Math.max(0, target[op.stat] - op.amount);
+      target[op.stat] = Math.max(0, target[op.stat] - cost);
+      break;
+    case 'stat-reduce-20to1':
+      // Hinder/Obstruct/Occlude — GDD §11.1: "every 20 Initiative spent
+      // beyond the ability's base cost reduces the relevant stat by 1
+      // additional point... a 20 Ini Hinder reduces Strike by 1; a 40 Ini
+      // Hinder reduces it by 2." floor(cost/20), minimum 1 — a card can
+      // never cost less than 20 Ini in the first place, so the minimum
+      // only matters for costs between 20 and 39 (the common case today,
+      // since no UI lets a player deliberately overpay one of these
+      // cards — modifiers are the only way cost ever exceeds 20, and none
+      // reach 40 on a Basic card alone). Reaching floor=2+ needs an
+      // Ultimate composing one of these as one of its two effects, at the
+      // Ultimate's flat 50 Ini.
+      if (target.activePassive === 'shield'){ logMsg(`${target.name}'s Shield nullifies the effect.`, target.team); break; }
+      target[op.stat] = Math.max(0, target[op.stat] - Math.max(1, Math.floor(cost / 20)));
       break;
     case 'stat-increase':
       target[op.stat] += op.amount;

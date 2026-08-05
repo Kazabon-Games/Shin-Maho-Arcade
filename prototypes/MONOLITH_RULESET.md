@@ -227,17 +227,27 @@ numbers for.
 - Round end: refresh Initiative for everyone, resolve continuous effects
   (Passives, Talismans), check Open Wonderland sustain conditions, reshuffle
   discard into deck if a player's deck is empty.
-- **Damage rule:** effects targeting Life are **1:1 with Initiative spent**
-  (a 15-Initiative Inflict deals 15 damage). Every other stat effect is
-  currently implemented as a flat **−1 per instance**, regardless of
-  Initiative spent — this is the pre-GDD reading. **Master GDD v2.0
-  §11.1 actually specifies a 20:1 ratio for these** ("every 20 Ini spent
-  beyond an ability's base cost reduces the relevant stat by 1 additional
-  point" — Hinder/Obstruct/Occlude and their Ultimate pairs), which is a
-  materially different resolution model than a flat −1 and hasn't been
-  implemented yet — flagged here as a **known, real correction still
-  owed**, not folded into the flat-−1 code silently. Do not assume flat
-  −1 is still correct; it's the outdated reading.
+- **Damage/effect ratios (Master GDD v2.0 §11.1):** two different
+  ratios, previously conflated into one flat "−1 always" rule — a real
+  correction, not folded in silently:
+  - **1:1 with Initiative spent** — Life (Inflict/Heal) *and* Initiative
+    (Afflict). A 15-Ini Inflict deals 15 damage; a 25-Ini Afflict (e.g.
+    an AND-modified card) reduces Initiative by 25. Afflict was
+    previously miscategorized alongside Hinder/Obstruct/Occlude under a
+    flat −1 — it belongs with Inflict/Heal's ratio instead, per the GDD
+    text explicitly grouping "Life and Initiative."
+  - **20:1 ratio** — Weapon Strike (Hinder), Movement (Obstruct), and
+    Ability Range (Occlude): `max(1, floor(cost / 20))`. A 20-Ini Hinder
+    reduces Strike by 1 (the floor of 1 is why this matches the old flat
+    −1 for every card currently playable at exactly base cost — the
+    ratio only produces a *visible* difference once a card's cost
+    crosses 40, e.g. an Ultimate composing Hinder as one of its two
+    effects at 50 Ini flat). Talisman count is also named as 20:1 in the
+    GDD, but Destroy targets one specific placed Talisman via a
+    single-target click, and this build never allows more than one
+    Talisman per cell — there's no meaningful "destroy N Talismans in
+    one declaration" target shape to scale toward, so this one is a
+    stated non-applicability, not an unimplemented case.
 - **Critical Hits:** 1.5× damage (10×Rarity → 15×Rarity). Per Master GDD
   v2.0 §4.5, only Projectile ("critical at range 4 in a straight line")
   and Spear ("critical on the 2nd cell if the 1st cell target was hit")

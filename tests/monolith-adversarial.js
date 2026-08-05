@@ -362,7 +362,11 @@ async function chebyshevMoveToward(page){
     finalizeCast(caster, target, card, 25);
     return { life: target.life, initiative: target.initiative, casterIni: caster.initiative, discarded: caster.discard.includes(card.id) };
   });
-  ok(andResult.life === 75 && andResult.initiative === 59, 'AND card applies BOTH operators (Inflict: -25 life, Afflict: -1 initiative)');
+  // Afflict follows the 1:1-with-Initiative-spent ratio (GDD §11.1 —
+  // same rule as Inflict/Heal, not the 20:1 ratio Hinder/Obstruct/
+  // Occlude use), so a 25-Ini AND-modified card reduces Initiative by 25,
+  // not a flat 1.
+  ok(andResult.life === 75 && andResult.initiative === 35, 'AND card applies BOTH operators (Inflict: -25 life, Afflict: -25 initiative, both 1:1 with the 25-Ini cost)');
   ok(andResult.casterIni === 35 && andResult.discarded, 'AND card deducts caster Initiative once (not per-operator) and discards the card');
 
   const orResult = await page.evaluate(() => {

@@ -11,6 +11,14 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.12.0 — 2026-08-05 — Afflict split from Hinder/Obstruct/Occlude's
+                          'stat-reduce' kind into its own
+                          'stat-reduce-1to1' (matches GDD §11.1's "Life
+                          and Initiative... 1:1" grouping — behaves like
+                          Inflict, not like Hinder). Data-only change
+                          here; see Arena's matching entry for the actual
+                          resolver logic and the new stat-reduce-20to1
+                          kind Hinder/Obstruct/Occlude now use.
   v0.11.0 — 2026-08-05 — Open Wonderland v2: optional structured
                           Activation/Sustain/Effect pickers alongside the
                           existing free-text fields, in the Tulpa wizard.
@@ -726,10 +734,10 @@ const TALISMAN_TYPES = {
 const OPERATORS = {
   // Aggressive — target one opponent, 20 Ini base
   inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
-  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce', stat:'initiative', amount:1 },
-  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce', stat:'strike', amount:1 },
-  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce', stat:'distanceRemaining', amount:1 },
-  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce', stat:'abilityRange', amount:1 },
+  afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce-1to1', stat:'initiative' },
+  hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce-20to1', stat:'strike' },
+  obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce-20to1', stat:'distanceRemaining' },
+  occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce-20to1', stat:'abilityRange' },
   disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
   root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
   blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },

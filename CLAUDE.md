@@ -83,9 +83,15 @@ short on purpose.
   Haad's named-ability trigger, since her actual "Daedalus Tesseract"
   card isn't authored yet). Makes a concrete ruling for the GDD's own
   `[UNRESOLVED]` sustain-check-timing question — see
-  MONOLITH_RULESET.md's Open Wonderland section. Still open: porting the
-  GDD's 20:1 stat-reduction ratio (currently a flat −1, a real correction
-  still owed — see MONOLITH_RULESET.md's Combat section), Spear's
+  MONOLITH_RULESET.md's Open Wonderland section. Third pass fixed the
+  GDD's stat-reduction ratios: Afflict was miscategorized alongside
+  Hinder/Obstruct/Occlude under one flat −1 rule — split into
+  stat-reduce-1to1 (Afflict, matching GDD §11.1's "Life and
+  Initiative... 1:1 with Initiative spent" grouping — a real,
+  GDD-driven balance change, since a base-cost Afflict now takes 20
+  Initiative instead of 1) and stat-reduce-20to1 (Hinder/Obstruct/
+  Occlude, `max(1, floor(cost/20))` — no visible change at base cost,
+  only diverges once a card's cost crosses 40). Still open: Spear's
   two-target crit, position-selection-at-deployment instead of locked-
   at-creation, and porting Build 3's generic Defensive-trigger
   (`declareAction`) system in place of the current two-hardcoded-
