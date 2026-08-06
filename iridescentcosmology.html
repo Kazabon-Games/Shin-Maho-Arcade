@@ -6509,7 +6509,7 @@ const Music = (function(){
     if(ctx) return;
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     master = ctx.createGain();
-    master.gain.value = muted ? 0 : 0.5;
+    master.gain.value = muted ? 0 : 1.82; // loudness-normalization pass, 2026-08-06: was 0.5, measured -27.2dBFS RMS steady-state vs the studio's -16dBFS-ish cross-game target (game-audio-production-suite Part E) -- see that section for the measurement method and the honest "not certified LUFS" caveat
     distortion = ctx.createWaveShaper();
     setDistortionAmount(0);
     // master compressor — glues the whole mix together and stops the kick
@@ -7684,7 +7684,7 @@ const Music = (function(){
   }
   function toggleMute(){
     muted = !muted;
-    if(master) master.gain.linearRampToValueAtTime(muted?0:0.5, ctx.currentTime+0.2);
+    if(master) master.gain.linearRampToValueAtTime(muted?0:1.82, ctx.currentTime+0.2);
     return muted;
   }
 

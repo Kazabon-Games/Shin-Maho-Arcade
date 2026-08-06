@@ -1624,7 +1624,7 @@ const Music = (function(){
       return;
     }
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.5;
+    master = ctx.createGain(); master.gain.value = muted ? 0 : 0.94; // loudness-normalization pass, 2026-08-06: was 0.5, measured -21.5dBFS RMS steady-state vs the studio's -16dBFS-ish target (game-audio-production-suite Part E)
     compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value = -20; compressor.knee.value = 12; compressor.ratio.value = 4;
     compressor.attack.value = 0.003; compressor.release.value = 0.25;
@@ -1892,7 +1892,7 @@ const Music = (function(){
     if(fullLayerGain) rampGain(fullLayerGain.gain, 0, 0.6);
     if(tensionGain) rampGain(tensionGain.gain, 0, 0.6);
   }
-  function setMuted(m){ muted = m; if(master) master.gain.value = m ? 0 : 0.5; }
+  function setMuted(m){ muted = m; if(master) master.gain.value = m ? 0 : 0.94; }
   function isMuted(){ return muted; }
   function toggleMute(){ setMuted(!muted); return muted; }
   function setMusicVol(v){ v = +v; if(musicGain) musicGain.gain.value = v; Persist.data.settings.musicVol = v; Persist.save(); }

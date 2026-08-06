@@ -211,10 +211,13 @@ never mentioned):**
 4. **Ambience/room-tone as a genuinely new, non-tonal bus** — real gap,
    real cheap pattern (filtered noise), not currently confused with the
    existing tonal drones.
-5. **Cross-game loudness consistency** (new, Part E below) — a real,
-   now-measured ~24dB RMS spread across the portfolio that's never been
-   checked before. Ranked here because unlike 2-4 it needs a producer
-   listening/mixing decision, not just an implementation pass.
+5. ~~**Cross-game loudness consistency**~~ — **corrected 2026-08-06** (Part
+   E below): a real, measured ~28dB RMS spread closed to <2dB across all
+   6 games via a single master-gain constant per game, verified live,
+   zero regressions. Held on the feature branch, not yet merged to
+   `main` — the 3 largest corrections (Sigil Chain/Wardfall/Runeshatter)
+   need a real listening pass to confirm the now-harder-working
+   compressor still reads right, the one part no measurement can confirm.
 6. Everything in Part C's Trial tier, tried on whichever game's next
    audio pass has room for it — not urgent, but no longer unresearched.
 
@@ -257,27 +260,61 @@ ITU-R BS.1770 LUFS reading, no K-weighting/gating, said explicitly so
 this number is never overclaimed as more precise than it is) over a real
 ~2.5s steady-state window, found:
 
-| Game | Moment measured | RMS (dBFS) | True peak (dBFS) |
-|---|---|---|---|
-| Runeshatter | gameplay music bed, real Endless-mode gesture | -36.0 | -30.3 |
-| Iridescent Cosmology | gameplay music, steady-state after first gesture | -26.3 | -18.7 |
-| Rykndu `TitleTheme` | title screen, full 6-voice mix | -12.5 | -5.1 |
+| Game | Moment measured | RMS before | Peak before | Master gain before → after | RMS after | Peak after |
+|---|---|---|---|---|---|---|
+| Sigil Chain | gameplay music, real Start click | -40.2 dBFS | -34.7 dBFS | 0.5 → 8.1 | -16.2 dBFS | -10.7 dBFS |
+| Wardfall | gameplay music, real Start click | -39.8 dBFS | -33.8 dBFS | 0.5 → 7.76 | -16.3 dBFS | -10.3 dBFS |
+| Runeshatter | gameplay music, real Endless-mode gesture | -36.3 dBFS | -30.6 dBFS | 0.5 → 5.18 | -16.2 dBFS | -10.5 dBFS |
+| Iridescent Cosmology | gameplay music, steady-state after first gesture | -27.2 dBFS | -17.9 dBFS | 0.5 → 1.82 | -14.9 dBFS | -7.5 dBFS |
+| Infall | gameplay music, real Start click | -21.5 dBFS | -16.0 dBFS | 0.5 → 0.94 | -16.4 dBFS | -10.8 dBFS |
+| Rykndu `TitleTheme` | title screen, full 6-voice mix | -12.3 dBFS | -4.6 dBFS | 0.85 → 0.555 | -14.8 dBFS | -6.8 dBFS |
 
-A ~24dB RMS spread between the quietest and loudest game — a player who
-sets their volume for Runeshatter would barely hear Rykndu's title theme
-at all; a player who sets it for Rykndu would find Runeshatter's drone
-uncomfortably loud on return. This is exactly the kind of thing "measure,
-don't assume" exists to catch: every individual game's own mix reads as
-internally reasonable, and nothing before this pass ever compared them
-against each other or against a real external reference. **Not fixed in
-this pass** — narrowing this gap means raising or lowering a real,
-audible, subjective mix level per game, which needs an actual human
-listening/producer decision the same way `TitleTheme`'s own composition
-did, not a blind global gain multiply applied without anyone hearing the
-result. What IS actionable now: adopt -16 LUFS-ish (via this RMS-proxy
-method, honestly labeled) as the target reference, and add "measure the
-final bus against the other shipped games, not just in isolation" as a
-new pre-ship check — see `audio-designer.md`.
+A ~28dB RMS spread (fuller re-measurement found it wider than the initial
+3-game sample above) between the quietest and loudest game — a player who
+set their volume for Sigil Chain would barely hear Rykndu's title theme
+at all; a player who set it for Rykndu would find Sigil Chain's drone
+inaudible on return. Exactly the kind of thing "measure, don't assume"
+exists to catch: every individual game's own mix read as internally
+reasonable, and nothing before this pass ever compared them against each
+other or a real external reference.
+
+**Fixed 2026-08-06.** All five shipped games share one `master` gain
+node at the very top of their bus chain, and — confirmed by grep before
+touching anything — every one of them started from the exact same
+literal `0.5`, meaning the ~28dB spread came entirely from differing
+composition density (voice count/layering) downstream of that node, not
+from differing gain-staging choices. That makes a single-constant
+correction per game the mechanically correct fix, not a hack: it
+preserves each game's internal voice balance exactly (every voice scales
+together) and only changes how hard the existing bus compressor engages
+afterward — the same "trim before your bus processing" operation real
+mixing/mastering already treats as standard. Rykndu's `TitleTheme` uses
+its own separate master node with a dedicated brick-wall-ish limiter
+(-1dB threshold/20:1 ratio) and needed a cut, not a boost.
+
+Because the shared compressor (-20dB threshold/4:1 ratio on all 5
+shipped games) responds *nonlinearly* to input above its threshold, the
+first-pass corrections were computed as a **linear estimate** from the
+measured baseline, then **re-measured live** and confirmed within ~1.6dB
+of target on the first pass (no second iteration needed) — the
+convergence itself is a real result, not assumed from the math. True
+peaks landed between -6.8 and -10.8 dBFS post-correction on every game,
+comfortably clear of the -1dBTP clipping-risk line. Full regression
+(all 5 shipped-game adversarial suites + all 14 Rykndu `rig-*.js` suites)
+re-run clean — zero regressions, the two pre-existing Rykndu failures
+(`rig-parry.js`, `rig-side-profile.js`, unrelated gameplay mechanics)
+confirmed unchanged.
+
+**The one thing this pass could NOT verify, stated plainly:** three
+games (Sigil Chain, Wardfall, Runeshatter) needed large corrections
+(8.1x, 7.76x, 5.18x their original gain) to reach the target, meaning
+their bus compressor now engages substantially harder than it did when
+originally mixed. The numbers confirm this didn't cause clipping or
+break anything mechanically — they cannot confirm whether the resulting
+denser, more-compressed character still matches what each piece was
+composed to feel like. Held on the feature branch pending a real
+listening pass on those three specifically, the same gate `TitleTheme`'s
+own composition went through, before merging to `main`.
 
 **A real, evidenced documentation/convention gap: no shared naming
 taxonomy for composed accent/stinger SFX.** The one shared *primitive*

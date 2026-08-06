@@ -3057,7 +3057,7 @@
       buildPulseBus();
 
       started = true;
-      rampGain(master.gain, 0.85, 4.5); // the Intro's own fade-in -- sub-bass alone, nothing else scheduled until T_STATEMENT
+      rampGain(master.gain, 0.555, 4.5); // the Intro's own fade-in -- sub-bass alone, nothing else scheduled until T_STATEMENT. loudness-normalization pass, 2026-08-06: was 0.85, measured -12.3dBFS RMS during the Statement/Build section vs the studio's -16dBFS-ish target (game-audio-production-suite Part E) -- a cut, not a boost, so no compressor-nonlinearity re-verification risk the way the other 5 games' boosts have
 
       cycleAnchorTime = ctx.currentTime;
       eventIdx = 0;

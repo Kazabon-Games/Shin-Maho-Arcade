@@ -1414,7 +1414,7 @@ const Music = (function(){
     if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     if(ctx.state === 'suspended') ctx.resume();
-    master = ctx.createGain(); master.gain.value = muted?0:0.5;
+    master = ctx.createGain(); master.gain.value = muted?0:8.1; // loudness-normalization pass, 2026-08-06: was 0.5, measured -40.2dBFS RMS steady-state vs the studio's -16dBFS-ish target (game-audio-production-suite Part E) -- first-pass linear estimate, RE-VERIFY against a live re-measurement, the compressor's 4:1 ratio above -20dB threshold makes this nonlinear at this magnitude
     distortion = ctx.createWaveShaper(); setDistortionAmount(0);
     compressor = ctx.createDynamicsCompressor();
     compressor.threshold.value=-20; compressor.knee.value=12; compressor.ratio.value=4;
@@ -1659,7 +1659,7 @@ const Music = (function(){
   }
   function toggleMute(){
     muted = !muted;
-    if(master) rampGain(master.gain, muted?0:0.5, 0.15);
+    if(master) rampGain(master.gain, muted?0:8.1, 0.15);
     return muted;
   }
   function setMusicVolume(v){ if(musicGain) musicGain.gain.value = v; }
