@@ -195,18 +195,37 @@ short on purpose.
   `card-scry`) and a real direction bug caught while building Displace's
   knockback (`Math.sign(...) || 1` forced a diagonal nudge even on a pure
   vertical/horizontal push). See MONOLITH_RULESET.md's Fundamental
-  Operators section for the full writeup. Still ahead on the "close every
-  gap" list: the Nazar→Nullify/Parry→Reflect/Mojo→Resist rename (the GDD
-  states outright these three are "superseded... for broader
-  application," and Mojo's replacement, Resist, is a completely different
-  mechanic — temporary immunity to a declared category, not a
-  Talisman-nullifier), 4 new Basic Defensive operators (Intercept/
+  Operators section for the full writeup. Twelfth pass built the
+  Nazar→Nullify/Parry→Reflect/Mojo→Resist rename the same audit flagged —
+  GDD §11.3 states outright these three are "superseded... for broader
+  application." Nullify and Reflect both gained a **second** trigger each
+  (Nullify: incoming Aggressive card OR Weapon Strike, was Aggressive-only;
+  Reflect: incoming Weapon Strike OR Inflict, was Strike-only, with a new
+  `declareAction()` `triggerFilter` hook scoping the Inflict side so a
+  non-damage Aggressive card doesn't qualify). Resist is not a Mojo
+  rename — it's a different mechanic entirely: readies with a 4-category
+  picker (Damage/Control/Movement/Ability Effects) and grants temporary
+  immunity to that category via a new `resistCategory` match in
+  `declareAction()`, with every Aggressive-family operator sorted into one
+  of the four GDD-named-but-unenumerated categories as a stated ruling
+  (`RESIST_OPERATOR_CATEGORY`, documented in MONOLITH_RULESET.md). Mojo's
+  old job — nullify one specific placed Talisman — has **no replacement**
+  in the corrected ruleset; that capability is genuinely gone, not moved,
+  with the old `nullify-talisman` code path kept only as dead code for
+  old saved-game compatibility. `resolveStrikeHit` (not `tryStrike`) is
+  now the Weapon-Strike-Declared interception call site, checked
+  independently per hit so Spear's two-cell Critical Hit still resolves
+  correctly. Rebuilt NLDR's and Ala zyu Haad's seeded decks for the new
+  card ids. 144 regression checks green across the committed suite and
+  five scratch verification scripts after this pass. Still ahead on the
+  "close every gap" list: 4 new Basic Defensive operators (Intercept/
   Disrupt/Unravel/Counter) that directly fill 4 of the "6 unwired
   triggers" gap, 5 new Ultimate Defensive operators (Nullify All/Rewind/
-  Suppress/Forbid/Sever), Ultimate-level ALSO/IF-THEN (needed for
-  Daedalus Tesseract and Nhül Partikül's full effect), rebuilding the
-  canon decks once the Defensive rename lands, AI playing Ultimate/
-  Defensive/OR cards, Refine's ally-targeting half, and Rhyzl Step.
+  Suppress/Forbid/Sever — per GDD §11.4's "Exception," each is a
+  single-effect-only Ultimate), Ultimate-level ALSO/IF-THEN (needed for
+  Daedalus Tesseract and Nhül Partikül's full effect), AI playing
+  Ultimate/Defensive/OR cards, Refine's ally-targeting half, and Rhyzl
+  Step.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

@@ -11,6 +11,56 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.22.0 — 2026-08-06 — CORRECTNESS: Defensive operator rename +
+                          mechanic fix, found in the same GDD §11.3 audit
+                          that surfaced the v0.21.0 tiering bug. Nazar,
+                          Parry, and Mojo are removed from OPERATORS —
+                          "superseded by Nullify, Reflect, and Resist for
+                          broader application" per the GDD's own header
+                          note. Nullify (was Nazar) now readies against
+                          BOTH incoming Aggressive cards AND Weapon
+                          Strikes (old Nazar was Aggressive-only), always
+                          cancelling the effect entirely. Reflect (was
+                          Parry) now also readies against both triggers
+                          but is scoped to Inflict-flavored cards only via
+                          a new declareAction() `triggerFilter` hook
+                          (isInflictFlavored) — old Parry covered every
+                          Weapon Strike but no Aggressive cards at all.
+                          Resist (was Mojo) is a wholesale mechanic
+                          replacement, not a rename: readies with a
+                          4-category picker (Damage/Control/Movement/
+                          Ability Effects, RESIST_OPERATOR_CATEGORY) and
+                          grants temporary immunity to that category,
+                          matched via a new declareAction() `resistCategory`
+                          check (resistCategoryOf(), or the literal
+                          'damage' for a Weapon Strike). Mojo's old job —
+                          nullify one specific placed Talisman
+                          (targetsTalisman path, `t.nullified`) — has NO
+                          replacement in the corrected ruleset; the
+                          nullify-talisman applyOperator case and
+                          t.nullified rendering are kept as dead code only
+                          for old saved-game compatibility. declareAction()
+                          itself now accepts `type` as a single trigger or
+                          an array, matching against a readied record's
+                          `trigger` (string or array) plus its optional
+                          `triggerFilter`/`resistCategory`. resolveStrikeHit
+                          replaces tryStrike as the interception call site
+                          for the Weapon-Strike-Declared trigger (Nullify
+                          cancels outright — no damage to either side;
+                          Reflect redirects to the attacker; Resist grants
+                          immunity), checked independently per hit so
+                          Spear's two-cell Critical Hit resolves each
+                          strike's interception separately. finalizeCast's
+                          'aggressive-played' declareAction callback gained
+                          a Reflect branch (redirects Inflict's damage back
+                          onto the caster via applyLifeDamage). Fixed
+                          NLDR's and Ala zyu Haad's seeded decks
+                          (card-mojo/card-parry/card-nazar no longer
+                          exist). See MONOLITH_RULESET.md's Defensive
+                          section for the full correction writeup,
+                          including the RESIST_OPERATOR_CATEGORY table's
+                          stated reasoning.
+
   v0.21.0 — 2026-08-06 — CORRECTNESS: Basic-vs-Ultimate Aggressive
                           operator tiering fixed — a real, previously-
                           shipped balance bug, found auditing GDD §11.1/
@@ -944,11 +994,44 @@ const OPERATORS = {
   // consumed later by declareAction() when an opponent action matching
   // `trigger` targets this unit specifically — see DEFENSIVE_TRIGGERS and
   // the big comment above declareAction() for the full generic-interrupt
-  // system these route through. Mojo has no `trigger`: it's not reactive
-  // at all, see its own kind's comment.
-  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
-  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
-  mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
+  // system these route through.
+  //
+  // GDD §11.3: "Nazar, Parry, and Mojo from prior documents are
+  // superseded by Nullify, Reflect, and Resist for broader application" —
+  // a real correctness bug, found auditing the primary source directly
+  // (the same audit that caught the Aggressive-tier retiering bug above):
+  // this build had shipped the OLD, superseded names AND mechanics for
+  // the entire Defensive/Reactive system. Corrected here:
+  //  - Nullify (was Nazar): now triggers on BOTH incoming Aggressive AND
+  //    incoming Weapon Strike (was Aggressive-only) — `trigger` is an
+  //    array now, and declareAction()'s matching handles either a single
+  //    string or an array uniformly. Against a Strike, it CANCELS the
+  //    hit entirely (0 damage) rather than reflecting it — see
+  //    resolveStrikeHit's own def.operatorId branch.
+  //  - Reflect (was Parry): triggers on incoming Weapon Strike (as
+  //    before) OR incoming Inflict specifically — a narrower slice of
+  //    'aggressive-played' than Nullify's, filtered by the new
+  //    `triggerFilter(type, context)` mechanism (checks whether the
+  //    actual incoming card's own operator is Inflict).
+  //  - Resist (was Mojo): a COMPLETELY different mechanic, not a rename
+  //    of Mojo's old behavior — "grants temporary immunity to a declared
+  //    category (Damage, Control, Movement, Ability Effects)," triggered
+  //    by "any declared effect category." Mojo's old job (nullify one
+  //    specific placed Talisman's effect without removing it) has no
+  //    replacement in the corrected ruleset at all — GDD §11.1/§11.2 name
+  //    only Destroy and Capture as Talisman-targeting operators now: it's
+  //    genuinely gone, not renamed, so `targetsTalisman:true` on a
+  //    Defensive operator no longer exists as of this pass. Resist is
+  //    readied with a chosen category (`resistCategory`, a picker at
+  //    ready-time — see readyDefensiveCard) checked against
+  //    RESIST_CATEGORIES (below) — GDD names the 4 categories but doesn't
+  //    enumerate which operator belongs to which; the mapping here is a
+  //    stated interpretation, not guessed at arbitrarily (see
+  //    MONOLITH_RULESET.md's Defensive/Reactive section for the full
+  //    per-operator table and reasoning).
+  nullify:     { name:'Nullify',      category:'defensive', kind:'defensive-nullify', trigger:['aggressive-played', 'weapon-strike-declared'] },
+  reflect:     { name:'Reflect',      category:'defensive', kind:'defensive-reflect-strike', trigger:['weapon-strike-declared', 'aggressive-played'], triggerFilter: (type, context) => type !== 'aggressive-played' || isInflictFlavored(context?.cardId) },
+  resist:      { name:'Resist',       category:'defensive', kind:'defensive-resist-category', trigger:['aggressive-played', 'weapon-strike-declared'], needsCategory:true },
   nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
@@ -1042,8 +1125,8 @@ function cardCategory(card){ return card.category || OPERATORS[card.operatorId].
 // Ultimate's own cardCategory() is always 'ultimate', never 'aggressive',
 // even when both its effects are Aggressive operators (ult-devastate,
 // ult-nhul-particul) — see finalizeCast's declareAction gate, which needs
-// to know whether an Ultimate is *flavored* Aggressive for Nazar/Nullify
-// Cost interception purposes, not just Basic/Composed cards. Mirrors the
+// to know whether an Ultimate is *flavored* Aggressive for Nullify/
+// Nullify Cost interception purposes, not just Basic/Composed cards. Mirrors the
 // same op.category lookup tryCast already uses for Ultimate targeting.
 function isAggressiveFlavored(card){
   if (cardCategory(card) === 'aggressive') return true;
@@ -1167,7 +1250,7 @@ const PRESET_AI_SQUAD = [
       sustainCond:{ kind:'talisman-at-round-end', count:2 },
       effectId:'talisman-aoe-plus-one',
     }},
-    deck:['card-destroy','card-inflict','card-mojo','card-transpose','card-occlude','card-jumbie','card-parry','card-shield','card-banish','ult-cataclysm'],
+    deck:['card-destroy','card-inflict','card-nullify','card-transpose','card-occlude','card-jumbie','card-reflect','card-shield','card-banish','ult-cataclysm'],
   },
   {
     esoriId:'preset-ala-zyu-haad', name:'Ala zyu Haad', class:'bishop', position:'saboteur', rarity:1,
@@ -1180,7 +1263,7 @@ const PRESET_AI_SQUAD = [
       sustainCond:{ kind:'close-on-weapon-strike' },
       effectId:'direct-damage-aggressive',
     }},
-    deck:['card-banish','card-parry','card-nazar','card-shield','card-accelerate','card-afflict','card-giveIni','card-glimpse','card-jumbie','ult-nhul-particul'],
+    deck:['card-banish','card-reflect','card-nullify','card-shield','card-accelerate','card-afflict','card-giveIni','card-glimpse','card-jumbie','ult-nhul-particul'],
   },
 ];
 
@@ -1449,6 +1532,7 @@ function beginDeployment(){
     castingCardId: null,
     pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
     pendingWard: null, // { esoriId, cardId, cost } while waiting on Nullify Cost's named-ability picker (see resolveWardChoice)
+    pendingResist: null, // { esoriId, cardId, cost } while waiting on Resist's category picker (see resolveResistCategory)
     finished: false, // guards finishBattle() against double-applying rewards — see that function's own comment
     talismans: [], // placed-on-grid state: { id, ownerTeam, x, y, typeId }
     placingTalismanType: null, // set while in 'place-talisman' interaction mode
@@ -1582,7 +1666,7 @@ function resolveTalismanAoE(u){
   // specific caster).
   battle.talismans.forEach(t => {
     if (!t.active) return; // still inert this round — see beginUnitTurn
-    if (t.nullified) return; // Mojo'd — stays on the board, but inert
+    if (t.nullified) return; // legacy state — nothing in CARD_LIBRARY can set this since Mojo was removed (see the OPERATORS Defensive-section comment); kept for old saved data
     if (chebyshev(u.x - t.x, u.y - t.y) > t.aoe) return;
     const def = TALISMAN_TYPES[t.typeId];
     if (!def) return;
@@ -1763,7 +1847,7 @@ function logMsg(text, team){
    ============================================================ */
 function setInteractionMode(mode){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist) return;
   battle.interactionMode = battle.interactionMode === mode ? null : mode;
   battle.castingCardId = null; // leaving 'cast' mode (or entering a different one) drops any in-progress card selection
   battle.placingTalismanType = null;
@@ -1803,7 +1887,7 @@ function reachableCells(x0, y0, maxSteps){
 }
 function handleBoardClick(x, y){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || !battle.interactionMode) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist || !battle.interactionMode) return;
   if (battle.interactionMode === 'move') tryMove(u, x, y);
   else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
   else if (battle.interactionMode === 'rally') tryRally(u, x, y);
@@ -1857,9 +1941,9 @@ function resolveStrikeHit(u, target, forceCrit, onDone){
     // GDD §8.2: "declares a Weapon Strike against them while in
     // Defeated State... removes them" — the act of striking removes
     // them permanently, not a damage/life-total check (they're already
-    // at 0 Life). No Parry interception here — reflecting a removal,
-    // rather than a damage number, isn't a mechanic this build defines;
-    // a stated scope simplification, not an oversight.
+    // at 0 Life). No Reflect/Nullify interception here — reacting to a
+    // removal, rather than a damage number, isn't a mechanic this build
+    // defines; a stated scope simplification, not an oversight.
     target.removed = true;
     logMsg(`${u.name} strikes ${target.name} and removes them from the battle permanently.`, u.team);
     if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
@@ -1869,10 +1953,20 @@ function resolveStrikeHit(u, target, forceCrit, onDone){
   declareAction('weapon-strike-declared', u, target, (def) => {
     const crit = forceCrit || isCriticalStrike(u.weaponMain, target.x-u.x, target.y-u.y) || hasWonderlandEffect(u, 'all-crits');
     const dmg = crit ? u.critDmg : u.dmg;
-    if (def && def.operatorId === 'parry'){
-      logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
+    if (def && def.operatorId === 'reflect'){
+      logMsg(`${target.name}'s Reflect redirects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
       if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
       applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
+      onDone();
+      return;
+    }
+    if (def && (def.operatorId === 'nullify' || def.operatorId === 'resist')){
+      // GDD §11.3: Nullify "cancels the incoming effect entirely" — no
+      // damage at all, to either side (unlike Reflect, which redirects
+      // it). Resist ("grants temporary immunity to a declared category")
+      // resolves the same way here: the Strike simply doesn't land.
+      logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} cancels ${u.name}'s${crit?' critical':''} strike entirely.`, target.team);
+      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was cancelled
       onDone();
       return;
     }
@@ -2079,26 +2173,28 @@ function activatePassiveCard(u, card){
   return true;
 }
 /* ============================================================
-   DEFENSIVE/REACTIVE — Nazar, Parry, Nullify Cost. Readying is
-   self-cast (no board target, same shape as a Passive activation), but
-   unlike a Passive it doesn't take effect now — it waits, consumed later
-   by declareAction() (below) the next time an opponent action matching
-   its `trigger` targets this unit. Any number can be readied at once
-   (source text doesn't cap it the way Passive's "one at a time" is
+   DEFENSIVE/REACTIVE — Nullify, Reflect, Resist, Nullify Cost. Readying
+   is self-cast (no board target, same shape as a Passive activation),
+   but unlike a Passive it doesn't take effect now — it waits, consumed
+   later by declareAction() (below) the next time an opponent action
+   matching its `trigger` targets this unit. Any number can be readied at
+   once (source text doesn't cap it the way Passive's "one at a time" is
    explicit about), so this is a plain array, not a single slot.
    ============================================================ */
-function readyDefensiveCard(u, card, cost, warded){
+function readyDefensiveCard(u, card, cost, warded, resistCategory){
   u.initiative -= cost;
   discardCard(u, card.id);
   // warded (Nullify Cost only — see resolveWardChoice) is the specific
   // incoming card id this readied response should ward against, per
   // GDD's literal "negate the Initiative cost of a *named* ability" —
-  // undefined/null means "any" (Nazar's own shape, and Nullify Cost's own
-  // default before this picker existed), checked in declareAction.
-  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id, warded: warded || null });
-  logMsg(warded
-    ? `${u.name} readies ${OPERATORS[card.operatorId].name}, warded against ${cardById(warded).name}.`
-    : `${u.name} readies ${OPERATORS[card.operatorId].name}.`, u.team);
+  // undefined/null means "any" (Nullify's own shape, and Nullify Cost's
+  // own default before this picker existed), checked in declareAction.
+  // resistCategory (Resist only — see resolveResistCategory) is which of
+  // the 4 declared categories (Damage/Control/Movement/Ability Effects)
+  // this readied Resist wards against.
+  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id, warded: warded || null, resistCategory: resistCategory || null });
+  const suffix = warded ? `, warded against ${cardById(warded).name}` : resistCategory ? `, vs ${RESIST_CATEGORY_LABELS[resistCategory]}` : '';
+  logMsg(`${u.name} readies ${OPERATORS[card.operatorId].name}${suffix}.`, u.team);
   renderBattle();
 }
 // Nullify Cost's own hand-click doesn't ready immediately — GDD's literal
@@ -2106,8 +2202,8 @@ function readyDefensiveCard(u, card, cost, warded){
 // readying it opens a picker (battle.pendingWard, rendered in place of
 // the normal hand — see renderBattle) naming which specific incoming
 // card it should ward against, or "Any Aggressive Ability" to keep the
-// old blanket behavior. Nazar has no such picker — GDD's own wording for
-// it ("nullify an incoming Aggressive") is already unqualified.
+// old blanket behavior. Nullify has no such picker — GDD's own wording
+// for it ("cancels the incoming effect entirely") is already unqualified.
 function resolveWardChoice(wardedCardId){
   const p = battle.pendingWard;
   battle.pendingWard = null;
@@ -2116,6 +2212,19 @@ function resolveWardChoice(wardedCardId){
   const card = cardById(p.cardId);
   if (!u || !card || !u.hand.includes(p.cardId)) { renderBattle(); return; }
   readyDefensiveCard(u, card, p.cost, wardedCardId || null);
+}
+// Resist's own hand-click opens a category picker (battle.pendingResist,
+// same rendered-in-place-of-hand shape as pendingWard) — GDD §11.3:
+// "grants temporary immunity to a declared category," so the player must
+// name which of the 4 categories at ready-time.
+function resolveResistCategory(category){
+  const p = battle.pendingResist;
+  battle.pendingResist = null;
+  if (!p || !category) { renderBattle(); return; }
+  const u = battle.units.find(x => x.esoriId === p.esoriId);
+  const card = cardById(p.cardId);
+  if (!u || !card || !u.hand.includes(p.cardId)) { renderBattle(); return; }
+  readyDefensiveCard(u, card, p.cost, null, category);
 }
 /* ============================================================
    DEFENSIVE/REACTIVE — GENERIC INTERRUPT SYSTEM. Ported (in spirit, not
@@ -2127,37 +2236,39 @@ function resolveWardChoice(wardedCardId){
 
    DEFENSIVE_TRIGGERS below is the full 8-entry vocabulary from the GDD's
    own Trigger Reference table — every Defensive operator's `trigger`
-   field must name one of these. Only 2 of the 8 have a real operator
-   using them today (aggressive-played: Nazar/Nullify Cost;
-   weapon-strike-declared: Parry) — same actual content as before this
-   port, not a claim of full 8-trigger coverage. The other 6 are named,
-   documented vocabulary with no call site wired to them yet: Movement
-   Declared/Talisman Placement Declared/Card Drawn/Ability Played (Any)
-   aren't naturally single-target the way this engine's readied-ability
-   model requires (they're declared actions with no specific defending
-   unit — the prior prototype build scanned every opposing unit's hand
-   instead, a real architectural difference, not an oversight), and
-   Defensive/Supportive Played have no authored operator to validate
-   against yet. See MONOLITH_RULESET.md's Defensive/Reactive section.
+   field must name one (or, per GDD §11.3's corrected Nullify/Reflect/
+   Resist definitions, more than one — `trigger` may be a single string
+   or an array; declareAction handles both uniformly) of these. Only 2 of
+   the 8 have a real operator using them today (aggressive-played:
+   Nullify, Reflect [only against an incoming Inflict — see its
+   triggerFilter], Resist, Nullify Cost; weapon-strike-declared: Nullify,
+   Reflect, Resist) — not a claim of full 8-trigger coverage. The other 6
+   are named, documented vocabulary with no call site wired to them yet:
+   Movement Declared/Talisman Placement Declared/Card Drawn/Ability
+   Played (Any) aren't naturally single-target the way this engine's
+   readied-ability model requires (they're declared actions with no
+   specific defending unit — the prior prototype build scanned every
+   opposing unit's hand instead, a real architectural difference, not an
+   oversight), and Defensive/Supportive Played have no authored operator
+   to validate against yet. See MONOLITH_RULESET.md's Defensive/Reactive
+   section.
 
-   declareAction(type, u, target, onResolve) is what a call site uses:
-   `u` is the acting unit, `target` is the specific unit the action is
-   against (the only kind of target this system supports — see above),
-   and onResolve(def) is called with either the readied-defensive record
-   that intercepted the action, or null if nothing did. Resolves
+   declareAction(type, u, target, onResolve, context) is what a call site
+   uses: `u` is the acting unit, `target` is the specific unit the action
+   is against (the only kind of target this system supports — see
+   above), and onResolve(def) is called with either the readied-defensive
+   record that intercepted the action, or null if nothing did. Resolves
    synchronously (onResolve called before declareAction returns) whenever
    there's 0 or 1 matching readied response, or the defender is
    AI-controlled (nothing for an AI to be asked) — this is the exact same
    behavior every prior version of this system already had, so any call
-   site that only ever sees 0-or-1 matches (which is every one of them
-   today, since Nazar/Nullify Cost/Parry never overlap on the same
-   trigger except Nazar+Nullify Cost together) never notices the
-   difference. It only pauses for a real human choice — opening
+   site that only ever sees 0-or-1 matches never notices the difference.
+   It only pauses for a real human choice — opening
    #defensive-response-overlay — when the defender is human-controlled
    AND has 2+ different readied responses to the SAME trigger (e.g. both
-   Nazar and Nullify Cost readied at once against an incoming Aggressive
-   card): a real behavioral improvement over the old code, which silently
-   auto-picked via array order without ever asking.
+   Nullify and Nullify Cost readied at once against an incoming
+   Aggressive card): a real behavioral improvement over the old code,
+   which silently auto-picked via array order without ever asking.
    ============================================================ */
 const DEFENSIVE_TRIGGERS = {
   'movement-declared': 'Movement Declared',
@@ -2169,18 +2280,59 @@ const DEFENSIVE_TRIGGERS = {
   'talisman-placement-declared': 'Talisman Placement Declared',
   'ability-played-any': 'Ability Played (Any)',
 };
+// GDD §11.3 names Resist's 4 categories (Damage, Control, Movement,
+// Ability Effects) but doesn't enumerate which operator belongs to which
+// — this mapping is a stated interpretation, not guessed at arbitrarily:
+// Damage is life-damage only; Movement is the 3 board-position operators;
+// Control is the remaining stat-reduction/stat-lock operators; Ability
+// Effects is everything else (hand/deck/discard/Talisman manipulation).
+// A Weapon Strike itself is always 'damage' — checked directly in
+// declareAction, not via this table, since a Strike isn't a card.
+const RESIST_CATEGORY_LABELS = { damage:'Damage', control:'Control', movement:'Movement', ability:'Ability Effects' };
+const RESIST_OPERATOR_CATEGORY = {
+  inflict:'damage',
+  afflict:'control', hinder:'control', occlude:'control', disarm:'control', blind:'control', exhaust:'control',
+  obstruct:'movement', root:'movement', displace:'movement',
+  seal:'ability', jumbie:'ability', banish:'ability', glimpse:'ability', scry:'ability', crush:'ability', void:'ability', siphon:'ability', drain:'ability', impose:'ability', destroy:'ability', capture:'ability',
+};
+function resistCategoryOf(cardId){
+  const card = cardById(cardId);
+  if (!card) return null;
+  return RESIST_OPERATOR_CATEGORY[card.effects ? card.effects[0] : card.operatorId] || null;
+}
+function isInflictFlavored(cardId){
+  const card = cardById(cardId);
+  if (!card) return false;
+  return card.effects ? card.effects.includes('inflict') : card.operatorId === 'inflict';
+}
 let pendingDefenseResponse = null; // { matches, onResolve } while #defensive-response-overlay is open
 // context.cardId (optional, only finalizeCast's 'aggressive-played' call
 // passes it) is the incoming card actually being declared — checked
 // against a readied Nullify Cost's own `warded` field (see
 // resolveWardChoice) so a Nullify Cost named against one specific card
 // only matches that card, per GDD's literal "a *named* ability/category"
-// wording. A readied entry with no `warded` (Nazar always; Nullify Cost
+// wording. A readied entry with no `warded` (Nullify always; Nullify Cost
 // when the player picked "Any Aggressive Ability") matches every card.
+// `trigger` may be a single string or an array (Nullify/Reflect/Resist
+// all bind to 2 triggers each per GDD §11.3's corrected definitions);
+// `triggerFilter(type, context)`, when present, narrows a match further
+// (Reflect's own "or incoming Inflict specifically" scoping).
 function declareAction(type, u, target, onResolve, context){
   const matches = (target?.readiedDefensives || [])
     .map((d, idx) => ({ d, idx }))
-    .filter(({ d }) => OPERATORS[d.operatorId]?.trigger === type && (!d.warded || d.warded === context?.cardId));
+    .filter(({ d }) => {
+      const op = OPERATORS[d.operatorId];
+      if (!op) return false;
+      const triggers = Array.isArray(op.trigger) ? op.trigger : [op.trigger];
+      if (!triggers.includes(type)) return false;
+      if (d.warded && context?.cardId !== d.warded) return false;
+      if (op.triggerFilter && !op.triggerFilter(type, context)) return false;
+      if (d.resistCategory){
+        const incomingCategory = type === 'weapon-strike-declared' ? 'damage' : resistCategoryOf(context?.cardId);
+        if (incomingCategory !== d.resistCategory) return false;
+      }
+      return true;
+    });
   if (!matches.length || target.controller !== 'human' || matches.length === 1){
     if (!matches.length){ onResolve(null); return; }
     // AI defenders always use their (only, or first) readied response —
@@ -2194,7 +2346,7 @@ function declareAction(type, u, target, onResolve, context){
   document.getElementById('defensive-response-title').textContent =
     `${target.name} has more than one ready response to ${u.name}'s ${DEFENSIVE_TRIGGERS[type]}.`;
   document.getElementById('defensive-response-options').innerHTML = matches.map(({ d, idx }) =>
-    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}${d.warded ? ` (warded: ${escapeHtml(cardById(d.warded).name)})` : ''}</button>`
+    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}${d.warded ? ` (warded: ${escapeHtml(cardById(d.warded).name)})` : ''}${d.resistCategory ? ` (vs ${RESIST_CATEGORY_LABELS[d.resistCategory]})` : ''}</button>`
   ).join('') + `<button class="btn" onclick="chooseDefensiveResponse(-1)">Hold everything — let it resolve unopposed</button>`;
   overlay.style.display = 'flex';
 }
@@ -2232,16 +2384,22 @@ function playHandCard(cardId){
     playUltimateCard(u, card, cost);
     return;
   }
-  if (category === 'defensive' && !OPERATORS[card.operatorId].targetsTalisman){
-    // Nazar/Parry/Nullify Cost — self-cast readying, no board target; the
-    // effect happens later, off the *opponent's* subsequent action. Mojo
-    // (the one Defensive operator with targetsTalisman:true) falls
-    // through to the normal 'cast' board-targeting below instead, same
-    // path Destroy/Capture already use. Nullify Cost specifically opens
-    // its named-ability picker instead of readying right away — see
-    // resolveWardChoice.
+  if (category === 'defensive'){
+    // Nullify/Reflect/Resist/Nullify Cost — self-cast readying, no board
+    // target; the effect happens later, off the *opponent's* subsequent
+    // action. (Mojo used to be the one Defensive operator with a board
+    // target of its own — targetsTalisman:true — but it's gone, not
+    // renamed; see the big comment above the OPERATORS table's Defensive
+    // section. Every Defensive operator readies now, none fall through
+    // to board-targeting.) Nullify Cost opens its named-ability picker;
+    // Resist opens its category picker — neither readies immediately.
     if (card.operatorId === 'nullifyCost'){
       battle.pendingWard = { esoriId: u.esoriId, cardId: card.id, cost };
+      renderBattle();
+      return;
+    }
+    if (card.operatorId === 'resist'){
+      battle.pendingResist = { esoriId: u.esoriId, cardId: card.id, cost };
       renderBattle();
       return;
     }
@@ -2401,8 +2559,8 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     // out what "direct damage" adds on top of an Aggressive card's own
     // effect: every Aggressive card ALSO deals Life damage equal to its own
     // Initiative cost, stacked on top of whatever it already does. Only
-    // against unit targets — a Talisman (Destroy/Capture/Mojo) has no Life
-    // to damage.
+    // against unit targets — a Talisman (Destroy/Capture) has no Life to
+    // damage.
     if (cardCategory(card) === 'aggressive' && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
       applyLifeDamage(target, cost);
       logMsg(`${u.name}'s open Wonderland makes ${cardDescription(card)} deal ${cost} direct damage too.`, u.team);
@@ -2423,11 +2581,13 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   // or a single-target Ultimate whose effects are Aggressive-flavored —
   // see isAggressiveFlavored, added specifically so ult-devastate and
   // ult-nhul-particul aren't exempt just for being Ultimate-tier) against
-  // a target with a readied Nazar/Nullify Cost is nullified before its
-  // effect(s) resolve, via declareAction()'s generic 'aggressive-played'
-  // trigger. The played card is still spent either way — only the
-  // *effect* is what the defender bought off, per Nazar's own wording
-  // ("nullify an incoming Aggressive"). Target-All Ultimates still don't
+  // a target with a readied Nullify/Reflect/Resist/Nullify Cost is
+  // nullified (or, for Reflect against an incoming Inflict, redirected)
+  // before its effect(s) resolve, via declareAction()'s generic
+  // 'aggressive-played' trigger. The played card is still spent either
+  // way — only the *effect* is what the defender bought off, per
+  // Nullify's own wording ("cancels the incoming effect entirely").
+  // Target-All Ultimates still don't
   // reach here at all — they resolve inline in playUltimateCard, never
   // routing through finalizeCast, since intercepting per-target across a
   // multi-target declaration (each target potentially needing its own
@@ -2437,7 +2597,21 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   if (!isAggressiveFlavored(card)){ proceedCast(); return; }
   declareAction('aggressive-played', u, target, (def) => {
     if (!def){ proceedCast(); return; }
-    if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from Nazar
+    if (def.operatorId === 'reflect'){
+      // Reflect only ever matches 'aggressive-played' when the incoming
+      // card is specifically Inflict (its own triggerFilter) — GDD:
+      // "redirects the damage back at the attacker," not a plain
+      // nullify. Inflict's damage is 1:1 with cost.
+      applyLifeDamage(u, cost);
+      logMsg(`${target.name}'s Reflect redirects ${u.name}'s ${cardDescription(card)} back at them.`, target.team);
+      battle.interactionMode = null;
+      battle.castingCardId = null;
+      renderBattle();
+      const w = checkWin();
+      if (w) finishBattle(w);
+      return;
+    }
+    if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from the others
     logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} nullifies ${u.name}'s ${cardDescription(card)}.`, target.team);
     battle.interactionMode = null;
     battle.castingCardId = null;
@@ -2675,8 +2849,12 @@ function applyOperator(operatorId, caster, target, cost, card){
       break;
     }
     case 'nullify-talisman': {
-      // Mojo — the Talisman stays on the board (unlike Destroy) but its
-      // AoE effect stops applying; see resolveTalismanAoE's own check.
+      // DEAD CASE, kept only so an old saved/imported deck referencing a
+      // pre-correction card doesn't throw — Mojo (the operator that used
+      // this kind) is gone as of the Nullify/Reflect/Resist correction
+      // (GDD §11.3), not renamed; nothing in CARD_LIBRARY produces this
+      // kind anymore. See the big comment above the OPERATORS table's
+      // Defensive section.
       if (battle.talismans.includes(target)){
         target.nullified = true;
         logMsg(`${caster.name}'s Mojo nullifies a ${TALISMAN_TYPES[target.typeId].label}'s effect.`, caster.team);
@@ -2798,7 +2976,7 @@ function talismanHtml(t){
   const teamClass = t.ownerTeam === 'A' ? 'teamA' : 'teamB';
   const letter = def.kind === 'ward' ? 'W' : 'T';
   const nullifiedClass = t.nullified ? ' nullified' : '';
-  const nullifiedNote = t.nullified ? ' (nullified by Mojo, inert)' : '';
+  const nullifiedNote = t.nullified ? ' (nullified, inert)' : ''; // unreachable in normal play since Mojo was removed — see the OPERATORS Defensive-section comment
   return `<div class="talisman-marker ${def.kind} ${teamClass}${nullifiedClass}" title="${escapeHtml(def.label)} (Team ${t.ownerTeam})${nullifiedNote}"><span>${letter}</span></div>`;
 }
 function renderBattle(){
@@ -2806,7 +2984,7 @@ function renderBattle(){
   const active = currentUnit();
   const board = document.getElementById('battle-board');
   let reach = {}, targets = [], talismanTargets = [], placeCells = [];
-  if (active && active.controller === 'human' && !battle.pendingOr && !battle.pendingWard){
+  if (active && active.controller === 'human' && !battle.pendingOr && !battle.pendingWard && !battle.pendingResist){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, effectiveDistanceRemaining(active));
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       // Defeated (not yet removed) enemies are legal Strike targets too —
@@ -2875,7 +3053,7 @@ function renderBattle(){
       · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}${readiedNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
-  const blocked = !isHumanTurn || !!battle.pendingOr || !!battle.pendingWard;
+  const blocked = !isHumanTurn || !!battle.pendingOr || !!battle.pendingWard || !!battle.pendingResist;
   document.getElementById('action-move').disabled = blocked || active.distanceRemaining <= 0;
   document.getElementById('action-strike').disabled = blocked || active.hasStruckThisTurn;
   document.getElementById('action-rally').disabled = blocked;
@@ -2954,6 +3132,11 @@ function renderBattle(){
     const aggressiveCards = CARD_LIBRARY.filter(c => cardCategory(c) === 'aggressive');
     handGroup.innerHTML = `<button class="opt-btn" onclick="resolveWardChoice(null)"><strong>Any Aggressive Ability</strong></button>`
       + aggressiveCards.map(c => `<button class="opt-btn" onclick="resolveWardChoice('${c.id}')"><strong>${escapeHtml(cardDescription(c))}</strong></button>`).join('');
+  } else if (battle.pendingResist){
+    handHint.textContent = 'Resist: grant temporary immunity to which declared category?';
+    handGroup.innerHTML = Object.entries(RESIST_CATEGORY_LABELS).map(([key, label]) =>
+      `<button class="opt-btn" onclick="resolveResistCategory('${key}')"><strong>${label}</strong></button>`
+    ).join('');
   } else if (!isHumanTurn || !active){
     handHint.textContent = '';
     handGroup.innerHTML = '';

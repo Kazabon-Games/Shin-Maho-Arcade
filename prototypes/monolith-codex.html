@@ -11,6 +11,29 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.21.0 — 2026-08-06 — CORRECTNESS: Defensive operator rename +
+                          mechanic fix, mirrors Arena's real fix (that
+                          file's matching v0.22.0 entry has the full
+                          writeup). Nazar/Parry/Mojo removed from
+                          OPERATORS, replaced by Nullify/Reflect/Resist
+                          per GDD §11.3's explicit supersession note.
+                          Nullify/Reflect each carry a `trigger` array
+                          (dual triggers); Reflect additionally documents
+                          its Inflict-only scoping in a comment (no
+                          triggerFilter function here — data-only, no
+                          battle runtime). Resist is a genuinely different
+                          mechanic from Mojo (category-based temporary
+                          immunity, not Talisman-nullify) — new
+                          RESIST_OPERATOR_CATEGORY data mirrored from
+                          Arena. Fixed NLDR's and Ala zyu Haad's seeded
+                          decks (card-mojo/card-parry/card-nazar no longer
+                          exist). Also fixed two stale doc comments
+                          predating this session: a "Utility (Glimpse/
+                          Scry/Refine)" grouping comment (Glimpse is Basic
+                          Aggressive, Scry is Ultimate-only Aggressive —
+                          only Refine is genuinely Utility) and a
+                          "Talismans (Destroy/Capture, Mojo...)" comment
+                          (Mojo removed).
   v0.20.0 — 2026-08-06 — CORRECTNESS: Basic-vs-Ultimate Aggressive
                           operator tiering fixed — mirrors Arena's real
                           fix (that file's matching entry has the full
@@ -762,15 +785,19 @@ const TALISMAN_TYPES = {
    bespoke per-card code, so a new card is a data row, not new logic.
 
    Current scope: every operator category is implemented, including
-   Defensive/Reactive (Nazar, Parry, Mojo, Nullify Cost — see the note
-   directly above their block below for the "readied ability" mechanism
-   and Arena's generic declareAction() interrupt system it's consumed
-   through), except
+   Defensive/Reactive (Nullify, Reflect, Resist, Nullify Cost — see the
+   note directly above their block below for the "readied ability"
+   mechanism and Arena's generic declareAction() interrupt system it's
+   consumed through), except
    every Special operator besides Open Wonderland itself (Rhyzl Step,
    Daedalus Tesseract, Nhül Partikül — under-specified, Phase-3 stretch
-   per MONOLITH_RULESET.md). Talismans (Destroy/Capture, Mojo, all
-   `targetsTalisman:true` below) are placeable and Utility (Glimpse/Scry/
-   Refine) is implemented — see each doc's own changelog for when. AND/OR
+   per MONOLITH_RULESET.md). Talismans (Destroy, Capture, all
+   `targetsTalisman:true` below — Mojo used to be a third, but it's gone,
+   not renamed, as of the Nullify/Reflect/Resist correction) are
+   placeable, and Utility (Refine) is implemented — see each doc's own
+   changelog for when. (Glimpse and Scry aren't Utility — Glimpse is
+   Basic Aggressive, Scry is its Ultimate-only pair; this stale
+   categorization predates the operator-tier correction pass.) AND/OR
    are simple compositions, not conditionals, and were always in scope.
 
    ULTIMATE_CARDS (below CARD_LIBRARY) are hand-authored, same pattern as
@@ -824,30 +851,39 @@ const OPERATORS = {
   void:     { name:'Void',     category:'aggressive', kind:'erase-discard', tier:'ultimate' },
   siphon:   { name:'Siphon',   category:'aggressive', kind:'drain-stat', stat:'initiative', tier:'ultimate' },
 
-  // Defensive/Reactive — 20 Ini base. Nazar/Parry/Nullify Cost are
-  // "readied" when played (self-cast, no board target — see
-  // readyDefensiveCard in Arena) and consumed later, off the *opponent's*
-  // subsequent action, via Arena's generic declareAction() interrupt
-  // system — each names its `trigger` (one of the 8 GDD Trigger Reference
-  // entries; see MONOLITH_RULESET.md's Defensive/Reactive section for the
-  // full vocabulary and which ones this build actually wires up). Nullify
-  // Cost's own literal text — "negate the Initiative cost of a *named*
-  // ability/category" — is implemented too: readying it from hand opens a
-  // picker naming one specific incoming card to ward against (or "Any
-  // Aggressive Ability" for the old blanket behavior), stored as
-  // `warded` on the readied-defensive record and checked in
-  // declareAction. Both also intercept single-target Ultimate cards built
-  // from Aggressive operators (ult-devastate, ult-nhul-particul), not
-  // just Basic/Composed Aggressive cards. One real remaining gap: neither
-  // reaches a Target-All Ultimate's resolution (which resolves inline,
-  // never through declareAction) or a Talisman's per-turn AoE tick (a
-  // positional passive tick, not a declared action at all). Mojo is
-  // different — it targets a specific placed Talisman directly (like
-  // Destroy/Capture, reusing that exact targetsTalisman path), not a
-  // reactive trigger, so it has no `trigger`.
-  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
-  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
-  mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
+  // Defensive/Reactive — 20 Ini base. "Readied" when played (self-cast,
+  // no board target — see readyDefensiveCard in Arena) and consumed
+  // later, off the *opponent's* subsequent action, via Arena's generic
+  // declareAction() interrupt system — each names its `trigger` (one or
+  // more of the 8 GDD Trigger Reference entries; see
+  // MONOLITH_RULESET.md's Defensive/Reactive section for the full
+  // vocabulary and which ones this build actually wires up).
+  //
+  // GDD §11.3: "Nazar, Parry, and Mojo from prior documents are
+  // superseded by Nullify, Reflect, and Resist for broader application"
+  // — a real correctness bug, found auditing the primary source
+  // directly: this build had shipped the OLD, superseded names AND
+  // mechanics. Corrected: Nullify (was Nazar) now triggers on BOTH
+  // incoming Aggressive AND incoming Weapon Strike (cancelling either
+  // entirely); Reflect (was Parry) triggers on incoming Weapon Strike OR
+  // incoming Inflict specifically (redirecting the damage back); Resist
+  // (was Mojo) is a COMPLETELY different mechanic — temporary immunity
+  // to a declared category (Damage/Control/Movement/Ability Effects,
+  // chosen at ready-time), not a rename of Mojo's old Talisman-nullify
+  // behavior, which has no replacement in the corrected ruleset at all
+  // (GDD §11.1/§11.2 name only Destroy and Capture as Talisman-targeting
+  // operators now — `targetsTalisman:true` no longer appears on any
+  // Defensive operator). Nullify Cost's own literal text — "negate the
+  // Initiative cost of a *named* ability/category" — is implemented too:
+  // readying it opens a picker naming one specific incoming card to ward
+  // against, stored as `warded` on the readied-defensive record. All
+  // four also intercept single-target Ultimate cards built from
+  // Aggressive operators (ult-devastate, ult-nhul-particul), not just
+  // Basic/Composed Aggressive cards. One real remaining gap: none reach
+  // a Target-All Ultimate's resolution or a Talisman's per-turn AoE tick.
+  nullify:     { name:'Nullify',      category:'defensive', kind:'defensive-nullify', trigger:['aggressive-played', 'weapon-strike-declared'] },
+  reflect:     { name:'Reflect',      category:'defensive', kind:'defensive-reflect-strike', trigger:['weapon-strike-declared', 'aggressive-played'] },
+  resist:      { name:'Resist',       category:'defensive', kind:'defensive-resist-category', trigger:['aggressive-played', 'weapon-strike-declared'], needsCategory:true },
   nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
 
   // Supportive — target one ally, 20 Ini base

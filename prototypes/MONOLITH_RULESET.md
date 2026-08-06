@@ -477,32 +477,80 @@ target's entire discard pile — Ultimate pair of Banish), Siphon (permanent
 it in this build, since Drain's own "until end of turn" reversion isn't
 built either).
 
-**Defensive** (trigger off an opponent's action): Nazar (nullify an
-incoming Aggressive), Parry (reflect Weapon Strike damage), Mojo (nullify
-a specific Talisman's effect), Nullify Cost (negate the Initiative cost of
-a named ability/category).
+**⚠ Corrected mid-project (twelfth pass):** GDD §11.3 states outright,
+in its own header note: "Nazar, Parry, and Mojo from prior documents are
+superseded by Nullify, Reflect, and Resist for broader application." This
+build had shipped the old, superseded names *and* the old, narrower
+mechanics for nine-plus increments — found during the same direct
+primary-source audit that caught the Aggressive-tier bug above, and fixed
+in the same "close every gap" pass. This is a rename plus two real
+mechanic changes, not a find-and-replace:
 
-**Defensive implementation status:** all four are implemented. Playing
-Nazar, Parry, or Nullify Cost is a self-cast (no board target) that
-*readies* it — pushed onto the unit's own `readiedDefensives` list,
-costing the normal 20 Ini immediately, with no persistent-slot limit the
-way Passive's "one at a time" is explicit about (any number can be
-readied at once). It's consumed later, off the *opponent's* subsequent
-matching action, via `declareAction(type, u, target, onResolve)` — a
-**generic, trigger-typed interrupt system** (ported, in spirit, from a
-richer unused prior prototype build's own `declareAction()`; this
-engine's readied-ability data model is its own, not a verbatim copy).
-Two call sites use it today, functionally identical content to before
-this port: `finalizeCast` declares `'aggressive-played'` (an incoming
-single-target Aggressive card — nullifies it; for Nullify Cost, also
-refunds the caster's spent Initiative, the one thing distinguishing it
-from Nazar) and `tryStrike` declares `'weapon-strike-declared'` per hit
-(Parry reflects the damage onto the attacker instead of the defender —
-including separately for each of Spear's two cells, see that section).
+- **Nullify** (was Nazar) — trigger is now explicitly **dual**: "Incoming
+  Aggressive ability *or* Weapon Strike," where the old Nazar only ever
+  fired off `aggressive-played`. Nullify now readies against both
+  `aggressive-played` and `weapon-strike-declared`, cancelling the
+  incoming effect entirely either way (a Nullified Strike deals no damage
+  to either side — unlike Reflect, nothing is redirected).
+- **Reflect** (was Parry) — trigger is also dual per the GDD table:
+  "Incoming Weapon Strike *or* Inflict," where the old Parry only covered
+  Weapon Strikes. Reflect now readies against both triggers, but is
+  *scoped* on the Aggressive side: it only intercepts a card whose effect
+  is specifically Inflict (damage), not any Aggressive card generally —
+  implemented via `declareAction`'s new `triggerFilter` hook, checked
+  against `isInflictFlavored(cardId)` so an Inflict-built Ultimate
+  qualifies the same way an Inflict-built Basic card does, matching how
+  `isAggressiveFlavored` already generalizes across tiers elsewhere in
+  this system.
+- **Resist** (was Mojo) — this is not a rename of Mojo's mechanic, it's a
+  wholesale replacement. Mojo targeted one specific placed Talisman
+  directly (a board click, same path as Destroy/Capture) and marked it
+  `nullified` so its AoE stopped resolving. **That job has no replacement
+  in the corrected ruleset — it's genuinely gone, not moved elsewhere.**
+  Resist is a different operator entirely: "Any declared effect category
+  → grants temporary immunity to a declared category (Damage, Control,
+  Movement, Ability Effects)." It's self-cast like Nullify/Reflect, but
+  readies with a **category choice** (a 4-option picker, `#hand-card-group`,
+  same shape as Nullify Cost's ability picker below) rather than a
+  board target, and matches by *category* rather than by trigger type —
+  see `RESIST_OPERATOR_CATEGORY` below for how each operator was sorted
+  into the GDD's four named-but-unenumerated categories.
+- **Nullify Cost** is unaffected by the rename (its own GDD wording was
+  never superseded) — still readies with the existing "named ability or
+  Any Aggressive Ability" picker.
+
+**Defensive implementation status:** all four (corrected) operators are
+implemented. Playing Nullify, Reflect, Resist, or Nullify Cost is a
+self-cast (no board target, except Resist's category picker and Nullify
+Cost's ability picker) that *readies* it — pushed onto the unit's own
+`readiedDefensives` list, costing the normal 20 Ini immediately, with no
+persistent-slot limit the way Passive's "one at a time" is explicit about
+(any number can be readied at once). It's consumed later, off the
+*opponent's* subsequent matching action, via `declareAction(type, u,
+target, onResolve, context)` — a **generic, trigger-typed interrupt
+system** (ported, in spirit, from a richer unused prior prototype build's
+own `declareAction()`; this engine's readied-ability data model is its
+own, not a verbatim copy). `type` is now matched against either a single
+trigger string or an array of trigger strings on the readied record (to
+support Nullify/Reflect's dual triggers), with an optional
+`d.triggerFilter(type, context)` for narrower matching (Reflect's
+Inflict-only scoping) and an optional `d.resistCategory` check against
+`resistCategoryOf(context.cardId)` (or the literal `'damage'` for a
+Weapon Strike, since a Strike isn't a card) for Resist. Two call sites use
+it: `finalizeCast` declares `'aggressive-played'` (an incoming
+single-target Aggressive or Aggressive-flavored Ultimate card — Nullify
+cancels it, Reflect redirects an Inflict-based one back onto the caster,
+Resist grants immunity if the card's operator falls in the readied
+category; for Nullify Cost, also refunds the caster's spent Initiative)
+and `resolveStrikeHit` declares `'weapon-strike-declared'` per hit
+(Nullify cancels the Strike outright — no damage to either side; Reflect
+redirects the damage onto the attacker instead of the defender; Resist
+grants immunity if `'damage'` was the readied category — each checked
+independently for Spear's two cells, see that section).
 
 The real behavioral difference from the version this replaced: when the
 *defending* unit is human-controlled and has **two or more** different
-readied responses matching the same trigger (e.g. both Nazar and Nullify
+readied responses matching the same trigger (e.g. both Nullify and Nullify
 Cost readied at once against an incoming Aggressive card), a response
 window (`#defensive-response-overlay`) now opens and asks which one to
 use — or to decline and let the action resolve unopposed, holding both
@@ -513,24 +561,23 @@ no UI pause — the exact same behavior every prior version already had,
 so nothing changes for the overwhelmingly common case.
 
 **`DEFENSIVE_TRIGGERS` — the full 8-entry vocabulary**, transcribed from
-the GDD's own Trigger Reference table (see `monolith_operators.html`'s
-copy, uploaded during intake — not committed to this repo):
+the GDD's own §11.5 Trigger Reference table:
 
-| `trigger` | Fires when | Wired to a real call site? |
-|---|---|---|
-| `aggressive-played` | Opponent plays an Aggressive card | ✅ `finalizeCast` — Nazar, Nullify Cost |
-| `weapon-strike-declared` | Opponent declares a Weapon Strike | ✅ `tryStrike` — Parry |
-| `movement-declared` | Opponent declares Movement | ❌ not wired |
-| `talisman-placement-declared` | Opponent declares Talisman placement | ❌ not wired |
-| `card-drawn` | Opponent draws a card | ❌ not wired |
-| `ability-played-any` | Opponent plays any card, any family | ❌ not wired |
-| `defensive-played` | Opponent plays a Defensive card | ❌ not wired |
-| `supportive-played` | Opponent plays a Supportive card | ❌ not wired |
+| `trigger` | Fires when | GDD operators bound to it | Wired to a real call site? |
+|---|---|---|---|
+| `aggressive-played` | Opponent plays an Aggressive card | Nullify, Nullify All | ✅ `finalizeCast` — Nullify, Reflect (Inflict-scoped), Resist, Nullify Cost |
+| `weapon-strike-declared` | Opponent declares a Weapon Strike | Nullify, Reflect | ✅ `resolveStrikeHit` — Nullify, Reflect, Resist |
+| `movement-declared` | Opponent declares Movement | Intercept, Rewind | ❌ not wired |
+| `talisman-placement-declared` | Opponent declares Talisman placement | Unravel, Forbid | ❌ not wired |
+| `card-drawn` | Opponent draws a card | Disrupt, Suppress | ❌ not wired |
+| `ability-played-any` | Opponent plays any card, any family | Suppress | ❌ not wired |
+| `defensive-played` | Opponent plays a Defensive card | Nullify Cost | ❌ not wired |
+| `supportive-played` | Opponent plays a Supportive card | Counter, Sever | ❌ not wired |
 
 Only the first two have both a real operator using them *and* a natural
-single-target framing: Nazar/Parry/Nullify Cost all defend the one
-specific unit the action is against, matching this engine's
-per-unit-scoped `readiedDefensives` model exactly. The other six are
+single-target framing: Nullify/Reflect/Resist/Nullify Cost all defend the
+one specific unit the action is against, matching this engine's
+per-unit-scoped `readiedDefensives` model exactly. The other six remain
 named, documented vocabulary with no call site wired to them yet, for two
 different reasons, not one oversight: (1) Movement Declared, Talisman
 Placement Declared, Card Drawn, and Ability Played (Any) are declared
@@ -540,11 +587,15 @@ instead of one target's readied list, a real architectural difference
 this engine's model doesn't share, and reproducing that team-wide-scan
 shape correctly is a separate, larger design question; (2) Defensive
 Played and Supportive Played *could* fit the single-target shape, but
-have zero authored operators to validate the wiring against (no
-Counter/Sever/Disrupt-equivalent exists in `OPERATORS`). Adding a call
-site with no real content behind it risks guessing at behavior nothing
-has actually specified — the same "documented, bounded subset" standard
-this project holds Ultimate cards and Wonderland v2 to elsewhere.
+have zero authored operators to validate the wiring against — Intercept,
+Disrupt, Unravel, Counter (Basic) and Nullify All, Rewind, Suppress,
+Forbid, Sever (Ultimate) are now named in this document (see the two new
+operator tables below) but not yet added to `OPERATORS` or wired to any
+call site — that's the next item on the "close every gap" list, not done
+in this pass. Adding a call site with no real content behind it risks
+guessing at behavior nothing has actually specified — the same
+"documented, bounded subset" standard this project holds Ultimate cards
+and Wonderland v2 to elsewhere.
 
 **Nullify Cost's "named ability" picker is now built**, closing the one
 simplification from the version above that had a concrete, buildable fix:
@@ -556,28 +607,29 @@ choice is stored as `warded` on the readied-defensive record
 (`{ operatorId, cardId, warded }`) and checked in `declareAction` via an
 optional `context` argument (`{ cardId }`, passed by `finalizeCast`,
 the only call site with an actual incoming-card identity to check
-against — `tryStrike`'s Weapon-Strike-Declared trigger has no card, so
-Parry is never subject to `warded`, matching Parry's own unqualified GDD
-wording "reflect Weapon Strike damage"). A readied entry with `warded`
-unset — Nazar, always, and Nullify Cost when "Any Aggressive Ability" was
-picked — still matches every incoming Aggressive card, so the 0-or-1-
-match/AI-defender paths above are entirely unaffected by this. Nazar
-itself gets no picker: GDD's own wording for it ("nullify an incoming
-Aggressive") is already unqualified, nothing to name.
+against — `resolveStrikeHit`'s Weapon-Strike-Declared trigger has no
+card, so Reflect is never subject to `warded` there, matching its own
+unqualified GDD wording for the Strike side). A readied entry with
+`warded` unset — Nullify, always, and Nullify Cost when "Any Aggressive
+Ability" was picked — still matches every incoming Aggressive card, so
+the 0-or-1-match/AI-defender paths above are entirely unaffected by this.
+Nullify itself gets no ability picker: GDD's own wording for it ("cancels
+the incoming effect entirely") is already unqualified, nothing to name.
 
 **Single-target Ultimates are now covered too.** `finalizeCast`'s
 `declareAction` gate originally checked `cardCategory(card) ===
 'aggressive'`, which is never true for an Ultimate card — `cardCategory`
 returns `'ultimate'` regardless of what its underlying operators are, so
-Nazar/Nullify Cost couldn't intercept ANY Ultimate, single-target or
+Nullify/Nullify Cost couldn't intercept ANY Ultimate, single-target or
 Target-All, even ones built entirely from Aggressive operators
 (`ult-devastate`: Inflict+Afflict; `ult-nhul-particul`: Scry+Seal). A new
 `isAggressiveFlavored(card)` helper checks the card's actual effect
 category for Ultimates (`OPERATORS[card.effects[0]].category`), the same
 lookup `tryCast` already used for Ultimate targeting — single-target
 Ultimates now route through `declareAction` exactly like a Basic or
-Composed Aggressive card, and a readied Nazar/Nullify Cost nullifies the
-whole thing (both effects at once, since they're never split).
+Composed Aggressive card, and a readied Nullify/Reflect/Resist/Nullify
+Cost resolves against the whole thing (both effects at once, since
+they're never split).
 
 **One real, stated simplification remains:** Target-All Ultimates still
 don't reach `declareAction` at all — `playUltimateCard`'s Target-All
@@ -590,14 +642,31 @@ can even be checked, to avoid overlapping modal state) is a genuinely
 bigger, separate lift than the single-target fix above, not built here.
 Nor does either reach a Talisman's per-turn AoE tick, which isn't an
 "opponent's action" in the same instantaneous sense at all (it's a
-positional passive tick, not a declared action) — a readied Nazar will
-not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
-architecturally different from the other three: it targets a specific
-placed Talisman directly (same `targetsTalisman` click-a-cell path as
-Destroy/Capture, restricted to enemy-owned Talismans), marking it
-`nullified` so it stays on the board but stops resolving its AoE effect
-— not a reactive trigger at all (no `trigger` field), so none of the
-above interrupt-window caveats apply to it.
+positional passive tick, not a declared action) — a readied Nullify will
+not save you from a Target-All Ultimate or a Trap Talisman.
+
+**Resist's category mapping is a stated interpretation, not GDD-enumerated.**
+The GDD names Resist's four categories ("Damage, Control, Movement,
+Ability Effects") but never states which operator belongs to which. This
+build sorts every Aggressive-family operator into exactly one category
+via `RESIST_OPERATOR_CATEGORY`, on the following stated reasoning:
+
+| Category | Operators | Reasoning |
+|---|---|---|
+| Damage | Inflict, and a Weapon Strike itself (checked directly, not via this table, since a Strike isn't a card) | The GDD's only operator whose entire effect *is* damage |
+| Control | Afflict, Hinder, Occlude, Disarm, Blind, Exhaust | Reduces a stat governing what the target can *do* (Initiative, Strike, Range) rather than where it can go or its survivability |
+| Movement | Obstruct, Root, Displace | Reduces or forces the target's position/mobility specifically |
+| Ability Effects | Seal, Jumbie, Banish, Glimpse, Scry, Crush, Void, Siphon, Drain, Impose, Destroy, Capture | Everything else Aggressive-family that manipulates cards, Talismans, or Passives rather than a movement/combat stat |
+
+Resist grants immunity to whichever category was chosen at ready time, so
+a category choice made against an incoming Inflict does nothing against a
+follow-up Afflict — this is deliberately narrower than the old Mojo
+mechanic it replaced, which nullified one specific Talisman regardless of
+category. **Mojo's Talisman-nullify job itself has no replacement in the
+corrected ruleset — it's a removed capability, not a renamed one**; the
+only operators that still target a placed Talisman directly are Destroy
+and Capture (same `targetsTalisman` click-a-cell path, restricted to
+enemy-owned Talismans), both Aggressive, not Defensive.
 
 **Supportive** (ally only): Give Mov, Give Strike, Heal (+Life), Give Ini,
 Give Range, Transpose (swap two characters' positions), Accelerate (grant
@@ -779,10 +848,10 @@ in for her actual Ultimate, Blade Waltz (multi-target AoE Strike — not
 buildable without Talisman-style area targeting on a Strike).
 
 **NLDR** (Rook/Infiltrator, GDD §12.3) — `card-destroy`, `card-inflict`,
-`card-mojo`, `card-transpose`, `card-occlude`, `card-jumbie`,
-`card-parry`, `card-shield`, `card-banish`, `ult-cataclysm`. Approximates
+`card-nullify`, `card-transpose`, `card-occlude`, `card-jumbie`,
+`card-reflect`, `card-shield`, `card-banish`, `ult-cataclysm`. Approximates
 her Talisman-centric identity directly (Eldritch Disruption → Destroy +
-Inflict, Eldritch Barrier → Mojo/Nullify); `ult-cataclysm` (Target All +
+Inflict, Eldritch Barrier → Nullify); `ult-cataclysm` (Target All +
 Auto-Win, which already resolves Disarm via its own `.effects` array —
 one of the two operators retiered to Ultimate-only this pass) stands in
 for Eldritch Apocalypse, her actual Ultimate (AoE Talisman-range boost
@@ -792,12 +861,12 @@ and no longer exists as a standalone card; swapped for Inflict, matching
 Eldritch Disruption's own stated direct-damage half.
 
 **Ala zyu Haad** (Bishop/Saboteur, GDD §12.1) — `card-banish`,
-`card-parry`, `card-nazar`, `card-shield`, `card-accelerate`,
+`card-reflect`, `card-nullify`, `card-shield`, `card-accelerate`,
 `card-afflict`, `card-giveIni`, `card-glimpse`, `card-jumbie`, and a real,
 newly-authored Ultimate: **`ult-nhul-particul`** ("Nhül Partikül": Scry
 AND Seal — added to `ULTIMATE_CARDS` in both documents). Several of her
 named abilities map onto existing operators directly rather than
-approximately: Sea of Dirac → Banish, Counter Space → Parry, Fractured
+approximately: Sea of Dirac → Banish, Counter Space → Reflect, Fractured
 Void → Shield, Accelerate → Accelerate. Her actual Open Wonderland
 Activation is "Daedalus Tesseract only" — Daedalus Tesseract is a named
 Ultimate built from Root + Seal + an IF/THEN modifier and remains
