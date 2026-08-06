@@ -11,6 +11,14 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.13.0 — 2026-08-05 — Position step's copy corrected: it's a creation-
+                          time default/display value only now, not a
+                          permanent lock — GDD §4.3 has Arena choose the
+                          real, stat-granting Position fresh at
+                          deployment each match. No functional change in
+                          this doc (Codex never computed the bonus
+                          itself); see Arena's matching entry for the
+                          actual setup-screen and makeUnit() rework.
   v0.12.0 — 2026-08-05 — Afflict split from Hinder/Obstruct/Occlude's
                           'stat-reduce' kind into its own
                           'stat-reduce-1to1' (matches GDD §11.1's "Life
@@ -466,7 +474,7 @@
         <!-- Step 2 — Position -->
         <div class="sheet" id="s2">
           <h2>Choose a Position</h2>
-          <div class="sub">A team of 3 needs exactly one of each — this Esori's role determines its second stat bonus.</div>
+          <div class="sub">A default/recommended role, shown on this Esori's sheet — a team of 3 needs exactly one of each. Per GDD §4.3, the actual Position (and its stat bonus) is chosen fresh at the start of each battle in Arena's setup screen, not locked to whatever's picked here; the same Tulpa can be deployed as a different Position in a different match.</div>
           <div class="opt-group" id="position-group"></div>
           <div class="nav-bar">
             <span class="nav-note">Step 3 of 6 · Position</span>

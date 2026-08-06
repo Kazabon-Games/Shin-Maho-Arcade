@@ -11,6 +11,27 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.14.0 — 2026-08-05 — Position chosen at deployment, not locked at
+                          creation (GDD §4.3 correction). renderTeamPicker
+                          now offers every roster Esori in all three
+                          Position slots (previously filtered to only
+                          whichever slot matched the Esori's saved
+                          .position); new selPosition() enforces that one
+                          Esori can't fill two slots on the same team —
+                          picking it into a new slot clears any other slot
+                          it was previously selected into. makeUnit() now
+                          takes an explicit deployedPosition argument and
+                          computes stats from that (via a shallow-cloned
+                          {...esori, position} passed to
+                          computeBattleStats), not esori.position — the
+                          same Tulpa now genuinely gets a different stat
+                          bonus depending which slot it's deployed into
+                          this match, per the GDD's own stated intent
+                          ("the same Tulpa may be deployed in different
+                          Positions across different matches"). The AI
+                          preset squad is unaffected (fixed data, no
+                          setup screen — always deploys as its own stated
+                          Position).
   v0.13.0 — 2026-08-05 — GDD-correct stat-reduction ratios. Afflict was
                           miscategorized under the same flat -1 'stat-
                           reduce' kind as Hinder/Obstruct/Occlude — split
@@ -400,6 +421,7 @@
   .opt-btn.sel{border-color:var(--teal);background:rgba(45,217,196,0.1);color:var(--teal);}
   .position-slot{margin-bottom:.7rem;}
   .position-slot > .slot-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-soft);margin-bottom:.3rem;}
+  .slot-hint{text-transform:none;letter-spacing:0;color:var(--dim,var(--text-soft));opacity:.8;font-size:.68rem;}
 
   /* ---- setup ---- */
   .team-columns{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
@@ -595,9 +617,9 @@ const CLASSES = {
   bishop: { label:'Bishop', weapons:['staff','wand'] },
 };
 const POSITIONS = {
-  vanguard: { label:'Vanguard' },
-  saboteur: { label:'Saboteur' },
-  infiltrator: { label:'Infiltrator' },
+  vanguard: { label:'Vanguard', bonus:'+20 Life' },
+  saboteur: { label:'Saboteur', bonus:'+20 Initiative' },
+  infiltrator: { label:'Infiltrator', bonus:'+2 Controlled Talisman' },
 };
 const WEAPONS = {
   sword: { label:'Sword' }, spear: { label:'Spear' },
@@ -857,19 +879,27 @@ function loadLocalRoster(){
 
 function eligiblePool(){ return [...localRoster, ...guestRoster]; }
 
+// Position is chosen fresh per match, not locked to whatever a Tulpa was
+// saved with at creation — GDD §4.3: "the same Tulpa may be deployed in
+// different Positions across different matches." Every roster Esori is
+// offered in every one of the 3 slots (not filtered by their saved
+// .position, which Codex now keeps only as a creation-time default/
+// display value); selPosition below is what actually enforces that one
+// Esori can't fill two slots on the same team at once.
 function renderTeamPicker(containerId){
   const container = document.getElementById(containerId);
   const pool = eligiblePool();
+  if (!pool.length){
+    container.innerHTML = `<p class="empty-note">No Esori available yet.</p>`;
+    refreshSetupGate();
+    return;
+  }
   container.innerHTML = Object.entries(POSITIONS).map(([posKey, pos]) => {
-    const candidates = pool.filter(e => e.position === posKey);
-    if (!candidates.length){
-      return `<div class="position-slot"><div class="slot-label">${pos.label}</div><p class="empty-note">No ${pos.label} available yet.</p></div>`;
-    }
     const groupId = `${containerId}-${posKey}`;
     return `<div class="position-slot">
-      <div class="slot-label">${pos.label}</div>
+      <div class="slot-label">${pos.label} <span class="slot-hint">— ${pos.bonus || ''}, applied live for this match only</span></div>
       <div class="opt-group" id="${groupId}">
-        ${candidates.map(e => `<button class="opt-btn" data-esori-id="${e.esoriId}" onclick="selOpt('${groupId}', this)">
+        ${pool.map(e => `<button class="opt-btn" data-esori-id="${e.esoriId}" onclick="selPosition('${containerId}', '${posKey}', this)">
           <strong>${escapeHtml(e.name)}</strong>
           <span class="opt-sub">${CLASSES[e.class]?.label || e.class} · ${WEAPONS[e.weapons?.main]?.label || '—'}</span>
         </button>`).join('')}
@@ -878,8 +908,15 @@ function renderTeamPicker(containerId){
   }).join('');
   refreshSetupGate();
 }
-function selOpt(groupId, btn){
-  document.querySelectorAll(`#${groupId} .opt-btn`).forEach(b => b.classList.remove('sel'));
+function selPosition(containerId, posKey, btn){
+  const esoriId = btn.dataset.esoriId;
+  // The same Esori can't fill two Position slots on one team at once —
+  // clear it out of any other slot it was previously picked into.
+  Object.keys(POSITIONS).forEach(otherKey => {
+    if (otherKey === posKey) return;
+    document.querySelector(`#${containerId}-${otherKey} .opt-btn[data-esori-id="${esoriId}"]`)?.classList.remove('sel');
+  });
+  document.querySelectorAll(`#${containerId}-${posKey} .opt-btn`).forEach(b => b.classList.remove('sel'));
   btn.classList.add('sel');
   refreshSetupGate();
 }
@@ -1022,14 +1059,22 @@ function beginDeployment(){
   const teamAPicks = pickedTeam('teamA-picker');
   const teamBPicks = opponentMode === 'local2p' ? pickedTeam('teamB-picker') : null;
 
-  const makeUnit = (esori, team, controller) => {
-    const stats = computeBattleStats(esori);
+  const makeUnit = (esori, team, controller, deployedPosition) => {
+    // deployedPosition is the slot this Esori was assigned to in THIS
+    // match's setup screen — GDD §4.3: Position (and its stat bonus) is
+    // chosen fresh per battle, not permanently tied to whatever the
+    // Tulpa was saved with at creation. Falls back to esori.position for
+    // callers that don't have a real deployment slot to pass (the AI
+    // preset squad, built directly from fixed data with no setup screen
+    // of its own).
+    const position = deployedPosition || esori.position;
+    const stats = computeBattleStats({ ...esori, position });
     // Fall back to the library's own first-10, same "don't refuse to load
     // over a missing optional field" rule MONOLITH_ESORI_SCHEMA.md already
     // states for Arena importing a deck-less Esori.
     const startingDeck = (esori.deck && esori.deck.length) ? esori.deck.slice() : CARD_LIBRARY.slice(0, 10).map(c => c.id);
     return {
-      esoriId: esori.esoriId, name: esori.name, class: esori.class, position: esori.position,
+      esoriId: esori.esoriId, name: esori.name, class: esori.class, position,
       team, controller,
       x: null, y: null, deployed: false,
       maxLife: stats.life, life: stats.life,
@@ -1060,10 +1105,10 @@ function beginDeployment(){
     };
   };
 
-  const teamA = Object.values(teamAPicks).map(e => makeUnit(e, 'A', 'human'));
+  const teamA = Object.entries(teamAPicks).map(([posKey, e]) => makeUnit(e, 'A', 'human', posKey));
   const teamB = opponentMode === 'ai'
-    ? PRESET_AI_SQUAD.map(e => makeUnit(e, 'B', 'ai'))
-    : Object.values(teamBPicks).map(e => makeUnit(e, 'B', 'human'));
+    ? PRESET_AI_SQUAD.map(e => makeUnit(e, 'B', 'ai', e.position)) // fixed preset, no setup screen — always deploys as its own stated Position
+    : Object.entries(teamBPicks).map(([posKey, e]) => makeUnit(e, 'B', 'human', posKey));
 
   battle = {
     units: [...teamA, ...teamB],

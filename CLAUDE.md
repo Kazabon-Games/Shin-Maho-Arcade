@@ -91,14 +91,18 @@ short on purpose.
   GDD-driven balance change, since a base-cost Afflict now takes 20
   Initiative instead of 1) and stat-reduce-20to1 (Hinder/Obstruct/
   Occlude, `max(1, floor(cost/20))` — no visible change at base cost,
-  only diverges once a card's cost crosses 40). Still open: Spear's
-  two-target crit, position-selection-at-deployment instead of locked-
-  at-creation, and porting Build 3's generic Defensive-trigger
-  (`declareAction`) system in place of the current two-hardcoded-
-  interception-point version — Wonderland v2 reused Build 3's *condition-
-  tracking* idea but not that particular piece. The GDD's Section 12 also
-  has three fully rule-audited canon Grimoires (Ala zyu Haad, Rykndu,
-  NLDR) worth seeding as real characters — not done yet.
+  only diverges once a card's cost crosses 40). Fourth pass fixed Position
+  per GDD §4.3: a Tulpa's stat bonus (Vanguard/Saboteur/Infiltrator) is now
+  chosen fresh at deployment, in Arena's own setup screen, not locked to
+  whatever was picked at creation — the same Tulpa can be Vanguard in one
+  match and Saboteur in the next; Codex's Position step still records a
+  default/recommended role shown on the sheet, but it's advisory only.
+  Still open: Spear's two-target crit, and porting Build 3's generic
+  Defensive-trigger (`declareAction`) system in place of the current
+  two-hardcoded-interception-point version — Wonderland v2 reused Build
+  3's *condition-tracking* idea but not that particular piece. The GDD's
+  Section 12 also has three fully rule-audited canon Grimoires (Ala zyu
+  Haad, Rykndu, NLDR) worth seeding as real characters — not done yet.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

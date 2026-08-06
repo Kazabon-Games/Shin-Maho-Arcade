@@ -248,15 +248,20 @@ async function chebyshevMoveToward(page){
   await page.goto(ARENA_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof Arena !== 'undefined' && typeof Arena._test !== 'undefined');
   ok(consoleErrors.filter(e => !e.includes('Codex')).length >= 0, 'Arena loaded'); // no-op sentinel kept for symmetry with section 1's shape
+  // Position is chosen at deployment now (GDD §4.3), not read from a saved
+  // default — every Esori is eligible for every slot, so the picker lists
+  // all 3 roster entries in each of the 3 position groups (3x3 = 9), not
+  // one apiece. selPosition's cross-slot clearing keeps an actual pick to
+  // one slot per Esori at a time.
   const teamAOptions = await page.locator('#teamA-picker .opt-btn').count();
-  ok(teamAOptions === 3, 'Arena sees all 3 Esori from the shared roster (one per Position)');
+  ok(teamAOptions === 9, 'Arena lists all 3 Esori from the shared roster in each of the 3 position slots');
 
   // ============================================================
   console.log('8. Deployment: no-op misclicks, zone enforcement');
   // ============================================================
-  await page.click('#teamA-picker .opt-btn:has-text("Vann")');
-  await page.click('#teamA-picker .opt-btn:has-text("Sabo")');
-  await page.click('#teamA-picker .opt-btn:has-text("Infi")');
+  await page.click('#teamA-picker-vanguard .opt-btn:has-text("Vann")');
+  await page.click('#teamA-picker-saboteur .opt-btn:has-text("Sabo")');
+  await page.click('#teamA-picker-infiltrator .opt-btn:has-text("Infi")');
   await page.click('#opponent-mode-group .opt-btn:has-text("AI Squad")');
   await page.click('#begin-deploy-btn');
   await page.waitForSelector('#screen-deploy', { state: 'visible' });

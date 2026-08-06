@@ -124,6 +124,23 @@ controlling 3+ Talismans at once) is built around Talisman count on the
 field, not carry capacity. Pack is fixed by base value and Equipment
 only, unaffected by Position, per the same GDD section.
 
+**Position is chosen fresh at deployment, not locked at creation
+(Master GDD v2.0 §4.3):** "Position bonuses are chosen at the start of
+battle and apply only for that match — they are not saved permanently to
+a Tulpa's Grimoire, since the same Tulpa may be deployed in different
+Positions across different matches." A prior pass of this build got this
+backwards: Codex saved one fixed Position per Tulpa forever, and Arena's
+team-setup screen only let a Tulpa fill the one slot matching that saved
+value. Corrected — Codex's Position step is now a creation-time default/
+display value only (shown on the roster card, not gating anything), and
+Arena's setup screen offers every roster Esori in all three Position
+slots, letting the player assign any of their three chosen Tulpa to any
+of the three required roles for that specific match (one Esori can't
+fill two slots on the same team at once). The stat bonus is computed
+from the *deployed* slot, not the saved default — `makeUnit()` takes an
+explicit `deployedPosition` argument now instead of reading
+`esori.position`.
+
 ## Weapons
 
 Equipping a weapon costs 5 Initiative (main weapon starts equipped free);
