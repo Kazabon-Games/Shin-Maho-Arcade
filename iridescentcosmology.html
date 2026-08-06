@@ -8325,6 +8325,15 @@ const Bugrep = (function(){
    anything drawn there would dim into nothing) and createConicGradient
    for the sweep glow — both were sound, only the shape drawn on top of
    them was the problem.
+   Correction (2026-08-06, capability-audit pass): the changelog entry
+   above this one also claims a Path2D object ("geometry defined once
+   instead of rebuilt every frame") for this crest. That was never
+   actually shipped -- the draw() function below rebuilds its path via
+   beginPath()/arc() every animation frame, confirmed by grep (zero
+   `new Path2D` anywhere in this file). Not fixed in this pass (a real
+   Path2D cache here would be a genuine, separate performance change,
+   not a documentation correction) -- noted here so the claim isn't
+   trusted again without checking.
 ===================================================================== */
 (function(){
   const cv = document.getElementById('crestCanvas');
