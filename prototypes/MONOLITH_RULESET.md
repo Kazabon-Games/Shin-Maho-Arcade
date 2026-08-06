@@ -382,33 +382,85 @@ incoming Aggressive), Parry (reflect Weapon Strike damage), Mojo (nullify
 a specific Talisman's effect), Nullify Cost (negate the Initiative cost of
 a named ability/category).
 
-**Defensive implementation status:** all four are implemented, via a
-lightweight "readied ability" mechanism rather than a full generic
-interrupt/priority system. Playing Nazar, Parry, or Nullify Cost is a
-self-cast (no board target) that *readies* it — pushed onto the unit's
-own `readiedDefensives` list, costing the normal 20 Ini immediately, with
-no persistent-slot limit the way Passive's "one at a time" is explicit
-about (any number can be readied at once). It's consumed later, off the
-*opponent's* subsequent matching action, at one of exactly two
-interception points: `finalizeCast` (an incoming single-target Aggressive
-card — nullifies it; for Nullify Cost, also refunds the caster's spent
-Initiative, the one thing distinguishing it from Nazar) and `tryStrike`
-(an incoming Weapon Strike — Parry reflects the damage onto the attacker
-instead of the defender). **Two real, stated simplifications:** (1)
-Nullify Cost is scoped to the same "incoming Aggressive" trigger as
-Nazar rather than the literal "a *named* ability/category" — a picker
-for choosing which specific ability to ward against at ready-time is a
-separate, larger scope this pass doesn't build; (2) neither reaches a
-Target-All Ultimate's resolution (which doesn't route through
-`finalizeCast`) or a Talisman's per-turn AoE tick (which isn't an
-"opponent's action" in the same instantaneous sense) — a readied Nazar
-will not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
-architecturally different from the other three: it targets a specific
-placed Talisman directly (same `targetsTalisman` click-a-cell path as
-Destroy/Capture, restricted to enemy-owned Talismans), marking it
-`nullified` so it stays on the board but stops resolving its AoE effect
-— not a reactive trigger at all, so none of the above interrupt-window
-caveats apply to it.
+**Defensive implementation status:** all four are implemented. Playing
+Nazar, Parry, or Nullify Cost is a self-cast (no board target) that
+*readies* it — pushed onto the unit's own `readiedDefensives` list,
+costing the normal 20 Ini immediately, with no persistent-slot limit the
+way Passive's "one at a time" is explicit about (any number can be
+readied at once). It's consumed later, off the *opponent's* subsequent
+matching action, via `declareAction(type, u, target, onResolve)` — a
+**generic, trigger-typed interrupt system** (ported, in spirit, from a
+richer unused prior prototype build's own `declareAction()`; this
+engine's readied-ability data model is its own, not a verbatim copy).
+Two call sites use it today, functionally identical content to before
+this port: `finalizeCast` declares `'aggressive-played'` (an incoming
+single-target Aggressive card — nullifies it; for Nullify Cost, also
+refunds the caster's spent Initiative, the one thing distinguishing it
+from Nazar) and `tryStrike` declares `'weapon-strike-declared'` per hit
+(Parry reflects the damage onto the attacker instead of the defender —
+including separately for each of Spear's two cells, see that section).
+
+The real behavioral difference from the version this replaced: when the
+*defending* unit is human-controlled and has **two or more** different
+readied responses matching the same trigger (e.g. both Nazar and Nullify
+Cost readied at once against an incoming Aggressive card), a response
+window (`#defensive-response-overlay`) now opens and asks which one to
+use — or to decline and let the action resolve unopposed, holding both
+for a later trigger. The old version silently auto-picked one via array
+order without ever asking. With 0 or 1 matching readied response, or an
+AI-controlled defender, `declareAction` still resolves immediately with
+no UI pause — the exact same behavior every prior version already had,
+so nothing changes for the overwhelmingly common case.
+
+**`DEFENSIVE_TRIGGERS` — the full 8-entry vocabulary**, transcribed from
+the GDD's own Trigger Reference table (see `monolith_operators.html`'s
+copy, uploaded during intake — not committed to this repo):
+
+| `trigger` | Fires when | Wired to a real call site? |
+|---|---|---|
+| `aggressive-played` | Opponent plays an Aggressive card | ✅ `finalizeCast` — Nazar, Nullify Cost |
+| `weapon-strike-declared` | Opponent declares a Weapon Strike | ✅ `tryStrike` — Parry |
+| `movement-declared` | Opponent declares Movement | ❌ not wired |
+| `talisman-placement-declared` | Opponent declares Talisman placement | ❌ not wired |
+| `card-drawn` | Opponent draws a card | ❌ not wired |
+| `ability-played-any` | Opponent plays any card, any family | ❌ not wired |
+| `defensive-played` | Opponent plays a Defensive card | ❌ not wired |
+| `supportive-played` | Opponent plays a Supportive card | ❌ not wired |
+
+Only the first two have both a real operator using them *and* a natural
+single-target framing: Nazar/Parry/Nullify Cost all defend the one
+specific unit the action is against, matching this engine's
+per-unit-scoped `readiedDefensives` model exactly. The other six are
+named, documented vocabulary with no call site wired to them yet, for two
+different reasons, not one oversight: (1) Movement Declared, Talisman
+Placement Declared, Card Drawn, and Ability Played (Any) are declared
+actions with **no specific defending unit** — the prior prototype build
+this was ported from scanned every opposing unit's *hand* for a match
+instead of one target's readied list, a real architectural difference
+this engine's model doesn't share, and reproducing that team-wide-scan
+shape correctly is a separate, larger design question; (2) Defensive
+Played and Supportive Played *could* fit the single-target shape, but
+have zero authored operators to validate the wiring against (no
+Counter/Sever/Disrupt-equivalent exists in `OPERATORS`). Adding a call
+site with no real content behind it risks guessing at behavior nothing
+has actually specified — the same "documented, bounded subset" standard
+this project holds Ultimate cards and Wonderland v2 to elsewhere.
+
+**Two real, stated simplifications carried over unchanged from the
+version this replaced:** (1) Nullify Cost is scoped to the same
+`aggressive-played` trigger as Nazar rather than the literal "a *named*
+ability/category" — a picker for choosing which specific ability to ward
+against at ready-time is a separate, larger scope this pass doesn't
+build; (2) neither reaches a Target-All Ultimate's resolution (which
+doesn't route through `finalizeCast`) or a Talisman's per-turn AoE tick
+(which isn't an "opponent's action" in the same instantaneous sense) — a
+readied Nazar will not save you from a Target-All Ultimate or a Trap
+Talisman. Mojo is architecturally different from the other three: it
+targets a specific placed Talisman directly (same `targetsTalisman`
+click-a-cell path as Destroy/Capture, restricted to enemy-owned
+Talismans), marking it `nullified` so it stays on the board but stops
+resolving its AoE effect — not a reactive trigger at all (no `trigger`
+field), so none of the above interrupt-window caveats apply to it.
 
 **Supportive** (ally only): Give Mov, Give Strike, Heal (+Life), Give Ini,
 Give Range, Transpose (swap two characters' positions), Accelerate (grant

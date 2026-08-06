@@ -11,6 +11,36 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.17.0 — 2026-08-06 — Ported the generic Defensive/Reactive interrupt
+                          system (declareAction(), in spirit — this
+                          engine's own readied-ability data model, not a
+                          verbatim copy — from a richer unused prior
+                          prototype build), replacing the two hardcoded
+                          `readiedDefensives.findIndex(...)` checks in
+                          finalizeCast and tryStrike with one shared,
+                          trigger-typed path any future call site can plug
+                          into. New DEFENSIVE_TRIGGERS constant names the
+                          GDD's full 8-entry Trigger Reference vocabulary;
+                          Nazar/Nullify Cost now declare 'aggressive-
+                          played', Parry declares 'weapon-strike-declared'
+                          (the other 6 triggers are named but not wired to
+                          a call site yet — no defending-unit shape for 4
+                          of them, no authored operator for the other 2;
+                          see MONOLITH_RULESET.md). Real behavioral change:
+                          a human-controlled defender with 2+ different
+                          readied responses matching the same trigger (e.g.
+                          both Nazar and Nullify Cost readied against an
+                          incoming Aggressive) now gets an actual choice
+                          via a new #defensive-response-overlay modal —
+                          use one, or decline and hold both — instead of
+                          the old silent array-order auto-pick. 0-or-1-
+                          match cases (everything today, short of that
+                          specific double-ready) resolve exactly as
+                          before, synchronously, no UI pause. finalizeCast
+                          and resolveStrikeHit (tryStrike's per-hit
+                          resolver, including Spear's two separate hits)
+                          both restructured into onResolve-callback shape
+                          to support the pause.
   v0.16.0 — 2026-08-06 — Spear's Critical Hit implemented (GDD §4.5):
                           declaring a Strike at Spear's max range (cheb=2,
                           straight line) now also strikes whatever's in
@@ -450,6 +480,8 @@
   .theme-toggle{background:var(--panel-bg-2);border:1.5px solid var(--border);color:var(--text);border-radius:8px;padding:.4rem .7rem;cursor:pointer;font-size:.8rem;}
 
   .panel{background:var(--panel-bg);border:1px solid var(--border);border-radius:12px;padding:1.1rem;margin-bottom:1.1rem;}
+  .response-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:1rem;}
+  .response-card{max-width:420px;width:100%;margin-bottom:0;box-shadow:0 8px 32px rgba(0,0,0,0.4);}
   .btn{background:var(--teal);border:1.5px solid var(--teal);color:#08201c;font-weight:700;border-radius:8px;padding:.55rem .95rem;cursor:pointer;font-size:.83rem;}
   .btn.secondary{background:transparent;color:var(--text);border-color:var(--border);}
   .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger);}
@@ -624,6 +656,14 @@
     </div>
   </div>
 
+  <!-- ============ DEFENSIVE RESPONSE WINDOW — see declareAction() ============ -->
+  <div id="defensive-response-overlay" class="response-overlay" style="display:none;">
+    <div class="panel response-card">
+      <h3 style="margin-top:0;font-size:.9rem;" id="defensive-response-title"></h3>
+      <div class="action-row" id="defensive-response-options"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -760,13 +800,16 @@ const OPERATORS = {
   destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
   capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
 
-  // Defensive/Reactive — see monolith-codex.html's copy of this table for
-  // the full note on the "readied ability" mechanism used here instead of
-  // a generic interrupt system.
-  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive' },
-  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike' },
+  // Defensive/Reactive — readied ahead of time (readyDefensiveCard), then
+  // consumed later by declareAction() when an opponent action matching
+  // `trigger` targets this unit specifically — see DEFENSIVE_TRIGGERS and
+  // the big comment above declareAction() for the full generic-interrupt
+  // system these route through. Mojo has no `trigger`: it's not reactive
+  // at all, see its own kind's comment.
+  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
+  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
   mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
-  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund' },
+  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -1603,13 +1646,18 @@ function applyLifeHeal(target, amount){
   target.life = Math.min(target.maxLife, target.life + amount);
 }
 // Resolves one Strike hit against a single target — defeated-removal,
-// Critical damage, and Parry interception, exactly as tryStrike always
-// resolved a single-target hit. Factored out so Spear's two-cell Strike
-// (below) can call it twice against two different targets in one
-// declaration without duplicating this logic. forceCrit lets the caller
-// override the normal per-weapon crit check — Spear's far-cell hit uses
-// this to become a Critical when its near-cell hit connected, per GDD §4.5.
-function resolveStrikeHit(u, target, forceCrit){
+// Critical damage, and Defensive interception (declareAction, below),
+// exactly as tryStrike always resolved a single-target hit. Factored out
+// so Spear's two-cell Strike can call it twice against two different
+// targets in one declaration without duplicating this logic. forceCrit
+// lets the caller override the normal per-weapon crit check — Spear's
+// far-cell hit uses this to become a Critical when its near-cell hit
+// connected, per GDD §4.5. onDone is called once this hit (and any
+// Defensive response to it) has fully resolved — declareAction may
+// pause for a human choice before that happens, so the caller can't just
+// run code after calling this; see tryStrike below for how the two
+// possible hits get sequenced through it.
+function resolveStrikeHit(u, target, forceCrit, onDone){
   if (target.defeated){
     // GDD §8.2: "declares a Weapon Strike against them while in
     // Defeated State... removes them" — the act of striking removes
@@ -1620,21 +1668,24 @@ function resolveStrikeHit(u, target, forceCrit){
     target.removed = true;
     logMsg(`${u.name} strikes ${target.name} and removes them from the battle permanently.`, u.team);
     if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+    onDone();
     return;
   }
-  const crit = forceCrit || isCriticalStrike(u.weaponMain, target.x-u.x, target.y-u.y) || hasWonderlandEffect(u, 'all-crits');
-  const dmg = crit ? u.critDmg : u.dmg;
-  const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
-  if (parryIdx !== -1){
-    target.readiedDefensives.splice(parryIdx, 1);
-    logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
-    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
-    applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
-    return;
-  }
-  logMsg(`${u.name} strikes ${target.name}${crit?' — Critical!':''} for ${dmg}.`, u.team);
-  if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
-  applyLifeDamage(target, dmg);
+  declareAction('weapon-strike-declared', u, target, (def) => {
+    const crit = forceCrit || isCriticalStrike(u.weaponMain, target.x-u.x, target.y-u.y) || hasWonderlandEffect(u, 'all-crits');
+    const dmg = crit ? u.critDmg : u.dmg;
+    if (def && def.operatorId === 'parry'){
+      logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
+      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
+      applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
+      onDone();
+      return;
+    }
+    logMsg(`${u.name} strikes ${target.name}${crit?' — Critical!':''} for ${dmg}.`, u.team);
+    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+    applyLifeDamage(target, dmg);
+    onDone();
+  });
 }
 function tryStrike(u, x, y){
   if (u.hasStruckThisTurn) return;
@@ -1647,7 +1698,10 @@ function tryStrike(u, x, y){
   // that 1st-cell hit connects, the declared 2nd-cell target's own hit is
   // forced to Critical. Only relevant when the far cell has an actual
   // target; an empty far cell falls through to the talisman/no-op
-  // handling below like any other weapon.
+  // handling below like any other weapon. forceCrit is decided purely by
+  // whether a live enemy occupied the near cell — a Defensive response
+  // there (e.g. the near target Parrying) doesn't change whether "the
+  // 1st cell target was hit" for this purpose; it was still struck.
   const isSpearFarCell = target && u.weaponMain === 'spear' && chebyshev(dx, dy) === 2 && isStraightLine(dx, dy);
   const nearTarget = isSpearFarCell
     ? battle.units.find(t => t.x === u.x + dx/2 && t.y === u.y + dy/2 && t.team !== u.team && !t.removed)
@@ -1659,11 +1713,13 @@ function tryStrike(u, x, y){
       u.openWonderlandActive = false;
       logMsg(`${u.name}'s Wonderland closes — a Weapon Strike was declared.`, u.team);
     }
-    if (nearTarget) resolveStrikeHit(u, nearTarget, false);
-    resolveStrikeHit(u, target, !!nearTarget);
-    renderBattle();
-    const w = checkWin();
-    if (w) finishBattle(w);
+    const finish = () => {
+      renderBattle();
+      const w = checkWin();
+      if (w) finishBattle(w);
+    };
+    if (nearTarget) resolveStrikeHit(u, nearTarget, false, () => resolveStrikeHit(u, target, true, finish));
+    else resolveStrikeHit(u, target, false, finish);
     return;
   }
   // "Persist until struck (declaring a Strike against the cell destroys
@@ -1830,12 +1886,11 @@ function activatePassiveCard(u, card){
 /* ============================================================
    DEFENSIVE/REACTIVE — Nazar, Parry, Nullify Cost. Readying is
    self-cast (no board target, same shape as a Passive activation), but
-   unlike a Passive it doesn't take effect now — it waits, consumed the
-   next time a matching opponent action is intercepted (see finalizeCast
-   for Nazar/Nullify Cost, tryStrike for Parry). Any number can be
-   readied at once (source text doesn't cap it the way Passive's "one at
-   a time" is explicit about), so this is a plain array, not a single
-   slot.
+   unlike a Passive it doesn't take effect now — it waits, consumed later
+   by declareAction() (below) the next time an opponent action matching
+   its `trigger` targets this unit. Any number can be readied at once
+   (source text doesn't cap it the way Passive's "one at a time" is
+   explicit about), so this is a plain array, not a single slot.
    ============================================================ */
 function readyDefensiveCard(u, card, cost){
   u.initiative -= cost;
@@ -1843,6 +1898,89 @@ function readyDefensiveCard(u, card, cost){
   u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id });
   logMsg(`${u.name} readies ${OPERATORS[card.operatorId].name}.`, u.team);
   renderBattle();
+}
+/* ============================================================
+   DEFENSIVE/REACTIVE — GENERIC INTERRUPT SYSTEM. Ported (in spirit, not
+   verbatim — this build's readied-ability data model is its own, not the
+   prior prototype's hand-based one) from a richer, unused prior prototype
+   build's declareAction() pattern, replacing what used to be two separate
+   hardcoded `readiedDefensives.findIndex(...)` checks (one duplicated in
+   finalizeCast, one in tryStrike) with one shared, trigger-typed path.
+
+   DEFENSIVE_TRIGGERS below is the full 8-entry vocabulary from the GDD's
+   own Trigger Reference table — every Defensive operator's `trigger`
+   field must name one of these. Only 2 of the 8 have a real operator
+   using them today (aggressive-played: Nazar/Nullify Cost;
+   weapon-strike-declared: Parry) — same actual content as before this
+   port, not a claim of full 8-trigger coverage. The other 6 are named,
+   documented vocabulary with no call site wired to them yet: Movement
+   Declared/Talisman Placement Declared/Card Drawn/Ability Played (Any)
+   aren't naturally single-target the way this engine's readied-ability
+   model requires (they're declared actions with no specific defending
+   unit — the prior prototype build scanned every opposing unit's hand
+   instead, a real architectural difference, not an oversight), and
+   Defensive/Supportive Played have no authored operator to validate
+   against yet. See MONOLITH_RULESET.md's Defensive/Reactive section.
+
+   declareAction(type, u, target, onResolve) is what a call site uses:
+   `u` is the acting unit, `target` is the specific unit the action is
+   against (the only kind of target this system supports — see above),
+   and onResolve(def) is called with either the readied-defensive record
+   that intercepted the action, or null if nothing did. Resolves
+   synchronously (onResolve called before declareAction returns) whenever
+   there's 0 or 1 matching readied response, or the defender is
+   AI-controlled (nothing for an AI to be asked) — this is the exact same
+   behavior every prior version of this system already had, so any call
+   site that only ever sees 0-or-1 matches (which is every one of them
+   today, since Nazar/Nullify Cost/Parry never overlap on the same
+   trigger except Nazar+Nullify Cost together) never notices the
+   difference. It only pauses for a real human choice — opening
+   #defensive-response-overlay — when the defender is human-controlled
+   AND has 2+ different readied responses to the SAME trigger (e.g. both
+   Nazar and Nullify Cost readied at once against an incoming Aggressive
+   card): a real behavioral improvement over the old code, which silently
+   auto-picked via array order without ever asking.
+   ============================================================ */
+const DEFENSIVE_TRIGGERS = {
+  'movement-declared': 'Movement Declared',
+  'weapon-strike-declared': 'Weapon Strike Declared',
+  'aggressive-played': 'Aggressive Ability Played',
+  'defensive-played': 'Defensive Ability Played',
+  'supportive-played': 'Supportive Ability Played',
+  'card-drawn': 'Card Drawn',
+  'talisman-placement-declared': 'Talisman Placement Declared',
+  'ability-played-any': 'Ability Played (Any)',
+};
+let pendingDefenseResponse = null; // { matches, onResolve } while #defensive-response-overlay is open
+function declareAction(type, u, target, onResolve){
+  const matches = (target?.readiedDefensives || [])
+    .map((d, idx) => ({ d, idx }))
+    .filter(({ d }) => OPERATORS[d.operatorId]?.trigger === type);
+  if (!matches.length || target.controller !== 'human' || matches.length === 1){
+    if (!matches.length){ onResolve(null); return; }
+    // AI defenders always use their (only, or first) readied response —
+    // there's no one to ask. A single match needs no choice either way.
+    const def = target.readiedDefensives.splice(matches[0].idx, 1)[0];
+    onResolve(def);
+    return;
+  }
+  pendingDefenseResponse = { target, matches, onResolve };
+  const overlay = document.getElementById('defensive-response-overlay');
+  document.getElementById('defensive-response-title').textContent =
+    `${target.name} has more than one ready response to ${u.name}'s ${DEFENSIVE_TRIGGERS[type]}.`;
+  document.getElementById('defensive-response-options').innerHTML = matches.map(({ d, idx }) =>
+    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}</button>`
+  ).join('') + `<button class="btn" onclick="chooseDefensiveResponse(-1)">Hold everything — let it resolve unopposed</button>`;
+  overlay.style.display = 'flex';
+}
+function chooseDefensiveResponse(idx){
+  const pending = pendingDefenseResponse;
+  if (!pending) return;
+  pendingDefenseResponse = null;
+  document.getElementById('defensive-response-overlay').style.display = 'none';
+  if (idx === -1){ pending.onResolve(null); return; }
+  const def = pending.target.readiedDefensives.splice(idx, 1)[0];
+  pending.onResolve(def);
 }
 function playHandCard(cardId){
   const u = currentUnit();
@@ -2000,60 +2138,62 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     if (cardCategory(card) === 'aggressive') u.wonderlandProgress.aggInTurn += 1;
     checkWonderlandActivation(u);
   }
+  const proceedCast = () => {
+    if (chosenOperatorId){
+      // OR: exactly one of the two operators, never both and never the
+      // card's base operator "by default" — that was a real bug (the base
+      // operator was firing unconditionally here, so an OR card applied
+      // BOTH effects instead of the one actually chosen).
+      applyOperator(chosenOperatorId, u, target, cost);
+    } else if (card.effects){
+      // Ultimate — both main effects apply, always (Ultimate-level OR
+      // between the two isn't implemented, see ULTIMATE_CARDS' own note).
+      card.effects.forEach(opId => applyOperator(opId, u, target, cost));
+    } else {
+      applyOperator(card.operatorId, u, target, cost);
+      if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
+    }
+    // "Aggressive Abilities deal direct damage" (Ala zyu Haad's Singular
+    // Entity effect) — a stated interpretation, since GDD §9.3 doesn't spell
+    // out what "direct damage" adds on top of an Aggressive card's own
+    // effect: every Aggressive card ALSO deals Life damage equal to its own
+    // Initiative cost, stacked on top of whatever it already does. Only
+    // against unit targets — a Talisman (Destroy/Capture/Mojo) has no Life
+    // to damage.
+    if (cardCategory(card) === 'aggressive' && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
+      applyLifeDamage(target, cost);
+      logMsg(`${u.name}'s open Wonderland makes ${cardDescription(card)} deal ${cost} direct damage too.`, u.team);
+    }
+    const targetLabel = target.name || TALISMAN_TYPES[target.typeId]?.label || 'a target';
+    logMsg(`${u.name} plays ${cardDescription(card)} on ${targetLabel}.`, u.team);
+    if (u.openWonderlandActive && cardCategory(card) === 'supportive'){
+      drawCard(u); // "extra draw on Supportives... if Wonderland open," per MONOLITH_RULESET.md
+      logMsg(`${u.name}'s open Wonderland grants an extra draw.`, u.team);
+    }
+    battle.interactionMode = null;
+    battle.castingCardId = null;
+    renderBattle();
+    const w = checkWin();
+    if (w) finishBattle(w);
+  };
   // Defensive interception: an incoming Aggressive card against a target
   // with a readied Nazar/Nullify Cost is nullified before its effect(s)
-  // resolve. The played card is still spent either way — only the
-  // *effect* is what the defender bought off, per Nazar's own wording
-  // ("nullify an incoming Aggressive"). See the OPERATORS comment above
-  // Nazar's own entry for why this doesn't reach Target-All Ultimates.
-  if (cardCategory(card) === 'aggressive' && target.readiedDefensives?.length){
-    const defIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'nazar' || d.operatorId === 'nullifyCost');
-    if (defIdx !== -1){
-      const def = target.readiedDefensives.splice(defIdx, 1)[0];
-      if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from Nazar
-      logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} nullifies ${u.name}'s ${cardDescription(card)}.`, target.team);
-      battle.interactionMode = null;
-      battle.castingCardId = null;
-      renderBattle();
-      return;
-    }
-  }
-  if (chosenOperatorId){
-    // OR: exactly one of the two operators, never both and never the
-    // card's base operator "by default" — that was a real bug (the base
-    // operator was firing unconditionally here, so an OR card applied
-    // BOTH effects instead of the one actually chosen).
-    applyOperator(chosenOperatorId, u, target, cost);
-  } else if (card.effects){
-    // Ultimate — both main effects apply, always (Ultimate-level OR
-    // between the two isn't implemented, see ULTIMATE_CARDS' own note).
-    card.effects.forEach(opId => applyOperator(opId, u, target, cost));
-  } else {
-    applyOperator(card.operatorId, u, target, cost);
-    if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
-  }
-  // "Aggressive Abilities deal direct damage" (Ala zyu Haad's Singular
-  // Entity effect) — a stated interpretation, since GDD §9.3 doesn't spell
-  // out what "direct damage" adds on top of an Aggressive card's own
-  // effect: every Aggressive card ALSO deals Life damage equal to its own
-  // Initiative cost, stacked on top of whatever it already does. Only
-  // against unit targets — a Talisman (Destroy/Capture/Mojo) has no Life
-  // to damage.
-  if (cardCategory(card) === 'aggressive' && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
-    applyLifeDamage(target, cost);
-    logMsg(`${u.name}'s open Wonderland makes ${cardDescription(card)} deal ${cost} direct damage too.`, u.team);
-  }
-  const targetLabel = target.name || TALISMAN_TYPES[target.typeId]?.label || 'a target';
-  logMsg(`${u.name} plays ${cardDescription(card)} on ${targetLabel}.`, u.team);
-  if (u.openWonderlandActive && cardCategory(card) === 'supportive'){
-    drawCard(u); // "extra draw on Supportives... if Wonderland open," per MONOLITH_RULESET.md
-    logMsg(`${u.name}'s open Wonderland grants an extra draw.`, u.team);
-  }
-  battle.interactionMode = null;
-  battle.castingCardId = null;
-  renderBattle();
-  const w = checkWin();
-  if (w) finishBattle(w);
+  // resolve, via declareAction()'s generic 'aggressive-played' trigger.
+  // The played card is still spent either way — only the *effect* is what
+  // the defender bought off, per Nazar's own wording ("nullify an
+  // incoming Aggressive"). See the OPERATORS comment above Nazar's own
+  // entry for why this doesn't reach Target-All Ultimates. Non-Aggressive
+  // cards (Supportive/Passive/Utility/Ultimate) never call declareAction
+  // at all here — same as the version this replaced.
+  if (cardCategory(card) !== 'aggressive'){ proceedCast(); return; }
+  declareAction('aggressive-played', u, target, (def) => {
+    if (!def){ proceedCast(); return; }
+    if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from Nazar
+    logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} nullifies ${u.name}'s ${cardDescription(card)}.`, target.team);
+    battle.interactionMode = null;
+    battle.castingCardId = null;
+    renderBattle();
+  });
 }
 
 /* ============================================================

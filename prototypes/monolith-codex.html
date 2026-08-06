@@ -11,6 +11,13 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.16.0 — 2026-08-06 — Nazar/Parry/Nullify Cost each gained a `trigger`
+                          field in OPERATORS, matching Arena's new generic
+                          declareAction() interrupt system (see that
+                          file's matching entry and MONOLITH_RULESET.md's
+                          Defensive/Reactive section for the full 8-entry
+                          Trigger Reference vocabulary). Data-only change
+                          here — this doc doesn't run battle logic.
   v0.15.0 — 2026-08-06 — Spear's weapon note updated — its Critical Hit
                           condition is implemented in Arena now (see that
                           file's matching entry); this doc's WEAPONS table
@@ -772,21 +779,22 @@ const OPERATORS = {
   // Defensive/Reactive — 20 Ini base. Nazar/Parry/Nullify Cost are
   // "readied" when played (self-cast, no board target — see
   // readyDefensiveCard in Arena) and consumed later, off the *opponent's*
-  // subsequent action, via two narrow interception points rather than a
-  // full generic interrupt/priority system: finalizeCast (an incoming
-  // single-target Aggressive card) and tryStrike (an incoming Weapon
-  // Strike). A stated simplification, not the literal "named
-  // ability/category" text: Nullify Cost is scoped to the same "incoming
-  // Aggressive" trigger as Nazar (a picker for naming a specific ability
-  // at ready-time is a separate scope this pass doesn't build), and
-  // neither reaches Target-All Ultimates or Talisman AoE ticks, which
-  // don't route through those two functions. Mojo is different — it
-  // targets a specific placed Talisman directly (like Destroy/Capture,
-  // reusing that exact targetsTalisman path), not a reactive trigger.
-  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive' },
-  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike' },
+  // subsequent action, via Arena's generic declareAction() interrupt
+  // system — each names its `trigger` (one of the 8 GDD Trigger Reference
+  // entries; see MONOLITH_RULESET.md's Defensive/Reactive section for the
+  // full vocabulary and which ones this build actually wires up). A
+  // stated simplification, not the literal "named ability/category" text:
+  // Nullify Cost is scoped to the same "aggressive-played" trigger as
+  // Nazar (a picker for naming a specific ability at ready-time is a
+  // separate scope this pass doesn't build), and neither reaches
+  // Target-All Ultimates or Talisman AoE ticks, which don't route through
+  // declareAction. Mojo is different — it targets a specific placed
+  // Talisman directly (like Destroy/Capture, reusing that exact
+  // targetsTalisman path), not a reactive trigger, so it has no `trigger`.
+  nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
+  parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
   mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },
-  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund' },
+  nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },

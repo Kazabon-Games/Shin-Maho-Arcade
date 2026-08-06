@@ -118,7 +118,20 @@ short on purpose.
   open: porting Build 3's generic Defensive-trigger (`declareAction`)
   system in place of the current two-hardcoded-interception-point
   version — Wonderland v2 reused Build 3's *condition-tracking* idea but
-  not that particular piece.
+  not that particular piece. **Seventh pass (final item) built that
+  port**: a shared, trigger-typed `declareAction(type, u, target,
+  onResolve)` replaces the two hardcoded `readiedDefensives.findIndex`
+  checks, parameterized over the GDD's full 8-entry Trigger Reference
+  vocabulary (`DEFENSIVE_TRIGGERS`) — only 2 of the 8 (aggressive-played:
+  Nazar/Nullify Cost; weapon-strike-declared: Parry) have both a real
+  operator and a natural single-target framing this engine's per-unit
+  `readiedDefensives` model supports; the other 6 are named but
+  unwired, for two distinct, documented reasons (see
+  MONOLITH_RULESET.md). Real behavioral upgrade: a human defender with
+  2+ different readied responses to the same trigger now gets an actual
+  choice via a new response-window modal, instead of the old silent
+  auto-pick — every 0-or-1-match case (everything else) is unchanged.
+  This closes every item on the "tackle all, in order of priority" list.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
