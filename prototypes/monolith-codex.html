@@ -11,6 +11,13 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.14.0 — 2026-08-06 — Added ult-nhul-particul (Scry AND Seal) to
+                          ULTIMATE_CARDS — Ala zyu Haad's authored
+                          Ultimate from GDD §12.1, now selectable by any
+                          Esori's Grimoire like any other Ultimate card.
+                          See Arena's matching entry for why it exists
+                          (it's also the seeded AI squad's Ala zyu
+                          Haad's Open Wonderland trigger).
   v0.13.0 — 2026-08-05 — Position step's copy corrected: it's a creation-
                           time default/display value only now, not a
                           permanent lock — GDD §4.3 has Arena choose the
@@ -819,6 +826,10 @@ const ULTIMATE_CARDS = [
   { id:'ult-guardian-surge', name:'Guardian Surge', category:'ultimate', effects:['heal','giveIni'], targetAll:true },
   { id:'ult-cataclysm', name:'Cataclysm', category:'ultimate', effects:['inflict','disarm'], targetAll:true, autoWin:true },
   { id:'ult-transcendence', name:'Transcendence', category:'ultimate', effects:['giveStrike','giveRange'], ifWonderlandOpen:true },
+  // GDD §12.1: Ala zyu Haad's "Nhül Partikül" — Scry AND Seal, the bounded
+  // subset of its full named effect (see monolith-arena.html's copy of
+  // this comment for what's dropped: the Impose/draw-lock IF/THEN tail).
+  { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
 ];
 const CARD_LIBRARY = [
   ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),

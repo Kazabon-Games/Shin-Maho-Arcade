@@ -417,7 +417,8 @@ async function chebyshevMoveToward(page){
   }
   ok(battleFinished, 'a full battle (with all prior adversarial interactions already applied) still reaches a clean finish');
   const fullLog = await page.evaluate(() => battle.log.map(l => l.text));
-  const aiCardActions = fullLog.filter(t => (t.includes('activates') || t.includes(' plays ')) && ['Thornclad','Vessa','Orune'].some(n => t.startsWith(n)));
+  // AI Squad is now the three GDD §12 canon Grimoires (Rykndu/NLDR/Ala zyu Haad), not generic placeholders.
+  const aiCardActions = fullLog.filter(t => (t.includes('activates') || t.includes(' plays ')) && ['Rykndu','NLDR','Ala zyu Haad'].some(n => t.startsWith(n)));
   ok(aiCardActions.length > 0, 'AI (team B) plays at least one ability card over the course of a battle');
 
   await checkOverflow(page, 'Arena battle @390px');

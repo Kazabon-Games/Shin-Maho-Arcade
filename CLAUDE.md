@@ -97,12 +97,22 @@ short on purpose.
   whatever was picked at creation — the same Tulpa can be Vanguard in one
   match and Saboteur in the next; Codex's Position step still records a
   default/recommended role shown on the sheet, but it's advisory only.
+  Fifth pass seeded the GDD's Section 12 canon Grimoires — Rykndu, NLDR,
+  Ala zyu Haad — as Arena's real AI Squad (replacing the placeholder
+  Thornclad/Vessa/Orune), stats/Class/Position/weapons/equipment
+  transcribed from their stat blocks, each Open Wonderland wired to
+  Wonderland v2's matching auto-tracked condition, and each given a
+  curated 10-card deck from the engine's existing operator vocabulary
+  (their per-card IF/THEN sub-clauses and dynamic-scaling amounts aren't
+  modeled — see MONOLITH_RULESET.md's Seeded Canon Characters section for
+  the full per-card mapping). Added a real new Ultimate card,
+  `ult-nhul-particul` (Scry AND Seal) — Ala zyu Haad's authored Ultimate
+  and her Wonderland's stand-in trigger, since her actual "Daedalus
+  Tesseract" needs the still-unbuilt generalized IF/THEN modifier layer.
   Still open: Spear's two-target crit, and porting Build 3's generic
   Defensive-trigger (`declareAction`) system in place of the current
   two-hardcoded-interception-point version — Wonderland v2 reused Build
-  3's *condition-tracking* idea but not that particular piece. The GDD's
-  Section 12 also has three fully rule-audited canon Grimoires (Ala zyu
-  Haad, Rykndu, NLDR) worth seeding as real characters — not done yet.
+  3's *condition-tracking* idea but not that particular piece.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

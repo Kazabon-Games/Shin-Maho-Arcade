@@ -11,6 +11,32 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.15.0 — 2026-08-06 — AI Squad is now the three GDD §12 canon
+                          Grimoires — Rykndu, NLDR, Ala zyu Haad — Charles's
+                          personal Tulpa, replacing the placeholder
+                          Thornclad/Vessa/Orune squad. Stats/Class/
+                          Position/weapons/equipment transcribed from each
+                          character's GDD stat block; each Open Wonderland
+                          wired to Wonderland v2's real auto-tracked
+                          condition (Rykndu's Crimson Moon, NLDR's Shadow
+                          Sovereign, Ala zyu Haad's Singular Entity — the
+                          exact same 3 canonical conditions Wonderland v2
+                          was built to cover). Added a new Ultimate card,
+                          ult-nhul-particul (Scry AND Seal) — Ala zyu
+                          Haad's authored Ultimate, and the stand-in
+                          named-ability trigger for her Wonderland since
+                          her actual "Daedalus Tesseract" remains
+                          unauthored (needs the IF/THEN modifier layer,
+                          still deferred). Each character's 10-card deck
+                          is a curated, documented approximation of their
+                          GDD abilities built from this engine's existing
+                          operator vocabulary — see MONOLITH_RULESET.md's
+                          Seeded Canon Characters section for the full
+                          per-card mapping and every deviation (dropped
+                          IF/THEN sub-clauses, dynamic-scaling amounts,
+                          GDD's per-character deck-format sizes not
+                          modeled — this engine's decks are always a flat
+                          10, same as every other Esori).
   v0.14.0 — 2026-08-05 — Position chosen at deployment, not locked at
                           creation (GDD §4.3 correction). renderTeamPicker
                           now offers every roster Esori in all three
@@ -758,6 +784,13 @@ const ULTIMATE_CARDS = [
   { id:'ult-guardian-surge', name:'Guardian Surge', category:'ultimate', effects:['heal','giveIni'], targetAll:true },
   { id:'ult-cataclysm', name:'Cataclysm', category:'ultimate', effects:['inflict','disarm'], targetAll:true, autoWin:true },
   { id:'ult-transcendence', name:'Transcendence', category:'ultimate', effects:['giveStrike','giveRange'], ifWonderlandOpen:true },
+  // GDD §12.1: Ala zyu Haad's "Nhül Partikül" — Scry AND Seal, reusing the
+  // two existing operators that make up its main effect. The full named
+  // ability also Imposes the card into the opponent's hand with a
+  // draw-lock IF/THEN clause; that generalized IF/THEN modifier layer
+  // isn't built yet (see this file's Ultimate-cards comment above), so
+  // this card is the bounded Scry+Seal subset, not a literal port.
+  { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
 ];
 const CARD_LIBRARY = [
   ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
@@ -849,10 +882,53 @@ const TALISMAN_PLACE_RANGE = 4;
 const TALISMAN_AOE = 1;
 const TALISMAN_PLACE_COST = 5;
 
+// The AI Squad is the three canon Grimoires from GDD §12 — Charles's three
+// personal Tulpa, the game's own reference characters — not generic
+// placeholders. Stats, Class, Position, weapons, and equipment are
+// transcribed directly from their GDD stat blocks; each Open Wonderland
+// is wired to Wonderland v2's real, auto-tracked condition matching its
+// GDD activation/sustain/effect (not the self-declared toggle). Decks are
+// a curated 10-card set built from this engine's existing operator
+// vocabulary, chosen for the closest available thematic match to each
+// character's named abilities — GDD's per-card IF/THEN sub-clauses,
+// dynamic-scaling amounts (e.g. NLDR's "10 × Talismans controlled"), and
+// the still-unauthored Special operators (Daedalus Tesseract, Rhyzl
+// Step) aren't modeled; see MONOLITH_RULESET.md's Seeded Canon
+// Characters section for the full per-card mapping and every deviation.
 const PRESET_AI_SQUAD = [
-  { esoriId:'preset-vanguard', name:'Thornclad', class:'knight', position:'vanguard', rarity:1, weapons:{main:'sword'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
-  { esoriId:'preset-saboteur', name:'Vessa', class:'rook', position:'saboteur', rarity:1, weapons:{main:'dagger'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
-  { esoriId:'preset-infiltrator', name:'Orune', class:'bishop', position:'infiltrator', rarity:1, weapons:{main:'wand'}, deck: CARD_LIBRARY.slice(0,10).map(c=>c.id) },
+  {
+    esoriId:'preset-rykndu', name:'Rykndu', class:'knight', position:'vanguard', rarity:1,
+    weapons:{main:'sword'}, equipment:{ head:'helmet', hands:'glove', feet:'boots', body:'pouch' },
+    tulpa:{ name:'Rykndu', openWonderland:{
+      activationCond:{ kind:'agg-abilities-in-turn', count:3 },
+      sustainCond:{ kind:'weapon-strike-per-turn' },
+      effectId:'all-crits',
+    }},
+    deck:['card-inflict','card-hinder','card-obstruct','card-hinder-and-obstruct','card-giveStrike','card-giveMov','card-strike-or-mov','card-regen','card-gather','ult-devastate'],
+  },
+  {
+    esoriId:'preset-nldr', name:'NLDR', class:'rook', position:'infiltrator', rarity:1,
+    weapons:{main:'dagger'}, equipment:{ hands:'ring', feet:'sandals', body:'pouch' },
+    tulpa:{ name:'NLDR', openWonderland:{
+      activationCond:{ kind:'controlled-talisman-threshold', count:3 },
+      sustainCond:{ kind:'talisman-at-round-end', count:2 },
+      effectId:'talisman-aoe-plus-one',
+    }},
+    deck:['card-destroy','card-capture','card-mojo','card-transpose','card-occlude','card-jumbie','card-parry','card-shield','card-banish','ult-cataclysm'],
+  },
+  {
+    esoriId:'preset-ala-zyu-haad', name:'Ala zyu Haad', class:'bishop', position:'saboteur', rarity:1,
+    weapons:{main:'staff'}, equipment:{ neck:'necklace', hands:'ring', feet:'sandals', body:'cloak' },
+    // Her real Activation is "Daedalus Tesseract only" — that named
+    // Ultimate isn't authored (see the ult-nhul-particul comment above),
+    // so the stand-in trigger is her other authored Ultimate instead.
+    tulpa:{ name:'Ala zyu Haad', openWonderland:{
+      activationCond:{ kind:'named-ability-played', cardId:'ult-nhul-particul' },
+      sustainCond:{ kind:'close-on-weapon-strike' },
+      effectId:'direct-damage-aggressive',
+    }},
+    deck:['card-banish','card-parry','card-nazar','card-shield','card-accelerate','card-afflict','card-giveIni','card-scry','card-jumbie','ult-nhul-particul'],
+  },
 ];
 
 const ROSTER_KEY = 'monolith-esori-chronicles-v1'; // same key Codex writes — read-only here

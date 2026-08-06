@@ -543,6 +543,74 @@ own Initiative cost (reusing the existing 1:1 Life-damage-per-Initiative
 convention already established for Inflict), stacked on top of the
 card's normal effect, not a replacement.
 
+## Seeded Canon Characters (GDD §12)
+
+Arena's AI Squad (`PRESET_AI_SQUAD`) is the three personal Tulpa of
+Charles — Rykndu, NLDR, and Ala zyu Haad — GDD §12's canonical, fully
+rule-audited reference Grimoires, not generic placeholders (the earlier
+`Thornclad`/`Vessa`/`Orune` filler squad they replaced). Stats, Class,
+Position, weapons, and equipment are transcribed directly from each
+character's GDD stat block; each Open Wonderland is wired to the real
+Wonderland v2 condition matching its GDD Activation/Sustain/Effect — these
+are, not coincidentally, the exact three canonical Wonderlands the
+Effects table above already names as `all-crits` (Rykndu),
+`talisman-aoe-plus-one` (NLDR), and `direct-damage-aggressive` (Ala zyu
+Haad).
+
+Each character's Grimoire in the GDD is a set of named abilities with
+per-card IF/THEN sub-clauses, and in a few cases dynamic-scaling amounts
+(NLDR's Shadow Step: "10 × Talismans you control") — neither the general
+IF/THEN modifier layer nor dynamic per-Talisman scaling exists in this
+engine yet (see the Fundamental Operators section and the Ultimate-cards
+comment in both HTML documents for the current scope line). Rather than
+leave these three characters unplayable until that generalized system is
+built, each was given a **curated 10-card deck from this engine's
+existing, already-implemented operator vocabulary** — the closest
+available thematic match per named ability, main effect only (IF/THEN
+tails dropped). This is the same "bounded, documented subset" approach
+already used for Ultimate cards and Defensive/Reactive abilities
+elsewhere in this document, applied to character content instead of a
+mechanic.
+
+**Rykndu** (Knight/Vanguard, GDD §12.2) — `card-inflict`, `card-hinder`,
+`card-obstruct`, `card-hinder-and-obstruct`, `card-giveStrike`,
+`card-giveMov`, `card-strike-or-mov`, `card-regen`, `card-gather`,
+`ult-devastate`. Approximates her Aggressive-stat-reduction/weapon-strike
+identity (Crimson Flash/Art of War → Hinder/Obstruct, Charge →
+Give Mov, Regeneration/Preemptive → Regen/Gather); `ult-devastate` stands
+in for her actual Ultimate, Blade Waltz (multi-target AoE Strike — not
+buildable without Talisman-style area targeting on a Strike).
+
+**NLDR** (Rook/Infiltrator, GDD §12.3) — `card-destroy`, `card-capture`,
+`card-mojo`, `card-transpose`, `card-occlude`, `card-jumbie`,
+`card-parry`, `card-shield`, `card-banish`, `ult-cataclysm`. Approximates
+her Talisman-centric identity directly (Eldritch Disruption → Destroy,
+Eldritch Swap → Capture, Eldritch Barrier → Mojo/Nullify); `ult-cataclysm`
+(Target All + Auto-Win) stands in for Eldritch Apocalypse, her actual
+Ultimate (AoE Talisman-range boost with a multi-Talisman defeat
+condition).
+
+**Ala zyu Haad** (Bishop/Saboteur, GDD §12.1) — `card-banish`,
+`card-parry`, `card-nazar`, `card-shield`, `card-accelerate`,
+`card-afflict`, `card-giveIni`, `card-scry`, `card-jumbie`, and a real,
+newly-authored Ultimate: **`ult-nhul-particul`** ("Nhül Partikül": Scry
+AND Seal — added to `ULTIMATE_CARDS` in both documents). Several of her
+named abilities map onto existing operators directly rather than
+approximately: Sea of Dirac → Banish, Counter Space → Parry, Fractured
+Void → Shield, Accelerate → Accelerate. Her actual Open Wonderland
+Activation is "Daedalus Tesseract only" — Daedalus Tesseract is a named
+Ultimate built from Root + Seal + an IF/THEN modifier and remains
+deliberately unauthored (see the Known unresolved gaps entry below); her
+seeded Wonderland instead triggers on **`ult-nhul-particul`**, her other,
+buildable authored Ultimate — a stated stand-in, not a claim that
+Nhül Partikül and Daedalus Tesseract are the same ability.
+
+Every character's deck is a flat 10 cards, same as any other Esori's —
+GDD's per-character Deck Format sizes (Rykndu: Focused, 9+1; Ala zyu
+Haad: Balanced, 7+2; NLDR: Balanced, 7+1) aren't modeled as a distinct
+format system in this engine, which has always capped every deck at 10
+regardless of format.
+
 ## Currencies (out-of-battle progression)
 
 - **Stars** — stat points, earned per completed chapter.
@@ -580,7 +648,12 @@ Building for **browser, single-file HTML/JS/Canvas, no backend**:
 - Rarity progression table's "O A" entry — illegible in source, unresolved.
 - Refine's "banish own card/ally" half — mechanically unclear, don't build
   the ally-targeting branch until clarified.
-- Nhül Partikül — under-specified multi-operator combo, Phase-3 stretch
-  target at earliest.
+- Nhül Partikül — its bounded Scry+Seal subset is now built
+  (`ult-nhul-particul`, see Seeded Canon Characters above); the full named
+  ability's Impose/draw-lock IF/THEN tail still needs the generalized
+  IF/THEN modifier layer, not yet built.
+- Daedalus Tesseract — still fully unauthored (Root + Seal + an IF/THEN
+  modifier); Ala zyu Haad's seeded AI Wonderland uses a documented
+  stand-in trigger instead (see Seeded Canon Characters above).
 - Favor's mechanical role beyond currency-for-lore-interactions — unstated
   in every source doc.
