@@ -11,6 +11,11 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.18.0 — 2026-08-06 — Comment update only — Nazar/Nullify Cost now
+                          intercept single-target Ultimates built from
+                          Aggressive operators too (Arena's matching
+                          entry has the real fix and why). This doc has
+                          no battle-runtime logic to change.
   v0.17.0 — 2026-08-06 — Comment updates only — Nullify Cost's "named
                           ability" picker landed in Arena (see that file's
                           matching entry and MONOLITH_RULESET.md's
@@ -796,11 +801,15 @@ const OPERATORS = {
   // picker naming one specific incoming card to ward against (or "Any
   // Aggressive Ability" for the old blanket behavior), stored as
   // `warded` on the readied-defensive record and checked in
-  // declareAction. One real remaining gap: neither Nazar nor Nullify Cost
-  // reaches Target-All Ultimates or Talisman AoE ticks, which don't route
-  // through declareAction. Mojo is different — it targets a specific
-  // placed Talisman directly (like Destroy/Capture, reusing that exact
-  // targetsTalisman path), not a reactive trigger, so it has no `trigger`.
+  // declareAction. Both also intercept single-target Ultimate cards built
+  // from Aggressive operators (ult-devastate, ult-nhul-particul), not
+  // just Basic/Composed Aggressive cards. One real remaining gap: neither
+  // reaches a Target-All Ultimate's resolution (which resolves inline,
+  // never through declareAction) or a Talisman's per-turn AoE tick (a
+  // positional passive tick, not a declared action at all). Mojo is
+  // different — it targets a specific placed Talisman directly (like
+  // Destroy/Capture, reusing that exact targetsTalisman path), not a
+  // reactive trigger, so it has no `trigger`.
   nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
   parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
   mojo:        { name:'Mojo',         category:'defensive', kind:'nullify-talisman', targetsTalisman:true },

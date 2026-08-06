@@ -465,11 +465,33 @@ match/AI-defender paths above are entirely unaffected by this. Nazar
 itself gets no picker: GDD's own wording for it ("nullify an incoming
 Aggressive") is already unqualified, nothing to name.
 
-**One real, stated simplification remains:** neither Nazar nor Nullify
-Cost reaches a Target-All Ultimate's resolution (which doesn't route
-through `finalizeCast`) or a Talisman's per-turn AoE tick (which isn't an
-"opponent's action" in the same instantaneous sense) — a readied Nazar
-will not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
+**Single-target Ultimates are now covered too.** `finalizeCast`'s
+`declareAction` gate originally checked `cardCategory(card) ===
+'aggressive'`, which is never true for an Ultimate card — `cardCategory`
+returns `'ultimate'` regardless of what its underlying operators are, so
+Nazar/Nullify Cost couldn't intercept ANY Ultimate, single-target or
+Target-All, even ones built entirely from Aggressive operators
+(`ult-devastate`: Inflict+Afflict; `ult-nhul-particul`: Scry+Seal). A new
+`isAggressiveFlavored(card)` helper checks the card's actual effect
+category for Ultimates (`OPERATORS[card.effects[0]].category`), the same
+lookup `tryCast` already used for Ultimate targeting — single-target
+Ultimates now route through `declareAction` exactly like a Basic or
+Composed Aggressive card, and a readied Nazar/Nullify Cost nullifies the
+whole thing (both effects at once, since they're never split).
+
+**One real, stated simplification remains:** Target-All Ultimates still
+don't reach `declareAction` at all — `playUltimateCard`'s Target-All
+branch resolves inline (`targets.forEach(t => card.effects.forEach(...))`),
+never routing through `finalizeCast`. Making that interceptable would
+mean checking each of N simultaneous targets for readied Defensives, some
+of which might independently need a real response-window choice —
+sequencing that (one target's choice must resolve before the next target
+can even be checked, to avoid overlapping modal state) is a genuinely
+bigger, separate lift than the single-target fix above, not built here.
+Nor does either reach a Talisman's per-turn AoE tick, which isn't an
+"opponent's action" in the same instantaneous sense at all (it's a
+positional passive tick, not a declared action) — a readied Nazar will
+not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
 architecturally different from the other three: it targets a specific
 placed Talisman directly (same `targetsTalisman` click-a-cell path as
 Destroy/Capture, restricted to enemy-owned Talismans), marking it

@@ -140,10 +140,25 @@ short on purpose.
   "Any Aggressive Ability" for the old behavior; declareAction() gained
   an optional `context` argument so `finalizeCast` can pass the actual
   incoming card's id to check against. Nazar is unaffected (its own GDD
-  wording is already unqualified). The one remaining Defensive gap is
-  architectural, not content-shaped: neither Nazar nor Nullify Cost
-  reaches a Target-All Ultimate or a Talisman's per-turn AoE tick, since
-  neither routes through `finalizeCast`.
+  wording is already unqualified). Ninth pass closed part of what was
+  framed as "the one remaining Defensive gap": it was actually broader
+  than stated — `finalizeCast`'s `declareAction` gate checked
+  `cardCategory(card) === 'aggressive'`, which is never true for an
+  Ultimate card regardless of what its own effects are, so Nazar/Nullify
+  Cost couldn't intercept ANY Ultimate, not just Target-All ones. A new
+  `isAggressiveFlavored(card)` helper (checking
+  `OPERATORS[card.effects[0]].category` for Ultimates, the same lookup
+  `tryCast` already uses for targeting) fixes single-target Ultimates
+  built from Aggressive operators (`ult-devastate`, `ult-nhul-particul`)
+  — they're interceptable now, exactly like a Basic/Composed Aggressive
+  card. What's left is narrower and genuinely architectural: Target-All
+  Ultimates resolve inline in `playUltimateCard`, never through
+  `finalizeCast`, and making a multi-target declaration interceptable
+  (each target potentially needing its own response-window choice,
+  sequenced one at a time) is a bigger, separate lift. Nor does either
+  reach a Talisman's per-turn AoE tick, which isn't a declared action at
+  all (a positional passive tick, not an "opponent's action" in the
+  interrupt-system sense).
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

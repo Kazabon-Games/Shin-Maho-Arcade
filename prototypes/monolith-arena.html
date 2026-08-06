@@ -11,6 +11,29 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.19.0 — 2026-08-06 — Nazar/Nullify Cost now intercept single-target
+                          Ultimate cards built from Aggressive operators
+                          (ult-devastate, ult-nhul-particul), not just
+                          Basic/Composed Aggressive cards. Root cause:
+                          finalizeCast's declareAction gate checked
+                          cardCategory(card) === 'aggressive', which is
+                          never true for a card whose own .category is
+                          'ultimate' regardless of what its effects
+                          actually are — a readied Nazar was silently
+                          impotent against every Ultimate, including ones
+                          built entirely from Aggressive operators. New
+                          isAggressiveFlavored(card) checks the actual
+                          effect category for Ultimates
+                          (OPERATORS[card.effects[0]].category), the same
+                          lookup tryCast already uses for Ultimate
+                          targeting. Target-All Ultimates still don't
+                          reach declareAction at all — they resolve
+                          inline in playUltimateCard, never through
+                          finalizeCast; making a multi-target declaration
+                          interceptable (each target potentially needing
+                          its own response-window choice, sequenced one
+                          at a time) is a bigger, separate lift, not built
+                          here — see MONOLITH_RULESET.md.
   v0.18.0 — 2026-08-06 — Nullify Cost's "named ability" picker (GDD's
                           literal "negate the Initiative cost of a *named*
                           ability/category" wording, previously scoped
@@ -876,6 +899,17 @@ const CARD_LIBRARY = [
 ];
 function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
 function cardCategory(card){ return card.category || OPERATORS[card.operatorId].category; }
+// Ultimate's own cardCategory() is always 'ultimate', never 'aggressive',
+// even when both its effects are Aggressive operators (ult-devastate,
+// ult-nhul-particul) — see finalizeCast's declareAction gate, which needs
+// to know whether an Ultimate is *flavored* Aggressive for Nazar/Nullify
+// Cost interception purposes, not just Basic/Composed cards. Mirrors the
+// same op.category lookup tryCast already uses for Ultimate targeting.
+function isAggressiveFlavored(card){
+  if (cardCategory(card) === 'aggressive') return true;
+  if (cardCategory(card) === 'ultimate') return OPERATORS[card.effects[0]].category === 'aggressive';
+  return false;
+}
 function cardCost(card){
   if (cardCategory(card) === 'ultimate') return 50;
   const base = cardCategory(card) === 'passive' ? 15 : 20;
@@ -2232,16 +2266,22 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     const w = checkWin();
     if (w) finishBattle(w);
   };
-  // Defensive interception: an incoming Aggressive card against a target
-  // with a readied Nazar/Nullify Cost is nullified before its effect(s)
-  // resolve, via declareAction()'s generic 'aggressive-played' trigger.
-  // The played card is still spent either way — only the *effect* is what
-  // the defender bought off, per Nazar's own wording ("nullify an
-  // incoming Aggressive"). See the OPERATORS comment above Nazar's own
-  // entry for why this doesn't reach Target-All Ultimates. Non-Aggressive
-  // cards (Supportive/Passive/Utility/Ultimate) never call declareAction
-  // at all here — same as the version this replaced.
-  if (cardCategory(card) !== 'aggressive'){ proceedCast(); return; }
+  // Defensive interception: an incoming Aggressive card (Basic, Composed,
+  // or a single-target Ultimate whose effects are Aggressive-flavored —
+  // see isAggressiveFlavored, added specifically so ult-devastate and
+  // ult-nhul-particul aren't exempt just for being Ultimate-tier) against
+  // a target with a readied Nazar/Nullify Cost is nullified before its
+  // effect(s) resolve, via declareAction()'s generic 'aggressive-played'
+  // trigger. The played card is still spent either way — only the
+  // *effect* is what the defender bought off, per Nazar's own wording
+  // ("nullify an incoming Aggressive"). Target-All Ultimates still don't
+  // reach here at all — they resolve inline in playUltimateCard, never
+  // routing through finalizeCast, since intercepting per-target across a
+  // multi-target declaration (each target potentially needing its own
+  // real response-window choice) is a genuinely bigger, separate lift;
+  // see MONOLITH_RULESET.md. Non-Aggressive-flavored cards (Supportive/
+  // Passive/Utility/most Ultimates) never call declareAction at all here.
+  if (!isAggressiveFlavored(card)){ proceedCast(); return; }
   declareAction('aggressive-played', u, target, (def) => {
     if (!def){ proceedCast(); return; }
     if (def.operatorId === 'nullifyCost') u.initiative += cost; // refund the wasted cast — the one thing distinguishing it from Nazar
