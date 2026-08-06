@@ -1372,17 +1372,32 @@
   // existing desktop-width test and screenshot in this file's history).
   let renderScale = 1;
   const RENDER_SCALE_REFERENCE_WIDTH = 700;
+  // DPR-aware backing store (2026-08-06 capability-audit gap, confirmed
+  // missing here vs. every other game -- W/H stay CSS-pixel logical
+  // coordinates everywhere in this file, exactly as before this fix;
+  // only the canvas's actual backing store (and one setTransform) change,
+  // so renderScale/hit-testing/pelvisX/groundY math above is untouched.
+  // Capped at 2x, matching iridescentcosmology.html's own dpr pattern
+  // (`Math.min(window.devicePixelRatio||1, 2)`) verbatim -- avoids an
+  // oversized backing store on 3x displays for no visible gain.
+  let W = 0, H = 0, dpr = 1;
   function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    renderScale = Math.min(1, canvas.width / RENDER_SCALE_REFERENCE_WIDTH);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    renderScale = Math.min(1, W / RENDER_SCALE_REFERENCE_WIDTH);
     // Subtle vertical gradient instead of a flat fill (v0.1.8): the large
     // empty canvas above/below the rig (roughly half the viewport at a
     // typical phone aspect ratio) read as literally nothing against a flat
     // single color, compounding the "generic prototype" feel. Cached here
     // rather than rebuilt every frame -- a gradient only needs to change
     // when the canvas itself resizes.
-    bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGradient = ctx.createLinearGradient(0, 0, 0, H);
     bgGradient.addColorStop(0, '#0d0e15');
     bgGradient.addColorStop(0.78, '#12141c');
     bgGradient.addColorStop(1, '#181a24');
@@ -2262,8 +2277,8 @@
     // from the real hit-checked one -- the identical reasoning applies to
     // a draw-only mirror).
     const s = renderScale;
-    const groundY = canvas.height * 0.78;
-    const cx = canvas.width / 2 + (standOffset || 0) * s + pose.pelvisDX * s;
+    const groundY = H * 0.78;
+    const cx = W / 2 + (standOffset || 0) * s + pose.pelvisDX * s;
     const pelvis = { x: cx, y: groundY - (LEN.thigh + LEN.shin) * s + pose.pelvisDY * s };
 
     const hipL = { x: pelvis.x - LEN.hipW * 0.4 * s, y: pelvis.y };
@@ -3592,10 +3607,10 @@
   }
 
   function makeEnemy(spawnAt, side) {
-    const pelvisX = canvas.width / 2 + p1.posX * renderScale; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here. *renderScale matches solveRig()'s own cx formula exactly -- without it, this drifts from the player's actual rendered/hit-tested position the instant renderScale != 1 (any viewport narrower than RENDER_SCALE_REFERENCE_WIDTH), sending enemies toward a stale contact point
-    const spawnX = side === 'R' ? canvas.width + 50 : -50;
+    const pelvisX = W / 2 + p1.posX * renderScale; // player 1 now has a real, movable position (v0.1.17 physics) instead of always standing at screen center; small attack-time pelvisDX lean is still ignored here. *renderScale matches solveRig()'s own cx formula exactly -- without it, this drifts from the player's actual rendered/hit-tested position the instant renderScale != 1 (any viewport narrower than RENDER_SCALE_REFERENCE_WIDTH), sending enemies toward a stale contact point
+    const spawnX = side === 'R' ? W + 50 : -50;
     const contactX = side === 'R' ? pelvisX + ENEMY_MELEE_REACH : pelvisX - ENEMY_MELEE_REACH;
-    return { side, spawnAt, spawnX, contactX, x: spawnX, y: canvas.height * 0.78 - 30, alive: true,
+    return { side, spawnAt, spawnX, contactX, x: spawnX, y: H * 0.78 - 30, alive: true,
       t: 0, dying: false, deathT: 0,
       pulsesFired: [false, false, false] }; // tracks which PULSE_THRESHOLDS stages this enemy has already fired
   }
@@ -3983,7 +3998,7 @@
   // the ground line rather than standing on it. Kept deliberately simple --
   // flat ellipses anchored to the ground line, not real projected geometry.
   function drawShadow(x, rx, ry) {
-    const groundY = canvas.height * 0.78;
+    const groundY = H * 0.78;
     ctx.beginPath();
     ctx.ellipse(x, groundY + 4, rx, ry, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -4645,13 +4660,13 @@
     }
 
     ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
 
     ctx.strokeStyle = '#2a2d3a';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, canvas.height * 0.78 + 2);
-    ctx.lineTo(canvas.width, canvas.height * 0.78 + 2);
+    ctx.moveTo(0, H * 0.78 + 2);
+    ctx.lineTo(W, H * 0.78 + 2);
     ctx.stroke();
 
     // resolveHits() runs BEFORE updateEnemies() -- a hit gets first claim on
@@ -4685,7 +4700,7 @@
       // most needed to still read clearly. Lower peak, faster decay: still a
       // clear hit-pulse, no longer a wash.
       ctx.fillStyle = 'rgba(255,77,112,' + (missFlash * (reducedMotion ? 0.12 : 0.22)).toFixed(3) + ')';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
     }
     shakeMag = Math.max(0, shakeMag - dt * 90);
     missFlash = Math.max(0, missFlash - dt * 7);
@@ -4693,14 +4708,14 @@
     if (sessionState === 'lose' && SHOW_GAUNTLET) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
       // Backing card for the text block -- v0.1.8 fix: the retry hint used to
       // be a bare fillText directly over the frozen rig, and at this
       // viewport size it rendered right through the character's head. A card
       // guarantees legibility regardless of what's underneath it.
-      const cardW = Math.min(280, canvas.width - 40), cardH = 120;
-      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 70;
+      const cardW = Math.min(280, W - 40), cardH = 120;
+      const cardX = W / 2 - cardW / 2, cardY = H / 2 - 70;
 
       // Entrance animation (visual-identity pass): scale+fade the card in
       // using this file's own easeOutBack (see its definition/comment near
@@ -4739,13 +4754,13 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ff4d70'; // mirrors --danger
       ctx.font = 'bold 32px monospace';
-      ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+      ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
       ctx.fillStyle = '#f4ecff'; // mirrors --ink (was an untokenized near-match, #e8e8f0)
       ctx.font = '16px monospace';
-      ctx.fillText('Kills: ' + killCount, canvas.width / 2, canvas.height / 2 + 15);
+      ctx.fillText('Kills: ' + killCount, W / 2, H / 2 + 15);
       ctx.fillStyle = '#8674b8'; // mirrors --ink-soft (was an untokenized #888)
       ctx.font = '13px monospace';
-      ctx.fillText('tap or press a key to try again', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.fillText('tap or press a key to try again', W / 2, H / 2 + 45);
       ctx.restore();
     }
 
@@ -4758,11 +4773,11 @@
     if (matchOver) {
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, W, H);
 
       const winnerColor = matchWinner === 'P1' ? P1_COLOR : P2_COLOR;
-      const cardW = Math.min(300, canvas.width - 40), cardH = 130;
-      const cardX = canvas.width / 2 - cardW / 2, cardY = canvas.height / 2 - 75;
+      const cardW = Math.min(300, W - 40), cardH = 130;
+      const cardX = W / 2 - cardW / 2, cardY = H / 2 - 75;
 
       // Entrance animation, same easeOutBack idiom as the GAME OVER card
       // above -- but a match WIN is the bigger, more triumphant beat, so
@@ -4792,13 +4807,13 @@
       ctx.textAlign = 'center';
       ctx.fillStyle = winnerColor;
       ctx.font = 'bold 30px monospace';
-      ctx.fillText(matchWinner + ' WINS THE MATCH', canvas.width / 2, canvas.height / 2 - 25);
+      ctx.fillText(matchWinner + ' WINS THE MATCH', W / 2, H / 2 - 25);
       ctx.fillStyle = '#f4ecff'; // mirrors --ink (was an untokenized near-match, #e8e8f0)
       ctx.font = '16px monospace';
-      ctx.fillText(p1Score + ' — ' + p2Score, canvas.width / 2, canvas.height / 2 + 10);
+      ctx.fillText(p1Score + ' — ' + p2Score, W / 2, H / 2 + 10);
       ctx.fillStyle = '#8674b8'; // mirrors --ink-soft (was an untokenized #888)
       ctx.font = '13px monospace';
-      ctx.fillText('either player: attack to start a rematch', canvas.width / 2, canvas.height / 2 + 45);
+      ctx.fillText('either player: attack to start a rematch', W / 2, H / 2 + 45);
       ctx.restore();
     }
 
