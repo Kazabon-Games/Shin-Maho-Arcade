@@ -64,16 +64,57 @@ to catch.
      html`, `runeshatter.html` — a real, spreading technique; Runeshatter's
      is the first use INSIDE actual gameplay rather than portal/menu
      chrome only), sub-pixel/DPR-aware rendering (`devicePixelRatio`,
-     confirmed in-use in 5 of 6 shipped-game files — **missing in the
-     Rykndu prototype**, the studio's newest and most actively-developed
-     project, a real findable gap: a DPR-unaware canvas renders visibly
-     soft on any real high-DPI mobile display, the actual target platform).
+     **fixed 2026-08-06** — was confirmed in-use in 5 of 6 shipped-game
+     files, missing specifically in the Rykndu prototype. Non-trivial fix,
+     not a copy-paste of the other 5 games' pattern: unlike every other
+     game (which keeps `canvas.width`/`canvas.height` untouched downstream
+     and does all draw-call math against separate CSS-pixel `W`/`H`
+     variables), Rykndu read `canvas.width`/`canvas.height` directly in
+     ~20 real gameplay-critical spots — hit-testing radii, pelvis
+     positions, ground level. Applying the standard DPR pattern naively
+     would have silently DPR-scaled every one of those values, corrupting
+     physics. Fixed by introducing the same `W`/`H` separation the other
+     games already use, then applying `ctx.setTransform(dpr,...)` cleanly
+     on top — verified via the full 14-file `tests/rig-*.js` suite (12
+     clean, `rig-parry.js`/`rig-side-profile.js` confirmed genuinely
+     flaky both before AND after this change via repeated runs — not
+     caused by it, an initial 3-clean-run streak was nearly misreported
+     as a real fix before a wider sample corrected that) plus a direct
+     3x-DPR emulation confirming the backing store scales to the intended
+     capped 2x while gameplay state stays sane.
      Full detail on the faceted-gem-rendering technique specifically —
      including that it's a deliberately scoped subset, not this studio's
      default Canvas 2D language, with Rykndu's own rig rendering as the
      proof restraint is already correctly exercised elsewhere — see the
      `faceted-gem-rendering` skill's own framing (reworded 2026-08-06 for
      exactly this reason).
+   - **Canvas 2D's real ceiling, measured, not assumed (2026-08-06):**
+     a live Playwright frame-time measurement (real `requestAnimationFrame`
+     deltas, hooked globally, not the game's own synthetic FPS counter) of
+     Iridescent Cosmology's own named "500-mob nova" design concern
+     (`iridescentcosmology.html:5893`'s float-text cap comment already
+     names this scenario) found a genuine, severe cost: idle baseline
+     ~4.3ms/frame; 320 enemies on screen (the real hard cap,
+     `iridescentcosmology.html:3223`) but not yet killed, ~23ms/frame;
+     the actual nova burst (mass-simultaneous death — particles, death
+     rings, XP gems, floating damage numbers all spawning the same
+     frame) — average **176ms/frame** (5.7fps-equivalent), worst single
+     frame **1,283ms**. Measured on a real 390×844 mobile viewport,
+     headless Chromium on server-class hardware — a real phone would
+     likely be as bad or worse, not better. This directly contradicts an
+     earlier changelog entry claiming "60fps held... under a 300-mob
+     fight" (`iridescentcosmology.html:1593`) — that benchmark almost
+     certainly measured a different load shape (an ongoing fight, not a
+     simultaneous mass-death burst) and/or predates features added since.
+     **This is real, concrete evidence for the "is Canvas 2D enough"
+     question** — not a hypothetical: hundreds of small entities dying
+     and spawning particles in one frame is squarely the shape WebGL
+     solves and Canvas 2D's per-draw-call CPU cost does not, on a
+     mechanic that already ships today. Not yet mitigated in this pass —
+     candidate cheap fixes (object pooling for particles/gems, capping
+     simultaneous death-effects the way float-text is already capped,
+     `OffscreenCanvas`+Worker offload) not yet evaluated against a real
+     WebGL rewrite for whatever surface actually needs it.
    - **Web Audio API:** the full node graph beyond gain/oscillator/
      compressor/convolver already in use — `WaveShaperNode` (distortion
      curves, confirmed in-use for tension-gated whole-bus drive in 3 of 6
