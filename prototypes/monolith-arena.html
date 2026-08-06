@@ -11,6 +11,26 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.20.0 — 2026-08-06 — IF/THEN modifier implemented for Basic Abilities
+                          (GDD §10.3, +10 Ini). New MODIFIERS.IF_THEN
+                          entry; new IF_THEN_CONDITIONS vocabulary
+                          (kind-based, same generic-resolver pattern as
+                          WONDERLAND_ACTIVATION_CONDS) with two conditions
+                          — wonderland-open, target-life-below-half —
+                          checked once at cast resolution in finalizeCast's
+                          proceedCast, after the base operator and any AND
+                          modifier. Two example COMPOSED_CARDS demonstrate
+                          it (card-inflict-if-wonderland-then-afflict,
+                          card-hinder-if-half-life-then-jumbie).
+                          Same-family only, per GDD's own stated filtering
+                          rule — cross-family THEN-effects are the GDD's
+                          own explicitly unresolved question (see its
+                          "Cross-family THEN-effects" note), not guessed
+                          at here. Not wired into Ultimate cards yet
+                          (finalizeCast's card.effects branch is
+                          untouched) — see MONOLITH_RULESET.md for exactly
+                          what this does and doesn't unblock for Daedalus
+                          Tesseract / Nhül Partikül's full effect.
   v0.19.0 — 2026-08-06 — Nazar/Nullify Cost now intercept single-target
                           Ultimate cards built from Aggressive operators
                           (ult-devastate, ult-nhul-particul), not just
@@ -867,11 +887,33 @@ const OPERATORS = {
 
   refine: { name:'Refine', category:'utility', kind:'banish-own-random-card' },
 };
-const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 } };
+const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 }, IF_THEN: { costDelta: 10 } };
+// IF/THEN's condition vocabulary (GDD §10.3: "+10 Ini, Basic Abilities
+// only, triggers only when condition is met") — checked once, at cast
+// resolution, not a persistent watcher. Two conditions, both grounded in
+// real GDD card text (Wonderland-gated effects throughout; "opponent has
+// less than half Life" in Rykndu's Slayer's Tactic) and both checkable
+// with data this engine already has at cast time. GDD's own Modifier
+// filtering rule ("AND, IF/THEN, and OR... must come from the same
+// ability family as the primary effect") is what's implemented here —
+// see the Fundamental Operators comment below for the ruling on
+// cross-family THEN-effects (explicitly unresolved in the GDD itself,
+// not built).
+const IF_THEN_CONDITIONS = {
+  'wonderland-open': { label:"caster's Wonderland is Open", check: (u, target) => u.openWonderlandActive },
+  'target-life-below-half': { label:"target's Life is below half", check: (u, target) => target.life !== undefined && target.life < target.maxLife / 2 },
+};
+function checkIfThenCondition(kind, u, target){ return !!IF_THEN_CONDITIONS[kind]?.check(u, target); }
 const COMPOSED_CARDS = [
   { id:'card-inflict-and-afflict', name:'Inflict + Afflict', operatorId:'inflict', modifier:{ type:'AND', operatorId:'afflict' } },
   { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
   { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
+  // Same-family IF/THEN examples (Aggressive primary, Aggressive
+  // THEN-effect, per GDD's stated filtering rule) — Rykndu's Slayer's
+  // Tactic ("IF opponent has less than half Life THEN Jumbie") is the
+  // closest real GDD precedent for the second one.
+  { id:'card-inflict-if-wonderland-then-afflict', name:'Inflict, IF Wonderland Open THEN Afflict', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'afflict', condition:'wonderland-open' } },
+  { id:'card-hinder-if-half-life-then-jumbie', name:'Hinder, IF target below half Life THEN Jumbie', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'jumbie', condition:'target-life-below-half' } },
 ];
 // Ultimate cards — identical data to monolith-codex.html's copy. See that
 // file's own comment above ULTIMATE_CARDS for exactly what's implemented
@@ -928,7 +970,9 @@ function cardDescription(card){
   let text = op.name;
   if (card.modifier){
     const modOp = OPERATORS[card.modifier.operatorId];
-    text += card.modifier.type === 'AND' ? ` AND ${modOp.name}` : ` OR ${modOp.name}`;
+    if (card.modifier.type === 'AND') text += ` AND ${modOp.name}`;
+    else if (card.modifier.type === 'OR') text += ` OR ${modOp.name}`;
+    else if (card.modifier.type === 'IF_THEN') text += ` IF ${IF_THEN_CONDITIONS[card.modifier.condition].label} THEN ${modOp.name}`;
   }
   return text;
 }
@@ -2242,6 +2286,17 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     } else {
       applyOperator(card.operatorId, u, target, cost);
       if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
+      // IF/THEN (GDD §10.3) — checked once, at resolution, against the
+      // caster/target as they stand right now (not a persistent watcher).
+      // Same-family only (the modifier's own operatorId is drawn from the
+      // same COMPOSED_CARDS-authored family as the primary, per GDD's
+      // filtering rule) — cross-family THEN-effects are the GDD's own
+      // stated unresolved question (§ "Cross-family THEN-effects"), not
+      // built here. Silently no-ops when unmet — same "unmet gate, no
+      // error state" shape as ifWonderlandOpen on Ultimates.
+      if (card.modifier?.type === 'IF_THEN' && checkIfThenCondition(card.modifier.condition, u, target)){
+        applyOperator(card.modifier.operatorId, u, target, cost);
+      }
     }
     // "Aggressive Abilities deal direct damage" (Ala zyu Haad's Singular
     // Entity effect) — a stated interpretation, since GDD §9.3 doesn't spell

@@ -334,12 +334,13 @@ Wonderland state) are implemented, via a small hand-authored
 `ULTIMATE_CARDS` set (same pattern as the Basic `COMPOSED_CARDS`) — see
 each document's own comment above that constant for the exact list.
 **Not implemented, a real scope line:** the AND/ALSO/IF-THEN modifiers on
-Ultimates (IF/THEN needs a condition-evaluation system this build doesn't
-have, the same boundary Open Wonderland's own free-text Activation/
-Sustain conditions already hit), and OR between an Ultimate's own two
-main effects (distinct from Basic OR, which already exists — choosing
-between an Ultimate's two *named* effects is a different design question
-that hasn't been resolved). Auto-Win Condition is implemented as a
+Ultimates specifically — Basic Abilities' IF/THEN is now real (see the
+Modifiers table below), but `finalizeCast`'s Ultimate branch
+(`card.effects.forEach(...)`) doesn't check it, so an Ultimate still
+can't carry a conditional third effect — and OR between an Ultimate's own
+two main effects (distinct from Basic OR, which already exists —
+choosing between an Ultimate's two *named* effects is a different design
+question that hasn't been resolved). Auto-Win Condition is implemented as a
 self-declared confirm() at cast time, not a real check — same trust
 boundary as Open Wonderland's Activation Condition (the player attests
 their stated condition was met; nothing parses it). The AI does not play
@@ -356,7 +357,7 @@ an optional modifier.
 |---|---|---|---|
 | AND | +5 Ini | adds another Basic ability's standard effect | Basic only |
 | ALSO | +10 Ini | joins another modifier onto the card | Ultimate only |
-| IF/THEN | +10 Ini | conditional effect | either |
+| IF/THEN | +10 Ini | conditional effect | Basic — implemented; Ultimate — not yet |
 | OR | +10 Ini | choose one of two effects | either |
 | IF WONDERLAND OPEN | — | triggers only while the caster's Open Wonderland is active | either |
 
@@ -364,6 +365,48 @@ Ultimate-only extras: **Target All** (hits every valid target in range,
 instead of one) and an **Auto-Win Condition** slot (if a stated condition
 is met, the current fight is won outright) — both explicitly Ultimate-only
 per source text.
+
+**IF/THEN — implemented for Basic Abilities** (`card.modifier = { type:
+'IF_THEN', operatorId, condition }`, checked once at cast resolution
+against the caster/target as they stand right now, not a persistent
+watcher — same "unmet gate, no error state" shape as `ifWonderlandOpen`
+on Ultimates). `IF_THEN_CONDITIONS` is a small, bounded, `kind`-based
+vocabulary of checkable conditions (same generic-resolver pattern as
+`WONDERLAND_ACTIVATION_CONDS`/`OPERATORS`' own `kind` field — a new
+condition is a data row plus a `check(u, target)` function, not new
+call-site code):
+
+| `condition` kind | Checks |
+|---|---|
+| `wonderland-open` | The caster's own Open Wonderland is active |
+| `target-life-below-half` | The target's Life is below half its max |
+
+Both are grounded in real GDD card text (Wonderland-gated effects appear
+throughout the GDD; "opponent has less than half Life" appears in
+Rykndu's Slayer's Tactic), and both are checkable with data this engine
+already tracks. Two example cards demonstrate it (`card-inflict-if-
+wonderland-then-afflict`, `card-hinder-if-half-life-then-jumbie`), the
+same hand-authored-`COMPOSED_CARDS` pattern AND/OR already use.
+
+**Same-family only** — the modifier's own `operatorId` must be drawn from
+the same ability family as the primary effect, per GDD's stated filtering
+rule ("AND, IF/THEN, and OR modifier effects must come from the same
+ability family as the primary effect"). **Cross-family THEN-effects are
+explicitly not built** — this isn't an oversight, it's the GDD's own
+stated *unresolved* question (its "Cross-family THEN-effects" note says
+plainly: "Needs one [ruling] before ability resolution is built, since
+the resolution engine needs a single consistent rule rather than per-card
+exceptions"). Building a guessed ruling into the resolver would bake in
+an unconfirmed design decision as if it were settled; the same-family
+half of the rule *is* confirmed and is what's implemented. This also
+means most of the canon Grimoires' actual named-ability IF/THEN clauses
+still can't be ported literally — many of their THEN-effects are
+cross-family (e.g. an Aggressive primary with a "draw a card" THEN) or
+aren't operator applications at all (Special Strike/Special Movement,
+card-retrieval-from-discard) — see Seeded Canon Characters above for the
+approximations already in place; this pass doesn't change those.
+IF/THEN is not wired into Ultimate cards at all yet (see the Ultimate
+implementation status above).
 
 ## Fundamental Operators (the ability-authoring vocabulary)
 
@@ -746,11 +789,21 @@ Building for **browser, single-file HTML/JS/Canvas, no backend**:
 - Refine's "banish own card/ally" half — mechanically unclear, don't build
   the ally-targeting branch until clarified.
 - Nhül Partikül — its bounded Scry+Seal subset is now built
-  (`ult-nhul-particul`, see Seeded Canon Characters above); the full named
-  ability's Impose/draw-lock IF/THEN tail still needs the generalized
-  IF/THEN modifier layer, not yet built.
+  (`ult-nhul-particul`, see Seeded Canon Characters above). IF/THEN itself
+  is now real for Basic Abilities (see the Modifiers section above), but
+  the full named ability's Impose/draw-lock tail still can't be built even
+  with it: it needs Ultimate-level IF/THEN (not wired to Ultimates yet)
+  AND its THEN-effect ("Impose the card into their hand") isn't an
+  operator application at all — same category of gap as Daedalus
+  Tesseract's own THEN-effect below.
 - Daedalus Tesseract — still fully unauthored (Root + Seal + an IF/THEN
   modifier); Ala zyu Haad's seeded AI Wonderland uses a documented
-  stand-in trigger instead (see Seeded Canon Characters above).
+  stand-in trigger instead (see Seeded Canon Characters above). Even with
+  Basic-Ability IF/THEN now built, this specific card needs two things
+  that still aren't: Ultimate-level ALSO/IF-THEN (Daedalus Tesseract is
+  Ultimate-tier), and its THEN-effect ("Open Wonderland") is a direct
+  game-state change, not an operator applied to a target — the same shape
+  problem Nhül Partikül's own Impose tail has above, not something the
+  same-family operator-application model this pass built can express.
 - Favor's mechanical role beyond currency-for-lore-interactions — unstated
   in every source doc.

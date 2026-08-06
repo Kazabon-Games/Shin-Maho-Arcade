@@ -158,7 +158,21 @@ short on purpose.
   sequenced one at a time) is a bigger, separate lift. Nor does either
   reach a Talisman's per-turn AoE tick, which isn't a declared action at
   all (a positional passive tick, not an "opponent's action" in the
-  interrupt-system sense).
+  interrupt-system sense). Tenth pass (working through the last major
+  documented gap) built the IF/THEN modifier (GDD §10.3, +10 Ini) for
+  Basic Abilities — a `kind`-based `IF_THEN_CONDITIONS` vocabulary (same
+  pattern as Wonderland v2's own condition tables), two conditions
+  (`wonderland-open`, `target-life-below-half`), checked once at cast
+  resolution. Same-family only, matching the GDD's own stated filtering
+  rule — cross-family THEN-effects are the GDD's own explicitly
+  unresolved question ("Needs one [ruling] before ability resolution is
+  built"), not guessed at. Two example cards demonstrate it. Not wired
+  into Ultimate cards, so this specifically does **not** unblock Daedalus
+  Tesseract or Nhül Partikül's full effect — both need Ultimate-level
+  IF/THEN (not built) and have THEN-effects that aren't operator
+  applications at all (Impose-into-hand, Open-Wonderland-directly),
+  outside what this pass's operator-application model can express. See
+  MONOLITH_RULESET.md's Modifiers section for the full ruling.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

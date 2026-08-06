@@ -11,6 +11,12 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.19.0 — 2026-08-06 — IF/THEN modifier data mirrored from Arena
+                          (MODIFIERS.IF_THEN, IF_THEN_CONDITIONS, two new
+                          COMPOSED_CARDS) so the Grimoire/deck editor
+                          displays and costs the new cards correctly. See
+                          Arena's matching entry for the actual resolution
+                          logic — this doc has no battle runtime.
   v0.18.0 — 2026-08-06 — Comment update only — Nazar/Nullify Cost now
                           intercept single-target Ultimates built from
                           Aggressive operators too (Arena's matching
@@ -838,6 +844,17 @@ const OPERATORS = {
 const MODIFIERS = {
   AND: { costDelta: 5 },  // Basic abilities only, per ruleset
   OR:  { costDelta: 10 },
+  IF_THEN: { costDelta: 10 },
+};
+// IF/THEN's condition vocabulary — identical data to Arena's copy, which
+// is where the `check` functions actually run (this doc has no battle
+// runtime, so `label` is all it needs for display). See MONOLITH_RULESET.md's
+// Modifiers section for the cross-family-THEN ruling (same-family only,
+// per GDD's own stated rule — cross-family is the GDD's own explicitly
+// unresolved question, not built).
+const IF_THEN_CONDITIONS = {
+  'wonderland-open': { label:"caster's Wonderland is Open" },
+  'target-life-below-half': { label:"target's Life is below half" },
 };
 // A small hand-authored set demonstrating composed (modifier) cards —
 // everything else in the library is generated straight from OPERATORS
@@ -846,6 +863,8 @@ const COMPOSED_CARDS = [
   { id:'card-inflict-and-afflict', name:'Inflict + Afflict', operatorId:'inflict', modifier:{ type:'AND', operatorId:'afflict' } },
   { id:'card-hinder-and-obstruct', name:'Hinder + Obstruct', operatorId:'hinder', modifier:{ type:'AND', operatorId:'obstruct' } },
   { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
+  { id:'card-inflict-if-wonderland-then-afflict', name:'Inflict, IF Wonderland Open THEN Afflict', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'afflict', condition:'wonderland-open' } },
+  { id:'card-hinder-if-half-life-then-jumbie', name:'Hinder, IF target below half Life THEN Jumbie', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'jumbie', condition:'target-life-below-half' } },
 ];
 // Ultimate cards — hand-authored, not generated: an Ultimate names 2 main
 // effects (both existing OPERATORS) instead of 1, plus flags for the
@@ -887,7 +906,9 @@ function cardDescription(card){
   let text = op.name;
   if (card.modifier){
     const modOp = OPERATORS[card.modifier.operatorId];
-    text += card.modifier.type === 'AND' ? ` AND ${modOp.name}` : ` OR ${modOp.name}`;
+    if (card.modifier.type === 'AND') text += ` AND ${modOp.name}`;
+    else if (card.modifier.type === 'OR') text += ` OR ${modOp.name}`;
+    else if (card.modifier.type === 'IF_THEN') text += ` IF ${IF_THEN_CONDITIONS[card.modifier.condition].label} THEN ${modOp.name}`;
   }
   return text;
 }
