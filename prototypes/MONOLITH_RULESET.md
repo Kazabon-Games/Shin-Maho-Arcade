@@ -446,21 +446,36 @@ site with no real content behind it risks guessing at behavior nothing
 has actually specified — the same "documented, bounded subset" standard
 this project holds Ultimate cards and Wonderland v2 to elsewhere.
 
-**Two real, stated simplifications carried over unchanged from the
-version this replaced:** (1) Nullify Cost is scoped to the same
-`aggressive-played` trigger as Nazar rather than the literal "a *named*
-ability/category" — a picker for choosing which specific ability to ward
-against at ready-time is a separate, larger scope this pass doesn't
-build; (2) neither reaches a Target-All Ultimate's resolution (which
-doesn't route through `finalizeCast`) or a Talisman's per-turn AoE tick
-(which isn't an "opponent's action" in the same instantaneous sense) — a
-readied Nazar will not save you from a Target-All Ultimate or a Trap
-Talisman. Mojo is architecturally different from the other three: it
-targets a specific placed Talisman directly (same `targetsTalisman`
-click-a-cell path as Destroy/Capture, restricted to enemy-owned
-Talismans), marking it `nullified` so it stays on the board but stops
-resolving its AoE effect — not a reactive trigger at all (no `trigger`
-field), so none of the above interrupt-window caveats apply to it.
+**Nullify Cost's "named ability" picker is now built**, closing the one
+simplification from the version above that had a concrete, buildable fix:
+playing Nullify Cost from hand doesn't ready it immediately — it opens a
+picker (rendered in `#hand-card-group`, same place/shape as the existing
+OR-modifier choice) naming one specific incoming Aggressive card to ward
+against, or "Any Aggressive Ability" for the old blanket behavior. The
+choice is stored as `warded` on the readied-defensive record
+(`{ operatorId, cardId, warded }`) and checked in `declareAction` via an
+optional `context` argument (`{ cardId }`, passed by `finalizeCast`,
+the only call site with an actual incoming-card identity to check
+against — `tryStrike`'s Weapon-Strike-Declared trigger has no card, so
+Parry is never subject to `warded`, matching Parry's own unqualified GDD
+wording "reflect Weapon Strike damage"). A readied entry with `warded`
+unset — Nazar, always, and Nullify Cost when "Any Aggressive Ability" was
+picked — still matches every incoming Aggressive card, so the 0-or-1-
+match/AI-defender paths above are entirely unaffected by this. Nazar
+itself gets no picker: GDD's own wording for it ("nullify an incoming
+Aggressive") is already unqualified, nothing to name.
+
+**One real, stated simplification remains:** neither Nazar nor Nullify
+Cost reaches a Target-All Ultimate's resolution (which doesn't route
+through `finalizeCast`) or a Talisman's per-turn AoE tick (which isn't an
+"opponent's action" in the same instantaneous sense) — a readied Nazar
+will not save you from a Target-All Ultimate or a Trap Talisman. Mojo is
+architecturally different from the other three: it targets a specific
+placed Talisman directly (same `targetsTalisman` click-a-cell path as
+Destroy/Capture, restricted to enemy-owned Talismans), marking it
+`nullified` so it stays on the board but stops resolving its AoE effect
+— not a reactive trigger at all (no `trigger` field), so none of the
+above interrupt-window caveats apply to it.
 
 **Supportive** (ally only): Give Mov, Give Strike, Heal (+Life), Give Ini,
 Give Range, Transpose (swap two characters' positions), Accelerate (grant

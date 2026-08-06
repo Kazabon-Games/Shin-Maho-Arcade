@@ -11,6 +11,24 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.18.0 — 2026-08-06 — Nullify Cost's "named ability" picker (GDD's
+                          literal "negate the Initiative cost of a *named*
+                          ability/category" wording, previously scoped
+                          only to the same blanket "any incoming
+                          Aggressive" as Nazar). Playing it from hand now
+                          opens a picker (in #hand-card-group, same shape
+                          as the OR-modifier choice) naming one specific
+                          incoming card to ward, or "Any Aggressive
+                          Ability" for the old behavior — stored as
+                          `warded` on the readied-defensive record and
+                          checked in declareAction() via a new optional
+                          `context` argument ({ cardId }, passed only by
+                          finalizeCast, the one call site with an actual
+                          incoming-card identity). New battle.pendingWard
+                          state, gated the same way battle.pendingOr
+                          already blocks other actions while a choice is
+                          pending. Nazar is unaffected — its own GDD
+                          wording is already unqualified, no picker to add.
   v0.17.0 — 2026-08-06 — Ported the generic Defensive/Reactive interrupt
                           system (declareAction(), in spirit — this
                           engine's own readied-ability data model, not a
@@ -1254,6 +1272,7 @@ function beginDeployment(){
     interactionMode: null, // 'move' | 'strike' | 'rally' | 'cast'
     castingCardId: null,
     pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
+    pendingWard: null, // { esoriId, cardId, cost } while waiting on Nullify Cost's named-ability picker (see resolveWardChoice)
     finished: false, // guards finishBattle() against double-applying rewards — see that function's own comment
     talismans: [], // placed-on-grid state: { id, ownerTeam, x, y, typeId }
     placingTalismanType: null, // set while in 'place-talisman' interaction mode
@@ -1568,7 +1587,7 @@ function logMsg(text, team){
    ============================================================ */
 function setInteractionMode(mode){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard) return;
   battle.interactionMode = battle.interactionMode === mode ? null : mode;
   battle.castingCardId = null; // leaving 'cast' mode (or entering a different one) drops any in-progress card selection
   battle.placingTalismanType = null;
@@ -1608,7 +1627,7 @@ function reachableCells(x0, y0, maxSteps){
 }
 function handleBoardClick(x, y){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr || !battle.interactionMode) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || !battle.interactionMode) return;
   if (battle.interactionMode === 'move') tryMove(u, x, y);
   else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
   else if (battle.interactionMode === 'rally') tryRally(u, x, y);
@@ -1892,12 +1911,35 @@ function activatePassiveCard(u, card){
    (source text doesn't cap it the way Passive's "one at a time" is
    explicit about), so this is a plain array, not a single slot.
    ============================================================ */
-function readyDefensiveCard(u, card, cost){
+function readyDefensiveCard(u, card, cost, warded){
   u.initiative -= cost;
   discardCard(u, card.id);
-  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id });
-  logMsg(`${u.name} readies ${OPERATORS[card.operatorId].name}.`, u.team);
+  // warded (Nullify Cost only — see resolveWardChoice) is the specific
+  // incoming card id this readied response should ward against, per
+  // GDD's literal "negate the Initiative cost of a *named* ability" —
+  // undefined/null means "any" (Nazar's own shape, and Nullify Cost's own
+  // default before this picker existed), checked in declareAction.
+  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id, warded: warded || null });
+  logMsg(warded
+    ? `${u.name} readies ${OPERATORS[card.operatorId].name}, warded against ${cardById(warded).name}.`
+    : `${u.name} readies ${OPERATORS[card.operatorId].name}.`, u.team);
   renderBattle();
+}
+// Nullify Cost's own hand-click doesn't ready immediately — GDD's literal
+// text is "negate the Initiative cost of a *named* ability/category," so
+// readying it opens a picker (battle.pendingWard, rendered in place of
+// the normal hand — see renderBattle) naming which specific incoming
+// card it should ward against, or "Any Aggressive Ability" to keep the
+// old blanket behavior. Nazar has no such picker — GDD's own wording for
+// it ("nullify an incoming Aggressive") is already unqualified.
+function resolveWardChoice(wardedCardId){
+  const p = battle.pendingWard;
+  battle.pendingWard = null;
+  if (!p) { renderBattle(); return; }
+  const u = battle.units.find(x => x.esoriId === p.esoriId);
+  const card = cardById(p.cardId);
+  if (!u || !card || !u.hand.includes(p.cardId)) { renderBattle(); return; }
+  readyDefensiveCard(u, card, p.cost, wardedCardId || null);
 }
 /* ============================================================
    DEFENSIVE/REACTIVE — GENERIC INTERRUPT SYSTEM. Ported (in spirit, not
@@ -1952,10 +1994,17 @@ const DEFENSIVE_TRIGGERS = {
   'ability-played-any': 'Ability Played (Any)',
 };
 let pendingDefenseResponse = null; // { matches, onResolve } while #defensive-response-overlay is open
-function declareAction(type, u, target, onResolve){
+// context.cardId (optional, only finalizeCast's 'aggressive-played' call
+// passes it) is the incoming card actually being declared — checked
+// against a readied Nullify Cost's own `warded` field (see
+// resolveWardChoice) so a Nullify Cost named against one specific card
+// only matches that card, per GDD's literal "a *named* ability/category"
+// wording. A readied entry with no `warded` (Nazar always; Nullify Cost
+// when the player picked "Any Aggressive Ability") matches every card.
+function declareAction(type, u, target, onResolve, context){
   const matches = (target?.readiedDefensives || [])
     .map((d, idx) => ({ d, idx }))
-    .filter(({ d }) => OPERATORS[d.operatorId]?.trigger === type);
+    .filter(({ d }) => OPERATORS[d.operatorId]?.trigger === type && (!d.warded || d.warded === context?.cardId));
   if (!matches.length || target.controller !== 'human' || matches.length === 1){
     if (!matches.length){ onResolve(null); return; }
     // AI defenders always use their (only, or first) readied response —
@@ -1969,7 +2018,7 @@ function declareAction(type, u, target, onResolve){
   document.getElementById('defensive-response-title').textContent =
     `${target.name} has more than one ready response to ${u.name}'s ${DEFENSIVE_TRIGGERS[type]}.`;
   document.getElementById('defensive-response-options').innerHTML = matches.map(({ d, idx }) =>
-    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}</button>`
+    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}${d.warded ? ` (warded: ${escapeHtml(cardById(d.warded).name)})` : ''}</button>`
   ).join('') + `<button class="btn" onclick="chooseDefensiveResponse(-1)">Hold everything — let it resolve unopposed</button>`;
   overlay.style.display = 'flex';
 }
@@ -2012,7 +2061,14 @@ function playHandCard(cardId){
     // effect happens later, off the *opponent's* subsequent action. Mojo
     // (the one Defensive operator with targetsTalisman:true) falls
     // through to the normal 'cast' board-targeting below instead, same
-    // path Destroy/Capture already use.
+    // path Destroy/Capture already use. Nullify Cost specifically opens
+    // its named-ability picker instead of readying right away — see
+    // resolveWardChoice.
+    if (card.operatorId === 'nullifyCost'){
+      battle.pendingWard = { esoriId: u.esoriId, cardId: card.id, cost };
+      renderBattle();
+      return;
+    }
     readyDefensiveCard(u, card, cost);
     return;
   }
@@ -2193,7 +2249,7 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     battle.interactionMode = null;
     battle.castingCardId = null;
     renderBattle();
-  });
+  }, { cardId: card.id });
 }
 
 /* ============================================================
@@ -2446,7 +2502,7 @@ function renderBattle(){
   const active = currentUnit();
   const board = document.getElementById('battle-board');
   let reach = {}, targets = [], talismanTargets = [], placeCells = [];
-  if (active && active.controller === 'human' && !battle.pendingOr){
+  if (active && active.controller === 'human' && !battle.pendingOr && !battle.pendingWard){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, effectiveDistanceRemaining(active));
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       // Defeated (not yet removed) enemies are legal Strike targets too —
@@ -2509,13 +2565,13 @@ function renderBattle(){
   if (active){
     const passiveNote = active.activePassive ? ` · Passive: ${OPERATORS[active.activePassive].name}` : '';
     const wonderlandNote = active.openWonderlandActive ? ' · <b style="color:var(--gold)">Wonderland Open</b>' : '';
-    const readiedNote = active.readiedDefensives.length ? ` · Readied: ${active.readiedDefensives.map(d => OPERATORS[d.operatorId].name).join(', ')}` : '';
+    const readiedNote = active.readiedDefensives.length ? ` · Readied: ${active.readiedDefensives.map(d => d.warded ? `${OPERATORS[d.operatorId].name} (vs ${cardById(d.warded).name})` : OPERATORS[d.operatorId].name).join(', ')}` : '';
     hudActive.innerHTML = `<b>${escapeHtml(active.name)}</b> (Team ${active.team}, ${POSITIONS[active.position].label})
       — Life ${active.life}/${active.maxLife} · Ini ${active.initiative}/${active.maxInitiative}
       · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}${readiedNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
-  const blocked = !isHumanTurn || !!battle.pendingOr;
+  const blocked = !isHumanTurn || !!battle.pendingOr || !!battle.pendingWard;
   document.getElementById('action-move').disabled = blocked || active.distanceRemaining <= 0;
   document.getElementById('action-strike').disabled = blocked || active.hasStruckThisTurn;
   document.getElementById('action-rally').disabled = blocked;
@@ -2589,6 +2645,11 @@ function renderBattle(){
       <button class="opt-btn" onclick="resolveOrChoice('${card.operatorId}')"><strong>${OPERATORS[card.operatorId].name}</strong></button>
       <button class="opt-btn" onclick="resolveOrChoice('${card.modifier.operatorId}')"><strong>${OPERATORS[card.modifier.operatorId].name}</strong></button>
     `;
+  } else if (battle.pendingWard){
+    handHint.textContent = 'Nullify Cost: ward against which incoming Aggressive Ability? (Undeclared = any of them.)';
+    const aggressiveCards = CARD_LIBRARY.filter(c => cardCategory(c) === 'aggressive');
+    handGroup.innerHTML = `<button class="opt-btn" onclick="resolveWardChoice(null)"><strong>Any Aggressive Ability</strong></button>`
+      + aggressiveCards.map(c => `<button class="opt-btn" onclick="resolveWardChoice('${c.id}')"><strong>${escapeHtml(cardDescription(c))}</strong></button>`).join('');
   } else if (!isHumanTurn || !active){
     handHint.textContent = '';
     handGroup.innerHTML = '';

@@ -131,7 +131,19 @@ short on purpose.
   2+ different readied responses to the same trigger now gets an actual
   choice via a new response-window modal, instead of the old silent
   auto-pick — every 0-or-1-match case (everything else) is unchanged.
-  This closes every item on the "tackle all, in order of priority" list.
+  This closed every item on the "tackle all, in order of priority" list.
+  Eighth pass (working through the remaining documented gaps) built
+  Nullify Cost's "named ability" picker — GDD's literal text is "negate
+  the Initiative cost of a *named* ability/category," not the blanket
+  "any incoming Aggressive" it shared with Nazar until now. Playing it
+  from hand opens a picker naming one specific incoming card to ward, or
+  "Any Aggressive Ability" for the old behavior; declareAction() gained
+  an optional `context` argument so `finalizeCast` can pass the actual
+  incoming card's id to check against. Nazar is unaffected (its own GDD
+  wording is already unqualified). The one remaining Defensive gap is
+  architectural, not content-shaped: neither Nazar nor Nullify Cost
+  reaches a Target-All Ultimate or a Talisman's per-turn AoE tick, since
+  neither routes through `finalizeCast`.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

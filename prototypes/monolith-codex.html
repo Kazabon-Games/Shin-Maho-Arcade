@@ -11,6 +11,13 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.17.0 — 2026-08-06 — Comment updates only — Nullify Cost's "named
+                          ability" picker landed in Arena (see that file's
+                          matching entry and MONOLITH_RULESET.md's
+                          Defensive/Reactive section); this doc has no
+                          battle-runtime logic, so nothing here changed
+                          beyond the comments describing the OPERATORS
+                          entries and current scope.
   v0.16.0 — 2026-08-06 — Nazar/Parry/Nullify Cost each gained a `trigger`
                           field in OPERATORS, matching Arena's new generic
                           declareAction() interrupt system (see that
@@ -733,8 +740,9 @@ const TALISMAN_TYPES = {
 
    Current scope: every operator category is implemented, including
    Defensive/Reactive (Nazar, Parry, Mojo, Nullify Cost — see the note
-   directly above their block below for the lightweight "readied ability"
-   mechanism used instead of a full generic interrupt system), except
+   directly above their block below for the "readied ability" mechanism
+   and Arena's generic declareAction() interrupt system it's consumed
+   through), except
    every Special operator besides Open Wonderland itself (Rhyzl Step,
    Daedalus Tesseract, Nhül Partikül — under-specified, Phase-3 stretch
    per MONOLITH_RULESET.md). Talismans (Destroy/Capture, Mojo, all
@@ -782,14 +790,16 @@ const OPERATORS = {
   // subsequent action, via Arena's generic declareAction() interrupt
   // system — each names its `trigger` (one of the 8 GDD Trigger Reference
   // entries; see MONOLITH_RULESET.md's Defensive/Reactive section for the
-  // full vocabulary and which ones this build actually wires up). A
-  // stated simplification, not the literal "named ability/category" text:
-  // Nullify Cost is scoped to the same "aggressive-played" trigger as
-  // Nazar (a picker for naming a specific ability at ready-time is a
-  // separate scope this pass doesn't build), and neither reaches
-  // Target-All Ultimates or Talisman AoE ticks, which don't route through
-  // declareAction. Mojo is different — it targets a specific placed
-  // Talisman directly (like Destroy/Capture, reusing that exact
+  // full vocabulary and which ones this build actually wires up). Nullify
+  // Cost's own literal text — "negate the Initiative cost of a *named*
+  // ability/category" — is implemented too: readying it from hand opens a
+  // picker naming one specific incoming card to ward against (or "Any
+  // Aggressive Ability" for the old blanket behavior), stored as
+  // `warded` on the readied-defensive record and checked in
+  // declareAction. One real remaining gap: neither Nazar nor Nullify Cost
+  // reaches Target-All Ultimates or Talisman AoE ticks, which don't route
+  // through declareAction. Mojo is different — it targets a specific
+  // placed Talisman directly (like Destroy/Capture, reusing that exact
   // targetsTalisman path), not a reactive trigger, so it has no `trigger`.
   nazar:       { name:'Nazar',        category:'defensive', kind:'defensive-nullify-aggressive', trigger:'aggressive-played' },
   parry:       { name:'Parry',        category:'defensive', kind:'defensive-reflect-strike', trigger:'weapon-strike-declared' },
