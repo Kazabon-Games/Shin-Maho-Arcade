@@ -24,7 +24,7 @@
   --panel2:#301c58;
   --ink:#f4ecff;
   --ink-mid:#c2b3e8;
-  --ink-soft:#8674b8;
+  --ink-soft:#9687c1; /* WCAG AA contrast fix, 2026-08-06, corrected: was #8674b8, first fix to #8c7bbb undershot against a second real background (rgb(48,28,88), lower-luminance-delta than the darker rgb(35,20,66) despite higher raw RGB) -- #9687c1 clears 4.5:1 against both real backgrounds this token is used on (4.56:1 and 5.23:1). Same hue, still minimal perceptual change. */
   --neon:#ffcb5c;
   --neon2:#b98aff;
   --gold:#ffd76b;
@@ -1745,7 +1745,7 @@ const ShareCard = (function(){
       c.fillStyle = '#ffe6a8';
       c.font = "bold 28px 'IBM Plex Mono', monospace";
       c.fillText(String(val), x, 195);
-      c.fillStyle = '#8674b8';
+      c.fillStyle = '#9687c1'; // WCAG AA fix, 2026-08-06, corrected value -- matches --ink-soft CSS token fix
       c.font = "11px 'Quicksand', sans-serif";
       c.fillText(label, x, 220);
     });

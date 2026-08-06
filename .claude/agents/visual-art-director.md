@@ -53,11 +53,39 @@ generation logic verbatim.
   lookahead, screen shake, squash-stretch), while leaving informational
   motion (damage numbers, boss telegraph timing) untouched? Gating the
   wrong thing is as much a finding as gating nothing. This studio doesn't
-  run a formal WCAG conformance audit today (no screen-reader pass, no
-  full contrast-ratio sweep) — say so plainly if asked whether a game is
-  "WCAG 2.2 AA compliant" rather than implying more than the
-  reduced-motion check above actually covers; it's a real, useful subset
-  of the standard, not the whole of it.
+  run a formal WCAG conformance audit today (no screen-reader pass) — say
+  so plainly if asked whether a game is "WCAG 2.2 AA compliant" rather
+  than implying more than these specific checks actually cover.
+- **Contrast-ratio sweep (added 2026-08-06 — closes a gap this file
+  itself named as open):** a real, live, WCAG 1.4.3-grounded check now
+  exists and has been run once, not just documented. Method: drive the
+  actual page with Playwright, walk every visible element carrying direct
+  text, read the real computed `color`/effective background via
+  `getComputedStyle()` (properly alpha-composited for gradient/translucent
+  backgrounds — a naive walk-up that stops at the first ancestor with any
+  `background-color` will skip past an element's own `background-image`
+  gradient and pick a more distant ancestor's solid color instead, a real
+  false-positive/false-negative trap hit and fixed during the first real
+  run of this check), compute WCAG relative luminance and contrast ratio
+  per the spec formula, and flag anything under 4.5:1 (normal text) or
+  3:1 (large text ≥24px regular / ≥18.66px bold, and non-text UI
+  components per WCAG 2.2's added focus-indicator criteria). **First real
+  run found and fixed a genuine studio-wide issue**: `--ink-soft`
+  (`#8674b8`), a shared secondary-text token byte-identical across all 6
+  files, measured 3.63-4.16:1 against its own real backgrounds — below
+  AA everywhere it was actually used for text, on every game plus the
+  portal. Corrected to `#9687c1` (same hue, verified against the actual
+  worst-case real background — a naive fix checked against only the
+  darkest background undershot, since a lighter background can have a
+  *smaller* luminance delta from a light foreground than a darker one
+  does; the real binding constraint took a second iteration to find).
+  Also caught and fixed the identical color baked into `sigilchain.html`/
+  `wardfall.html`'s `ShareCard` canvas-rendered result images. Zero
+  failures across 48 real text/background pairs checked studio-wide after
+  the fix; full regression suite re-run clean. Run this sweep whenever a
+  shared text-color token changes, or periodically the same way
+  `color-language-audit`'s reserved-hue check runs — it checks a
+  different property (contrast) of the same shared token set.
 - **Cross-game consistency** (when reviewing more than one game file, or a
   game alongside the portal) — this is a distinct check from internal
   consistency above, and needs its own pass: read each file's `:root{}` CSS
