@@ -42,6 +42,14 @@ scratch.
   a specific harmonic choice tied to the game's own visual language), the
   same way a technical polish pass and an identity pass are different work
   requiring different kinds of changes.
+- **A two-directional handler (pause/resume, hide/restore) needs both
+  directions verified live, independently** — see `adaptive-game-audio`'s
+  "Reliability under load and long sessions" section. A `visibilitychange`
+  listener that only pauses on hide reads as "handled" on a shallow grep
+  and did, in five of six games, until a real audit suspended a live
+  `AudioContext` and checked whether it ever actually resumed. Don't credit
+  a handler with covering a failure mode just because it shares the
+  event's name — `RECURRING_BUG_CATALOG.md` §12.
 
 ## A real win, not just hard lessons (added 2026-08-04)
 

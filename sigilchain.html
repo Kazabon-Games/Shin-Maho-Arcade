@@ -225,7 +225,7 @@ body.reduced-motion .panel{
 </div>
 
 <div class="meta-row">
-  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">SIGIL CHAIN v1.1.0</div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">SIGIL CHAIN v1.1.1</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'; Music.uiClick(260,0.07)" title="Mute" aria-label="Mute">🔊</button>
   <button class="icon-btn" onclick="Music.uiClick(260,0.07); FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Music.uiClick(240,0.07); Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -243,6 +243,23 @@ body.reduced-motion .panel{
    before this changelog existed," not a reconstruction of that history —
    this file's own SIGIL_CHAIN_HANDOVER.md is on record as an explicit
    reconstruction elsewhere and that's deliberately not repeated here.)
+
+   v1.1.1 — 2026-08-05 — AudioContext resume-on-visibility-restore fix
+                          (capability-audit finding, live-Playwright-
+                          verified): no visibilitychange listener existed
+                          anywhere in this file, so a browser-suspended
+                          context (backgrounding the tab) only recovered if
+                          the player's next action happened to be a click
+                          on a control wired to Music.uiClick() (its own
+                          self-priming resume check). ensureCtx() now
+                          checks ctx.state==='suspended' and resumes on
+                          every call, not just first creation (verbatim
+                          from runeshatter.html:1552-1566), and a new
+                          document.addEventListener('visibilitychange', ...)
+                          + window blur listener inside the Game IIFE
+                          (verbatim from runeshatter.html:1465-1482) force-
+                          pauses on hide and calls Music.ensureCtx() on
+                          restore — proactive, not gated on any click.
 
    v1.1.0 — 2026-08-05 — Menu/UI click sound, closing the studio-wide
                           zero-UI-sound gap the game-audio-production-suite
@@ -1167,6 +1184,29 @@ const Game = (function(){
   resize();
   requestAnimationFrame((ts)=>{ lastTs=ts; requestAnimationFrame(loop); });
 
+  // Auto-pause on the tab losing visibility/focus, and proactively resume
+  // audio on visibility restore — capability-audit finding (2026-08-05,
+  // live-Playwright-verified): the only existing recovery path for a
+  // browser-suspended AudioContext was uiClick()'s own self-priming resume
+  // check, so a player who backgrounded the tab and came back without
+  // immediately clicking a UI-wired control had no audio-recovery path at
+  // all. No visibilitychange listener existed anywhere in this file before
+  // this. Copied verbatim from runeshatter.html:1465-1482, the one game in
+  // the studio that already gets this fully right — only ever force-
+  // pauses on hide (never force-resumes gameplay on refocus; that stays
+  // the player's own Resume-button call, same precedent
+  // iridescentcosmology.html:5610-5620 documents), and re-checks on
+  // visibility RESTORE (not just hide), because auto-pause alone wouldn't
+  // have resumed the audio.
+  document.addEventListener('visibilitychange', () => {
+    if(document.hidden){
+      if(running && !paused) togglePause();
+    } else if(typeof Music !== 'undefined'){
+      Music.ensureCtx();
+    }
+  });
+  window.addEventListener('blur', () => { if(running && !paused) togglePause(); });
+
   return { startRound, togglePause, showMenu, isDailyMode: () => dailyMode, getLastRunStats: () => lastRunStats, _test };
 })();
 
@@ -1359,9 +1399,21 @@ const Music = (function(){
     for(let i=0;i<n;i++){ const x = i/(n-1)*2-1; curve[i] = (1+k)*x/(1+k*Math.abs(x)); }
     distortion.curve = curve;
   }
+  // capability-audit finding (2026-08-05, live-Playwright-verified): this
+  // function only ever created the context once and never re-checked its
+  // state afterward, so a browser-suspended context (backgrounding the tab,
+  // some Safari/mobile-Chrome heuristics) had no recovery path here — the
+  // only thing saving this game was uiClick()'s own separate resume check
+  // below, which only fires if the player's next action happens to be a
+  // click on a wired control. Checked on every call, not just first
+  // creation, exactly matching runeshatter.html:1552-1566 (the one game in
+  // the studio that already gets this fully right) — reused verbatim
+  // rather than re-derived, per the studio's "reuse proven techniques"
+  // rule.
   function ensureCtx(){
-    if(ctx) return;
+    if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
     ctx = new (window.AudioContext||window.webkitAudioContext)();
+    if(ctx.state === 'suspended') ctx.resume();
     master = ctx.createGain(); master.gain.value = muted?0:0.5;
     distortion = ctx.createWaveShaper(); setDistortionAmount(0);
     compressor = ctx.createDynamicsCompressor();

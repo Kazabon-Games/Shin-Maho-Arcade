@@ -305,7 +305,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">INFALL v1.1.0</div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--ink-soft);opacity:.6;margin-right:4px;" id="versionMarker">INFALL v1.1.1</div>
   <button class="icon-btn" onclick="this.textContent = Music.toggleMute() ? '🔇' : '🔊'; Music.uiClick(260,0.07)" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="Music.uiClick(260,0.07); FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Music.uiClick(240,0.07); Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -318,6 +318,29 @@ textarea.form-input{min-height:70px;resize:vertical;}
    INFALL — CHANGE LOG
    (one line per change, most recent on top)
 
+   v1.1.1 — 2026-08-05 — AudioContext-suspend-on-backgrounded-tab fix, a
+                          confirmed capability-audit finding: this game had
+                          no visibilitychange listener at all (grep count
+                          was 0), so the ONLY audio-recovery path was
+                          uiClick()'s own self-priming resume — a player
+                          who backgrounded the tab and returned without
+                          clicking a wired UI control (e.g. just resumed
+                          watching gameplay, or used a keyboard shortcut)
+                          had no recovery path until they happened to click
+                          something. Fixed two places: (1) ensureCtx() was
+                          a pure create-if-missing guard — it now also
+                          resumes an already-existing suspended context;
+                          (2) added a new document visibilitychange
+                          listener (+ window blur) that auto-pauses on
+                          hide and calls Music.ensureCtx() on restore,
+                          matching runeshatter.html:1465-1481's proven
+                          precedent (itself matching
+                          iridescentcosmology.html:5610-5620) exactly —
+                          force-pause on hide, never force-resume the game
+                          on refocus (that stays the player's Resume
+                          button), but the AudioContext resume IS
+                          proactive since it's inaudible/non-disruptive if
+                          wrong.
    v1.1.0 — 2026-08-05 — Menu/UI click sound, closing the studio-wide
                           zero-UI-sound gap confirmed by the
                           game-audio-production-suite skill's capability
@@ -1590,7 +1613,16 @@ const Music = (function(){
   const ROOT = 110; // "the void humming" register
 
   function ensureCtx(){
-    if(ctx) return;
+    if(ctx){
+      // v1.1.1 fix: this used to be a pure create-if-missing guard, so a
+      // context suspended by the browser (tab backgrounded, then restored
+      // without the player's next action happening to be a uiClick()-wired
+      // control) had no recovery path at all — see the new visibilitychange
+      // handler near Game.init() below, which now calls ensureCtx() on
+      // visibility restore specifically expecting this to resume it.
+      if(ctx.state === 'suspended') ctx.resume();
+      return;
+    }
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = muted ? 0 : 0.5;
     compressor = ctx.createDynamicsCompressor();
@@ -2152,6 +2184,27 @@ const Bugrep = (function(){
 })();
 
 Game.init();
+
+// Auto-pause on the tab losing visibility/focus, and proactively resume the
+// AudioContext on visibility restore — matches runeshatter.html:1465-1481's
+// proven precedent (itself matching iridescentcosmology.html:5610-5620:
+// only ever force-pauses, never force-resumes on refocus; that stays the
+// player's own Resume-button call). Closes a real capability-audit finding:
+// this game's only audio-recovery path used to be uiClick()'s own self-
+// priming resume (menu/UI controls only) — a player who backgrounds the
+// tab and returns without clicking a wired control (e.g. resumes watching
+// gameplay, or uses a keyboard shortcut) had no recovery path at all until
+// they happened to click something. Music.ensureCtx() itself now also
+// resumes an already-existing suspended context (see ensureCtx() above),
+// which is what makes calling it here on visibility restore sufficient.
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    if(Game.state === 'playing') Game.togglePause();
+  } else if(typeof Music !== 'undefined'){
+    Music.ensureCtx();
+  }
+});
+window.addEventListener('blur', () => { if(Game.state === 'playing') Game.togglePause(); });
 
 // PWA registration — see the pwa-offline-games skill. Built in from the
 // first commit (Games 1-2 both retrofitted this, Sigil Chain/Wardfall

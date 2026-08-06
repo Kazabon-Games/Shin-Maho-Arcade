@@ -2,7 +2,7 @@
 // pwa-offline-games skill for the full rationale (why cache-first, why
 // cross-origin requests pass through untouched, why the activate cleanup
 // step is mandatory). Bump CACHE_NAME on any meaningful deploy.
-const CACHE_NAME = 'sigilchain-v4'; // bumped: menu/UI click sound (Music.uiClick), wired into every real .btn/icon-btn/toggle control
+const CACHE_NAME = 'sigilchain-v5'; // bumped: AudioContext resume-on-visibility-restore fix (ensureCtx() resume-if-suspended + new visibilitychange/blur listeners)
 const PRECACHE_URLS = ['./sigilchain.html'];
 
 self.addEventListener('install', (e) => {

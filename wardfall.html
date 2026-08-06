@@ -1541,7 +1541,16 @@ const Music = (function(){
   let muted = false, started = false;
 
   function ensureCtx(){
-    if(ctx) return;
+    // capability audit finding: a real browser can suspend the AudioContext
+    // while the tab is backgrounded (documented, common on mobile) with no
+    // action from this game at all. ensureCtx() previously only guarded
+    // against re-creating an already-existing ctx and had no path back to
+    // 'running' for one that already existed but had gone suspended out
+    // from under it — every other call site here (orbBell/missBell/
+    // descentWarning/uiClick/etc.) already calls ensureCtx() defensively
+    // before touching the graph, so extending the guard here closes the
+    // gap everywhere at once instead of patching each call site.
+    if(ctx){ if(ctx.state === 'suspended') ctx.resume(); return; }
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = muted?0:0.5;
     compressor = ctx.createDynamicsCompressor();
@@ -2026,6 +2035,35 @@ document.addEventListener('click', (e)=>{
     const preset = UI_SFX_PRESETS.toggle;
     Music.uiClick(preset[0], preset[1], preset[2]);
   });
+});
+
+// Auto-pause on the tab losing visibility/focus — matches
+// iridescentcosmology.html:5610-5620's and runeshatter.html:1465-1481's
+// exact precedent (only ever force-pauses, never force-resumes on
+// refocus; that stays the player's own Resume-button call). Added here
+// specifically to close the capability audit's audio-suspension finding:
+// a real browser can suspend the AudioContext while a tab is backgrounded
+// regardless of anything this game does, and without this, a player who
+// backgrounds the tab and comes back without explicitly quitting had no
+// path back to a running context for the rest of the run (grepped: this
+// file had zero visibilitychange/blur listeners and zero .resume() calls
+// before this). Re-checking on visibility RESTORE (not just hide) is the
+// actual fix — auto-pause alone wouldn't have resumed the audio.
+// Game.running/paused aren't exported directly, so this reads them via
+// Game._test.state() — the same convention Settings.open()/close()
+// already use above (wardfall.html:1834, :1852) to check pause state
+// from outside the Game module.
+document.addEventListener('visibilitychange', () => {
+  const st = Game._test.state();
+  if(document.hidden){
+    if(st.running && !st.paused) Game.togglePause();
+  } else {
+    Music.ensureCtx();
+  }
+});
+window.addEventListener('blur', () => {
+  const st = Game._test.state();
+  if(st.running && !st.paused) Game.togglePause();
 });
 
 document.getElementById('menuBestVal').textContent = Persist.data.best.score;

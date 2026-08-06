@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>IRIDESCENT COSMOLOGY v2.15.0</title>
+<title>IRIDESCENT COSMOLOGY v2.15.1</title>
 
 <!-- portal-readiness metadata: previously none of this existed (no favicon,
      no description, no Open Graph tags) — matters now that this links out
@@ -28,6 +28,40 @@
 <!--
   IRIDESCENT COSMOLOGY — CHANGE LOG
   (one line per change, most recent on top)
+
+  v2.15.1 — 2026-08-05 — BUG FIX (capability-audit finding, live-Playwright-
+                          verified): the existing visibilitychange listener
+                          only ever force-paused on tab-hide — it never had
+                          a path back on visibility RESTORE. Real browsers
+                          suspend the AudioContext while a tab is
+                          backgrounded, and nothing in this file re-checked
+                          ctx.state afterward: Music.uiClick() deliberately
+                          only checks `if(!ctx || muted) return` and no-ops
+                          on a suspended-but-existing ctx, so even clicking a
+                          real button after returning to the tab left sound
+                          dead. Looked "already handled" on a shallow grep
+                          (a visibilitychange listener does exist, at what
+                          is now line ~5665) but only ever covered the hide
+                          half. Fixed by extending that SAME listener (not
+                          adding a second, competing one) with an else
+                          branch that calls the newly-exported
+                          Music.ensureAudio() on restore — the same
+                          idempotent ctx.state==='suspended'->ctx.resume()
+                          path already used at run start, toMenu, and the
+                          first pointerdown gesture, now reused here instead
+                          of duplicated. Pause-on-hide behavior is untouched
+                          — same condition, same togglePause() call, just
+                          nested one level for the if/else. Modeled directly
+                          on runeshatter.html's own resume-half listener,
+                          which was itself explicitly modeled on this file's
+                          pause half. Verified live: suspended a real
+                          AudioContext via .suspend(), dispatched real
+                          visibilitychange(hidden->false)+focus events,
+                          sampled ctx.state === 'running' afterward (was
+                          stuck at 'suspended' before this fix under the
+                          same repro). Re-ran the full
+                          tests/iridescentcosmology-adversarial.js suite
+                          after — zero regressions.
 
   v2.15.0 — 2026-08-05 — UI click sound: the studio-wide zero-UI-sound gap
                           confirmed by the game-audio-production-suite
@@ -2034,7 +2068,7 @@ textarea.form-input{min-height:70px;resize:vertical;}
 </div>
 
 <div class="meta-row">
-  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.15.0</div>
+  <div id="versionMarker">IRIDESCENT COSMOLOGY v2.15.1</div>
   <button class="icon-btn" onclick="Music.uiClick();this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
   <button class="icon-btn" onclick="Music.uiClick();FullscreenCtrl.toggle()" title="Fullscreen" aria-label="Toggle fullscreen">⛶</button>
   <button class="icon-btn" onclick="Music.uiClick();Settings.open()" title="Settings" aria-label="Settings">⚙</button>
@@ -5661,9 +5695,28 @@ const Game = (function(){
   // or a notification stealing focus mid-run keeps the sim ticking in the
   // background; coming back to find yourself dead from an off-screen swarm
   // is a fairness bug, not difficulty. Only force-pauses (never force-resumes
-  // on refocus — that's still the player's call via the Resume button).
+  // GAMEPLAY on refocus — that's still the player's call via the Resume
+  // button). v2.15.1: added an else branch for AUDIO only, restoring sound
+  // on visibility return. Real browsers actually suspend the AudioContext
+  // when a tab backgrounds (not just the sim pausing) — without this, sound
+  // never comes back even after the player resumes, because nothing else in
+  // this file re-checks ctx.state after a hide/show cycle: Music.uiClick()
+  // deliberately only checks `if(!ctx || muted) return` and no-ops on a
+  // suspended-but-existing ctx, and no click handler calls ensureAudio()
+  // either. Runeshatter's visibilitychange listener (runeshatter.html
+  // ~1465-1481) is itself modeled on this exact listener's pause half; this
+  // is the missing resume half being folded back in. Music.ensureAudio()
+  // (not the raw ensureCtx export) is called because it already contains
+  // the ctx.state==='suspended' -> ctx.resume() check used everywhere else
+  // audio needs to come alive (run start, toMenu, first pointerdown) — this
+  // reuses that idempotent path instead of duplicating the resume check
+  // here or teaching the exported ensureCtx a second responsibility.
   document.addEventListener('visibilitychange', () => {
-    if(document.hidden && running && !paused && !levelChoosing) togglePause();
+    if(document.hidden){
+      if(running && !paused && !levelChoosing) togglePause();
+    } else if(typeof Music !== 'undefined'){
+      Music.ensureAudio();
+    }
   });
   window.addEventListener('blur', () => {
     if(running && !paused && !levelChoosing) togglePause();
@@ -7715,6 +7768,7 @@ const Music = (function(){
     setMusicVolume,
     setSfxVolume,
     uiClick,
+    ensureAudio,
     _test: { isMuted: () => muted, isStarted: () => started, intensity: () => intensity, bpm: () => BPM,
       uiClickCount: () => uiClickCount, lastUiClickAt: () => lastUiClickAt, lastUiClickFreq: () => lastUiClickFreq,
       isScheduling: () => schedulerHandle !== null, currentStep: () => step,

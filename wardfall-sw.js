@@ -1,7 +1,7 @@
 // Wardfall service worker — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale. Bump CACHE_NAME on any
 // meaningful deploy.
-const CACHE_NAME = 'wardfall-v4'; // bumped: added Music.uiClick — quiet/short/low-pitched bell()-derived menu-tap sound wired into every real .btn/.icon-btn/.shop-buy control (and the two settings checkboxes) via event delegation, closing the studio-wide zero-UI-sound gap
+const CACHE_NAME = 'wardfall-v5'; // bumped: capability-audit fix — visibilitychange/blur auto-pause handler plus ensureCtx() now resumes an existing-but-suspended AudioContext on visibility restore, closing the zero-path-back-to-sound bug after a backgrounded tab
 const PRECACHE_URLS = ['./wardfall.html'];
 
 self.addEventListener('install', (e) => {

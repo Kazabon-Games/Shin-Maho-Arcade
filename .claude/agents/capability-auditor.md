@@ -62,7 +62,16 @@ to catch.
      synthesis — confirmed zero). Full detail, real Web Audio
      implementation sketches, and Adopt/Trial/Assess/Hold placement for
      all of the above: `game-audio-production-suite` skill — read it
-     before re-deriving this list from scratch on the next audit.
+     before re-deriving this list from scratch on the next audit. Note
+     this list is entirely about *production-value* technique (does a
+     capability exist in the codebase at all) — a separate axis,
+     *reliability under load and long sessions* (voice-count ceilings,
+     AudioContext suspend/resume correctness, node-lifecycle leak risk),
+     is a distinct question this list doesn't answer; see
+     `adaptive-game-audio`'s "Reliability under load and long sessions"
+     section (added 2026-08-05) for that audit's own findings and method —
+     a technique can be fully present and still fail under load in a way
+     this capability-surface list would never surface.
    - **HTML/CSS:** `filter`/`backdrop-filter`, blend modes
      (`mix-blend-mode`), `clip-path`, `@property` + animating custom
      properties, container queries, the Web Animations API

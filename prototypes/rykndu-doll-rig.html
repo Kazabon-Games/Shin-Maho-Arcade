@@ -12,6 +12,40 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.1.30 — 2026-08-05 — Bug fix: shared AudioContext never resumed once
+                          a browser suspended it (real, confirmed
+                          capability-audit finding, live-Playwright-
+                          verified -- `grep -n "\.resume()"` returned zero
+                          matches anywhere in this file, and zero
+                          visibilitychange listeners existed either). Real
+                          browser behavior when a tab is backgrounded,
+                          worst on mobile: once it happened, there was
+                          zero code path back to sound for the rest of the
+                          session. SFX.ensureCtx() (~line 2565, the actual
+                          root of the shared context/bus chain -- Music
+                          and TitleTheme both reuse SFX.getCtx()/
+                          SFX.getBus() rather than creating their own, per
+                          this session's earlier audit) now checks
+                          `ctx.state === 'suspended'` and resumes on every
+                          call, not just first creation, matching
+                          runeshatter.html:1552-1566's own precedent. A
+                          new visibilitychange/focus listener pair calls
+                          SFX.ensureCtx() on restore, adapted from
+                          runeshatter.html:1465-1481 but scoped down to
+                          only the resume half -- this file has no
+                          running/paused pause architecture at all (the
+                          fight simulation deliberately keeps ticking
+                          while a screen is hidden, per the existing
+                          "simulation isn't paused, only rendering is"
+                          comments), so no new force-pause-on-hide
+                          subsystem was added; that would be a real,
+                          separate architectural change with no confirmed
+                          bug behind it, not part of this fix. Verified
+                          live via Playwright: real first gesture ->
+                          real AudioContext -> ctx.suspend() -> dispatch
+                          visibilitychange(hidden->false) + focus ->
+                          sampled ctx.state === 'running'.
+
   v0.1.29 — 2026-08-04 — TitleTheme: a from-scratch, high-production-value
                           title-screen composition (see
                           rykndu-assets/music/MUSIC_DIRECTION.md's new
@@ -1279,7 +1313,7 @@
 <body>
 <canvas id="stage"></canvas>
 <div id="prealpha-badge">PRE-ALPHA &middot; WORK IN PROGRESS</div>
-<div class="version-marker">Doll Rig Prototype — v0.1.29</div>
+<div class="version-marker">Doll Rig Prototype — v0.1.30</div>
 <!-- Title/mode-select overlay -- see GAME_5_PILLARS.md §3 for why this is a
      visual/input-focus framing layer (hides the non-chosen mode's HUD),
      not a full simulation split: both Rig (Gauntlet) and Rig2/Duel keep
@@ -2563,8 +2597,24 @@
     let ctx, sfx, compressor, started = false;
 
     function ensureCtx() {
-      if (ctx) return;
+      // v0.1.30 fix: this used to be a bare `if (ctx) return;` -- real bug
+      // (capability audit, live-Playwright-verified): a backgrounded tab's
+      // AudioContext gets suspended by the browser (documented behavior,
+      // worst on mobile), and with the old guard there was zero code path
+      // back to sound for the rest of the session once that happened --
+      // `.resume()` never appeared anywhere in this file. Checked on every
+      // call, not just first creation (matches runeshatter.html:1552-1566's
+      // own ensureCtx() precedent, the one game in the studio that already
+      // gets this right), so a call from the visibilitychange listener
+      // below, or a fresh gameplay input after the tab comes back, both
+      // resume the SAME shared context rather than being no-ops against a
+      // suspended one. SFX is the actual root of the shared context --
+      // Music.ensureCtx() and TitleTheme.ensureCtx() both call
+      // SFX.getCtx()/SFX.getBus() rather than creating their own -- so
+      // resuming here is sufficient for all three modules at once.
+      if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
       ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
       sfx = ctx.createGain(); sfx.gain.value = 0.6;
       compressor = ctx.createDynamicsCompressor();
       compressor.threshold.value = -18; compressor.knee.value = 12;
@@ -2698,7 +2748,19 @@
     return {
       ensureCtx, windupWhoosh, strikeImpact, missBuzz, proximityPulse, parryChime,
       getCtx: () => ctx, getBus: () => compressor, getSfxGain: () => sfx,
-      _test: { isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null }
+      // audioCtxState/audioCtxSuspend: added alongside the v0.1.30 resume
+      // fix so tests/rig-audio-resume.js can drive a real suspend/restore
+      // cycle against the actual shared AudioContext (not a mock), the
+      // same "internal _test hook + real UI-driven interaction" convention
+      // every existing tests/rig-*.js suite already uses (per this repo's
+      // CLAUDE.md). audioCtxSuspend() calls the real ctx.suspend() browser
+      // API directly -- it's how a capability audit verifies the fix, not
+      // a new production code path.
+      _test: {
+        isStarted: () => started, sfxGainValue: () => sfx ? sfx.gain.value : null,
+        audioCtxState: () => ctx ? ctx.state : null,
+        audioCtxSuspend: () => ctx ? ctx.suspend() : Promise.resolve()
+      }
     };
   })();
 
@@ -4403,6 +4465,17 @@
       droneFilterQ: () => Music._test.droneFilterQ()
     }
   };
+  // SFX's own window hook -- same convention as window.Music/window.TitleTheme
+  // above, added alongside the v0.1.30 resume fix (see SFX module's own
+  // _test comment for why audioCtxState/audioCtxSuspend exist).
+  window.SFX = {
+    _test: {
+      isStarted: () => SFX._test.isStarted(),
+      sfxGainValue: () => SFX._test.sfxGainValue(),
+      audioCtxState: () => SFX._test.audioCtxState(),
+      audioCtxSuspend: () => SFX._test.audioCtxSuspend()
+    }
+  };
   // TitleTheme's own window hook -- same convention as window.Music above.
   window.TitleTheme = {
     _test: {
@@ -4442,6 +4515,37 @@
   document.addEventListener('pointerdown', onFirstGestureForTitleTheme, true);
   document.addEventListener('keydown', onFirstGestureForTitleTheme, true);
   document.addEventListener('touchstart', onFirstGestureForTitleTheme, true);
+
+  // v0.1.30: auto-resume the shared AudioContext on visibility/focus
+  // restore -- closes the same real, confirmed bug SFX.ensureCtx()'s own
+  // updated comment describes (capability audit + live-Playwright
+  // verification: zero `.resume()` calls and zero visibilitychange
+  // listeners anywhere in this file before this pass, so a backgrounded-
+  // then-foregrounded tab had no path back to sound for the rest of the
+  // session). Adapted from runeshatter.html:1465-1481's precedent, but
+  // scoped down to only the resume half: unlike runeshatter (which has a
+  // real running/paused pair driving its main loop), this file has no
+  // pause architecture at all -- the fight simulation is deliberately
+  // built to keep ticking while a screen is hidden (see the "simulation
+  // isn't paused, only rendering/display is" comments at handleInput()
+  // and the HUD-freeze block near the frame() loop). Bolting on a new
+  // force-pause-on-hide subsystem would mean new state touching the core
+  // requestAnimationFrame loop, matchOver timing, and every existing
+  // tests/rig-*.js suite's assumptions -- a real architectural change with
+  // no confirmed bug behind it, not a fix for this one. If backgrounded-
+  // sim-keeps-running turns out to cause an actual problem (unfair enemy
+  // spawns/misses accruing off-screen, battery drain), that's a separate,
+  // evidence-driven change, not bundled into this audio fix. Calling
+  // SFX.ensureCtx() (not Music's or TitleTheme's) is deliberate -- it's
+  // the actual root of the shared AudioContext/bus chain (see its own
+  // updated comment above), so resuming through it resumes the one real
+  // context for all three modules at once. No force-resume happens on
+  // hide/blur, matching runeshatter's own "never force-resume on refocus"
+  // rule in spirit -- there's simply nothing to pause here to begin with.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) SFX.ensureCtx();
+  });
+  window.addEventListener('focus', () => SFX.ensureCtx());
 
   // ---- Title/mode-select overlay control (GAME_5_PILLARS.md §3/§4) ----
   // Exposed on window (not just wired via inline onclick) the same way

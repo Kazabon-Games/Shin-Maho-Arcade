@@ -1,7 +1,7 @@
 // Infall service worker — cache-first, version-invalidated. See the
 // pwa-offline-games skill for the full rationale. Bump CACHE_NAME on any
 // meaningful deploy.
-const CACHE_NAME = 'infall-v3'; // bumped: menu/UI click sound (Music.uiClick), wired into every real .btn/icon-btn/toggle control
+const CACHE_NAME = 'infall-v4'; // bumped: visibilitychange AudioContext-resume fix (ensureCtx now resumes a suspended ctx; new visibilitychange/blur listener)
 const PRECACHE_URLS = ['./infall.html'];
 
 self.addEventListener('install', (e) => {

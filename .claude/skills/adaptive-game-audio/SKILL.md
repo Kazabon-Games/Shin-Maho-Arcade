@@ -126,6 +126,116 @@ Before calling any bus/node "wired up," trace the signal path in the
 working slider and a downstream connection but no upstream source is the
 exact shape both real incidents took.
 
+## Reliability under load and long sessions (added 2026-08-05)
+
+Every technique above was proven against this studio's actual games —
+single-player or local-2-player, short sessions, a human-authored, bounded
+set of sound-triggering actions. A real capability audit (2026-08-05,
+prompted by the producer asking whether the current architecture would
+"carry its weight" if a future project needed far more concurrent sound
+sources and far longer sessions than anything shipped today — an MMO-shaped
+scenario named explicitly, not assumed) checked that assumption directly,
+with live evidence, not speculation. Two findings below are real, live
+today, independent of any future project; one is a real gap correctly not
+yet worth building against.
+
+**Mandatory idiom, now: resume the AudioContext on visibility restore, not
+just pause on hide.** Real browsers suspend a page's `AudioContext` when a
+tab is backgrounded — documented, common, especially on mobile — and every
+game in this studio except one shipped with *zero* path back to sound
+afterward, discovered by literally suspending a live context, restoring
+visibility, and checking whether `ctx.state` ever returned to `'running'`.
+The subtle trap: a `visibilitychange` listener that only pauses on hide
+*looks* like it handles this (a shallow grep for `visibilitychange` finds
+it) but does nothing on restore — Iridescent Cosmology shipped exactly this
+disguised version, its own changelog reading as if the concern was closed
+when the resume half was never written. `runeshatter.html`'s pattern is the
+correct, proven shape — copy it verbatim, don't reinvent:
+
+```js
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    if(running && !paused) togglePause();
+  } else if(typeof Music !== 'undefined'){
+    Music.ensureCtx(); // must actually resume an existing-but-suspended ctx, not just create-if-missing
+  }
+});
+window.addEventListener('blur', () => { if(running && !paused) togglePause(); });
+```
+
+The trap inside the trap: most games' `ensureCtx()` is written as
+`if(ctx) return;` — a pure create-if-missing guard that does nothing for a
+context that already exists but is `suspended`. Confirm (don't assume)
+that whatever function the restore branch calls actually checks
+`ctx.state === 'suspended'` and calls `ctx.resume()` in that case, or the
+listener is present and still silently does nothing.
+
+**A real, currently-masked gap, correctly not yet built: no voice-count
+ceiling or steal policy anywhere in the studio.** Every `bell()`/`uiClick()`/
+stinger call unconditionally creates new nodes — there is no cap on
+simultaneous active voices and no eviction policy (oldest-first, quietest-
+first, priority-based) anywhere. This is genuinely safe *today*: a live
+stress test firing 150 overlapping one-shot voices through a real
+compressor measured a peak output sample of 0.7257, nowhere near clipping,
+and the compressor's `.reduction` swung from -13.89dB to -1.42dB — visibly,
+measurably absorbing the load. It stays safe only because no shipped game
+currently wires audio to a high-density event source (per-enemy hit/kill
+events fire zero audio in every game checked; the human player's own
+actions are the only trigger path today). The moment a design starts
+firing audio per-actor rather than per-local-player-action — the literal
+MMO shape, many *other* sources of sound competing for the same bus — this
+becomes load-bearing. **The pattern, ready to use when that day comes, not
+before:**
+
+```js
+const MAX_VOICES = 24; // tune per game; this is a starting point, not a measured value
+const activeVoices = []; // { osc, gain, endsAt }
+function spawnVoice(freq, dur, vol){
+  const now = ctx.currentTime;
+  // prune anything that's already finished
+  for(let i = activeVoices.length - 1; i >= 0; i--){
+    if(activeVoices[i].endsAt <= now) activeVoices.splice(i, 1);
+  }
+  if(activeVoices.length >= MAX_VOICES){
+    // steal the oldest (or lowest-priority) voice instead of letting a 25th
+    // voice stack on top and push the bus toward clipping unmeasured
+    const stolen = activeVoices.shift();
+    stolen.gain.gain.cancelScheduledValues(now);
+    stolen.gain.gain.setValueAtTime(stolen.gain.gain.value, now);
+    stolen.gain.gain.linearRampToValueAtTime(0.0001, now + 0.02); // fast fade, not a hard stop/click
+  }
+  // ...create osc/gain, schedule normally, then:
+  activeVoices.push({ osc, gain, endsAt: now + dur });
+}
+```
+Building this now, with no real high-density design to validate the cap
+number or steal heuristic against, would be exactly the kind of padding
+this studio's own "no padding" rule exists to prevent — this section
+documents the pattern so it's a known, ready move rather than a cold
+start, the same role the taxonomy in `game-audio-production-suite` plays
+for music/SFX categories. Adopt when a real design needs it, not before.
+
+**Confirmed, proven, no action needed:** one-shot node cleanup does not
+leak. A live test firing 150 one-shots, waiting past every voice's
+scheduled `.stop()` time, and forcing real garbage collection (`WeakRef`-
+tracked node references, 5 forced-GC passes) found every one of 300
+oscillators and 450 gain nodes correctly collected — only the permanent
+drone/bus nodes survived. Web Audio's spec-guaranteed GC of stopped source
+nodes works correctly here; this studio's code doesn't accidentally defeat
+it with a lingering array/closure/listener reference. Re-check only if a
+future voice-cap implementation (above) introduces its own tracking array
+— that array itself would need the same no-lingering-reference discipline
+this test just confirmed the rest of the codebase already has.
+
+**Confirmed, proven, no action needed: every game's bus routes through a
+real compressor before output.** No game in the studio sends a one-shot
+straight to `ctx.destination` — every signal path funnels through exactly
+one `DynamicsCompressorNode` first (four of six games share byte-identical
+tuning: threshold -20dB, knee 12, ratio 4:1, attack 3ms, release 250ms).
+This is the actual foundation "many simultaneous sounds don't clip" rests
+on, and it's already correct studio-wide — nothing to change here, just
+confirmed rather than assumed.
+
 ## Verification — this is not optional
 
 **Verify live, not by reading the code.** This environment often has no
