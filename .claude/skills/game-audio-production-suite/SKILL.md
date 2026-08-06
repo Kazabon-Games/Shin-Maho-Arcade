@@ -200,9 +200,9 @@ never mentioned):**
 
 ## Part D — What this actually recommends, ranked
 
-1. **UI sound** — the single highest-leverage, lowest-cost, most
-   universally-applicable gap. Every game already has the `bell()`-style
-   primitive; this is wiring, not new synthesis.
+1. ~~**UI sound**~~ — **shipped 2026-08-05** across all 5 shipped games
+   (`uiClick()`, wired into every real menu/`.btn` control, verified live
+   per game). No longer open.
 2. **Fix Runeshatter's dead `game:over` listener** — a real, confirmed
    bug (silence on both win AND loss despite a real win state existing),
    not a scope decision, cheap to fix once someone's back in that file.
@@ -211,9 +211,129 @@ never mentioned):**
 4. **Ambience/room-tone as a genuinely new, non-tonal bus** — real gap,
    real cheap pattern (filtered noise), not currently confused with the
    existing tonal drones.
-5. Everything in Part C's Trial tier, tried on whichever game's next
+5. **Cross-game loudness consistency** (new, Part E below) — a real,
+   now-measured ~24dB RMS spread across the portfolio that's never been
+   checked before. Ranked here because unlike 2-4 it needs a producer
+   listening/mixing decision, not just an implementation pass.
+6. Everything in Part C's Trial tier, tried on whichever game's next
    audio pass has room for it — not urgent, but no longer unresearched.
 
 This skill does not implement any of the above — see `audio-designer`
 for that. It exists so the next game's pillars doc, and the next
 capability audit, start from this list instead of re-deriving it.
+
+## Part E — Process, convention, and standards benchmark (2026-08-06)
+
+A follow-up pass, prompted by the producer asking whether the audio
+role/skills are genuinely at "the highest standard" for process,
+convention, and documentation — not technique. Grounded in fresh web
+research (game audio design-document conventions, WCAG audio-accessibility
+criteria, mobile loudness standards, audio QA/bug-tracking practice, and
+audio event-naming taxonomy) cross-checked against this studio's actual
+files and actual measured output, not assumed.
+
+**Confirmed strength, no action needed: WCAG 1.4.2 (Audio Control).** Any
+audio that autoplays for >3s needs an immediately-visible, non-buried,
+keyboard-operable pause/stop/volume control. Checked directly: every
+game's mute button is a real `<button aria-label="Mute...">` (native
+keyboard semantics, no custom-div-with-onclick anti-pattern) inside
+`.meta-row`, which is `position:fixed` with no `display:none` path and is
+explicitly documented in-file as sitting "outside every overlay" — always
+reachable, never hidden behind a menu. Confirmed compliant across all 5
+shipped games by direct inspection, not assumed. **WCAG 1.4.7** (background
+audio ≥20dB below foreground speech) is confirmed **not applicable** — no
+game in this studio has spoken narration/dialogue.
+
+**A real, previously-unmeasured gap, now measured: no cross-game loudness
+target exists, and actual output varies by ~24dB.** The industry reference
+for mobile game audio is roughly -16 LUFS integrated loudness with true
+peaks at or below -1 dBTP (Audio Engineering Society guidance; console
+targets, e.g. Sony's -23 LUFS ±3, are a different, louder-format context
+that doesn't apply here). This studio has never measured against any
+target. A live Playwright pass, tapping each game's actual final bus node
+right before `ctx.destination` via a non-invasive `AnalyserNode` (an
+honest RMS-in-dBFS + true-sample-peak proxy — **not** a certified
+ITU-R BS.1770 LUFS reading, no K-weighting/gating, said explicitly so
+this number is never overclaimed as more precise than it is) over a real
+~2.5s steady-state window, found:
+
+| Game | Moment measured | RMS (dBFS) | True peak (dBFS) |
+|---|---|---|---|
+| Runeshatter | gameplay music bed, real Endless-mode gesture | -36.0 | -30.3 |
+| Iridescent Cosmology | gameplay music, steady-state after first gesture | -26.3 | -18.7 |
+| Rykndu `TitleTheme` | title screen, full 6-voice mix | -12.5 | -5.1 |
+
+A ~24dB RMS spread between the quietest and loudest game — a player who
+sets their volume for Runeshatter would barely hear Rykndu's title theme
+at all; a player who sets it for Rykndu would find Runeshatter's drone
+uncomfortably loud on return. This is exactly the kind of thing "measure,
+don't assume" exists to catch: every individual game's own mix reads as
+internally reasonable, and nothing before this pass ever compared them
+against each other or against a real external reference. **Not fixed in
+this pass** — narrowing this gap means raising or lowering a real,
+audible, subjective mix level per game, which needs an actual human
+listening/producer decision the same way `TitleTheme`'s own composition
+did, not a blind global gain multiply applied without anyone hearing the
+result. What IS actionable now: adopt -16 LUFS-ish (via this RMS-proxy
+method, honestly labeled) as the target reference, and add "measure the
+final bus against the other shipped games, not just in isolation" as a
+new pre-ship check — see `audio-designer.md`.
+
+**A real, evidenced documentation/convention gap: no shared naming
+taxonomy for composed accent/stinger SFX.** The one shared *primitive*
+(`bell(freq, dur, vol)`) is consistently named everywhere — but every
+game invented its own independent vocabulary for the *named* sounds built
+on top of it, confirmed by grep across all 6 files:
+`achieveFlourish`/`comboBell`/`missBell`/`orbBell`/`roundEndCue` (Wardfall),
+`stingerAchievement`/`stingerCapture`/`stingerFusion`/`stingerGameOver`/
+`stingerWellDespawn`/`stingerWellSpawn` (Infall), `chainCancelCue`/
+`phaseArrivalCue`/`roundEndCue`/`runeBell` (Sigil Chain), `plainMatchClink`/
+`tierUpFanfare` (Runeshatter), `matchWinStinger`/`missBuzz`/`parryChime`/
+`parryStinger`/`proximityPulse`/`ringOutStinger`/`strikeImpact`/
+`windupWhoosh` (Rykndu). Six different suffix/prefix conventions
+(`stingerX`, `Xstinger`, `Xcue`, `Xbell`/`Xchime`/`Xclink`, `Xflourish`,
+`Xbuzz`/`Xpulse`/`Ximpact`/`Xwhoosh`) for what are largely the same *kind*
+of event (an accent/stinger tied to a game-state transition). The real
+industry convention (a documented, living taxonomy table — event name,
+category, priority, status — kept current as a repo doc, not scattered
+across six files' local vocabularies) doesn't exist here. **Not retro-
+actively renamed in this pass** — six files' worth of live call sites is
+real churn on working, tested code for a cosmetic-only gain, which this
+studio's own "don't add cleanup beyond what's needed" convention would
+reject. **What IS adopted, going forward:** new one-shot SFX functions
+should use a `<category><Detail>` shape ending in one of four suffixes —
+`Stinger` (a musical accent tied to a specific narrative/match event:
+round-win, ring-out, tier-up), `Cue` (a shorter UI/state-transition
+signal below stinger weight: phase-arrival, round-end), `Bell` (a direct
+`bell()` call with no additional composition), or `FX` (a non-tonal
+one-shot: whoosh, buzz, impact, chime that isn't built from `bell()`) —
+so a new game's function list is predictable without opening five other
+files to guess the local convention first.
+
+**Confirmed correctly out of scope, not an oversight (per this studio's
+own "no padding" rule and its Legal/Compliance precedent for naming a
+real mismatch honestly):**
+- **Formal ticket-based audio bug tracking** (JIRA/Linear/a dedicated
+  issue tracker with a triage cadence) — real industry practice for a
+  team with more than one active contributor and an ongoing sprint
+  cadence. This studio's actual equivalent is the in-app
+  `bug-report-widget` (player-facing) plus this session's own direct
+  producer-in-the-loop review (every finding in this document got a
+  human decision within the same session it was raised) — a real,
+  working substitute for this studio's real scale, not a gap to close by
+  standing up infrastructure nobody would use.
+- **AI-assisted generative sound-asset drafting** — a real, cited 2026
+  pipeline trend (drafting ambience beds/foley variations with generative
+  models, then hand-cleaning) — doesn't apply to a studio whose entire
+  audio identity is "100% synthesized, no audio-file assets, ever" (the
+  first line of `adaptive-game-audio`). Adopting it would mean importing
+  external audio files, a bigger identity change than a process update,
+  not a documentation gap.
+- **Object-based/head-tracked spatial audio (Dolby Atmos, Sony Tempest,
+  platform HRTF)** — a real, cited 2026 console/VR expectation. This
+  studio's real deployment target is browser/mobile stereo playback; the
+  already-documented `PannerNode`/`setValueCurveAtTime` Adopt-tier
+  recommendation (Part C/D above) is the correct, already-identified
+  right-sized version of "spatial audio" for this studio's actual
+  platform — full object-based/head-tracked audio needs hardware this
+  studio doesn't target, a confirmed non-finding rather than a miss.

@@ -50,6 +50,25 @@ scratch.
   `AudioContext` and checked whether it ever actually resumed. Don't credit
   a handler with covering a failure mode just because it shares the
   event's name — `RECURRING_BUG_CATALOG.md` §12.
+- **Check a new/changed mix against a target loudness AND against the
+  rest of the portfolio, not just in isolation.** See
+  `game-audio-production-suite` Part E (added 2026-08-06): a first real
+  cross-game measurement (RMS-in-dBFS + true-peak proxy via a live
+  `AnalyserNode` tap, honestly labeled as not certified ITU-R BS.1770
+  LUFS) found a ~24dB spread between the quietest and loudest shipped
+  game's mix — every individual game's own balance read fine on its own,
+  the gap only showed up once measured against a reference and against
+  each other. Reference target: roughly -16 LUFS-ish integrated / -1dBTP
+  peak (the mobile-game guideline, not console's louder -23 LUFS
+  context). Run the same tap-and-measure method before calling a new
+  piece's mix finished.
+- **New one-shot SFX function names use `<Category><Detail><Suffix>`**,
+  suffix one of `Stinger`/`Cue`/`Bell`/`FX` (full definitions:
+  `game-audio-production-suite` Part E) — the studio's six shipped games
+  independently invented six different naming schemes for the same kind
+  of event before this convention existed; going forward, don't add a
+  seventh. Existing function names are NOT being retroactively renamed —
+  this only governs new code.
 
 ## A real win, not just hard lessons (added 2026-08-04)
 
