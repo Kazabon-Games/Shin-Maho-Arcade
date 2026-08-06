@@ -268,13 +268,21 @@ numbers for.
 - **Critical Hits:** 1.5× damage (10×Rarity → 15×Rarity). Per Master GDD
   v2.0 §4.5, only Projectile ("critical at range 4 in a straight line")
   and Spear ("critical on the 2nd cell if the 1st cell target was hit")
-  have a stated crit condition. Projectile's is implemented (a
-  single-target condition, fits the existing Strike model directly).
-  Spear's is **not** — it requires hitting two targets in one Strike
-  declaration (cell 1, then cell 2), a genuinely different multi-target
-  mechanic, not a quick formula fix; deferred, not guessed at. Sword/
-  Dagger/Staff/Wand have no stated crit condition at all and never
-  critical — nothing to implement there.
+  have a stated crit condition. Projectile's is a single-target
+  condition, checked directly by `isCriticalStrike()`. Spear's is a
+  genuinely different, multi-target mechanic and is implemented in
+  `tryStrike()` directly rather than `isCriticalStrike()` (which can't
+  express "conditional on a different cell's outcome"): declaring a
+  Strike at Spear's max range (cheb=2, a straight line) also strikes
+  whatever's in the intervening cheb=1 cell — resolved first, and always
+  at normal (non-critical) damage — and if that 1st-cell hit connects
+  (a live enemy was actually there), the 2nd-cell (declared) target's own
+  hit is forced to Critical. An empty 1st cell means the 2nd-cell hit
+  stays normal. An empty 2nd (declared) cell doesn't trigger any of this —
+  falls through to the ordinary single-cell Strike/Talisman-destroy/no-op
+  handling, same as any other weapon. Sword/Dagger/Staff/Wand have no
+  stated crit condition at all and never critical — nothing to implement
+  there.
 - **Defeated state:** Life reaches 0 → Defeated. Cannot move/attack/play
   abilities, Distance locked to 1. Remains a legal Weapon Strike target
   while Defeated — **declaring a Strike against a Defeated character

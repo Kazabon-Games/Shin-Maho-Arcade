@@ -11,6 +11,22 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.16.0 — 2026-08-06 — Spear's Critical Hit implemented (GDD §4.5):
+                          declaring a Strike at Spear's max range (cheb=2,
+                          straight line) now also strikes whatever's in
+                          the intervening cheb=1 cell first, at normal
+                          damage, and — if that 1st-cell hit connected —
+                          the declared 2nd-cell target's own hit is
+                          forced to Critical. Factored the single-target
+                          resolution logic (defeated-removal, Critical
+                          damage, Parry interception, Sword's +1 Distance
+                          bonus, logging) out of tryStrike() into a new
+                          resolveStrikeHit(u, target, forceCrit) so it can
+                          be called once or twice from one Strike
+                          declaration without duplicating it. No change
+                          for Sword/Dagger/Staff/Wand/Projectile — they
+                          never reach cheb=2, so isSpearFarCell is never
+                          true for them.
   v0.15.0 — 2026-08-06 — AI Squad is now the three GDD §12 canon
                           Grimoires — Rykndu, NLDR, Ala zyu Haad — Charles's
                           personal Tulpa, replacing the placeholder
@@ -1112,15 +1128,16 @@ function inWeaponRange(weapon, dx, dy){
 }
 // Critical Hits — GDD §4.5 states a crit condition for Projectile
 // ("critical at range 4 in a straight line") and Spear ("critical on the
-// 2nd cell if the 1st cell target was hit"). Only Projectile is
-// implemented here: it's a single-target condition that fits the
-// existing single-target Strike model directly. Spear's condition
-// requires hitting two targets in one Strike declaration (cell 1 then
-// cell 2) — a genuinely different, multi-target mechanic this build
-// doesn't have yet, not a quick formula fix; deferred, not guessed at.
-// Sword/Dagger/Staff/Wand have no stated crit condition in GDD §4.5 at
-// all, so they never critical — not an omission, there's nothing to
-// implement.
+// 2nd cell if the 1st cell target was hit"). Projectile's is a
+// single-target condition checked here. Spear's is a genuinely different,
+// multi-target mechanic — declaring a Strike at cheb=2 (its max range, in
+// a straight line) also strikes whatever's in the intervening cheb=1
+// cell, and if THAT hit connects, the declared cheb=2 target's own hit is
+// forced to Critical — see tryStrike's isSpearFarCell branch, not this
+// function (isCriticalStrike alone can't express "conditional on a
+// different cell's outcome"). Sword/Dagger/Staff/Wand have no stated crit
+// condition in GDD §4.5 at all, so they never critical — not an
+// omission, there's nothing to implement.
 function isCriticalStrike(weapon, dx, dy){
   if (weapon === 'projectile') return isStraightLine(dx, dy) && chebyshev(dx, dy) === 4;
   return false;
@@ -1585,10 +1602,56 @@ function applyLifeDamage(target, amount){
 function applyLifeHeal(target, amount){
   target.life = Math.min(target.maxLife, target.life + amount);
 }
+// Resolves one Strike hit against a single target — defeated-removal,
+// Critical damage, and Parry interception, exactly as tryStrike always
+// resolved a single-target hit. Factored out so Spear's two-cell Strike
+// (below) can call it twice against two different targets in one
+// declaration without duplicating this logic. forceCrit lets the caller
+// override the normal per-weapon crit check — Spear's far-cell hit uses
+// this to become a Critical when its near-cell hit connected, per GDD §4.5.
+function resolveStrikeHit(u, target, forceCrit){
+  if (target.defeated){
+    // GDD §8.2: "declares a Weapon Strike against them while in
+    // Defeated State... removes them" — the act of striking removes
+    // them permanently, not a damage/life-total check (they're already
+    // at 0 Life). No Parry interception here — reflecting a removal,
+    // rather than a damage number, isn't a mechanic this build defines;
+    // a stated scope simplification, not an oversight.
+    target.removed = true;
+    logMsg(`${u.name} strikes ${target.name} and removes them from the battle permanently.`, u.team);
+    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+    return;
+  }
+  const crit = forceCrit || isCriticalStrike(u.weaponMain, target.x-u.x, target.y-u.y) || hasWonderlandEffect(u, 'all-crits');
+  const dmg = crit ? u.critDmg : u.dmg;
+  const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
+  if (parryIdx !== -1){
+    target.readiedDefensives.splice(parryIdx, 1);
+    logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
+    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
+    applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
+    return;
+  }
+  logMsg(`${u.name} strikes ${target.name}${crit?' — Critical!':''} for ${dmg}.`, u.team);
+  if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
+  applyLifeDamage(target, dmg);
+}
 function tryStrike(u, x, y){
   if (u.hasStruckThisTurn) return;
-  if (!inWeaponRange(u.weaponMain, x-u.x, y-u.y)) return;
+  const dx = x-u.x, dy = y-u.y;
+  if (!inWeaponRange(u.weaponMain, dx, dy)) return;
   const target = battle.units.find(t => t.x===x && t.y===y && t.team !== u.team && !t.removed);
+  // Spear's two-cell Strike (GDD §4.5): at its max range (cheb=2, a
+  // straight line), a Spear Strike also hits whatever's in the
+  // intervening cheb=1 cell on the same line, resolved first — and if
+  // that 1st-cell hit connects, the declared 2nd-cell target's own hit is
+  // forced to Critical. Only relevant when the far cell has an actual
+  // target; an empty far cell falls through to the talisman/no-op
+  // handling below like any other weapon.
+  const isSpearFarCell = target && u.weaponMain === 'spear' && chebyshev(dx, dy) === 2 && isStraightLine(dx, dy);
+  const nearTarget = isSpearFarCell
+    ? battle.units.find(t => t.x === u.x + dx/2 && t.y === u.y + dy/2 && t.team !== u.team && !t.removed)
+    : null;
   if (target){
     u.hasStruckThisTurn = true;
     if (u.wonderlandProgress) u.wonderlandProgress.weaponStrikeThisTurn = true;
@@ -1596,37 +1659,8 @@ function tryStrike(u, x, y){
       u.openWonderlandActive = false;
       logMsg(`${u.name}'s Wonderland closes — a Weapon Strike was declared.`, u.team);
     }
-    if (target.defeated){
-      // GDD §8.2: "declares a Weapon Strike against them while in
-      // Defeated State... removes them" — the act of striking removes
-      // them permanently, not a damage/life-total check (they're already
-      // at 0 Life). No Parry interception here — reflecting a removal,
-      // rather than a damage number, isn't a mechanic this build defines;
-      // a stated scope simplification, not an oversight.
-      target.removed = true;
-      logMsg(`${u.name} strikes ${target.name} and removes them from the battle permanently.`, u.team);
-      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
-      renderBattle();
-      const w = checkWin();
-      if (w) finishBattle(w);
-      return;
-    }
-    const crit = isCriticalStrike(u.weaponMain, x-u.x, y-u.y) || hasWonderlandEffect(u, 'all-crits');
-    const dmg = crit ? u.critDmg : u.dmg;
-    const parryIdx = target.readiedDefensives.findIndex(d => d.operatorId === 'parry');
-    if (parryIdx !== -1){
-      target.readiedDefensives.splice(parryIdx, 1);
-      logMsg(`${target.name}'s Parry reflects ${u.name}'s${crit?' critical':''} strike for ${dmg}.`, target.team);
-      if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus, still earned even though the hit was reflected
-      applyLifeDamage(u, dmg); // reflected onto the attacker instead of the defender
-      renderBattle();
-      const w = checkWin();
-      if (w) finishBattle(w);
-      return;
-    }
-    logMsg(`${u.name} strikes ${target.name}${crit?' — Critical!':''} for ${dmg}.`, u.team);
-    if (u.weaponMain === 'sword') u.distanceRemaining += 1; // Sword main-slot bonus
-    applyLifeDamage(target, dmg);
+    if (nearTarget) resolveStrikeHit(u, nearTarget, false);
+    resolveStrikeHit(u, target, !!nearTarget);
     renderBattle();
     const w = checkWin();
     if (w) finishBattle(w);

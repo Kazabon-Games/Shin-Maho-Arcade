@@ -11,6 +11,10 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.15.0 — 2026-08-06 — Spear's weapon note updated — its Critical Hit
+                          condition is implemented in Arena now (see that
+                          file's matching entry); this doc's WEAPONS table
+                          is display-only, no functional change here.
   v0.14.0 — 2026-08-06 — Added ult-nhul-particul (Scry AND Seal) to
                           ULTIMATE_CARDS — Ala zyu Haad's authored
                           Ultimate from GDD §12.1, now selectable by any
@@ -591,7 +595,7 @@ const POSITIONS = {
 };
 const WEAPONS = {
   sword: { label:'Sword', range:'1', note:'+1 Distance after a hit (as main)' },
-  spear: { label:'Spear', range:'2 (line)', note:'Crits cell 2 if cell 1 was hit (not yet implemented in Arena — needs a two-target Strike, not a formula fix)' },
+  spear: { label:'Spear', range:'2 (line)', note:'A Strike at max range also hits the intervening cell; if that connects, the declared cell crits' },
   dagger: { label:'Dagger', range:'1', note:'+1 Strike (as main)' },
   projectile: { label:'Projectile', range:'3–4', note:'Crits at range 4, straight line only' },
   staff: { label:'Staff', range:'1 or 2', note:'—' },

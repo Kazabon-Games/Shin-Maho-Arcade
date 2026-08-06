@@ -109,10 +109,16 @@ short on purpose.
   `ult-nhul-particul` (Scry AND Seal) — Ala zyu Haad's authored Ultimate
   and her Wonderland's stand-in trigger, since her actual "Daedalus
   Tesseract" needs the still-unbuilt generalized IF/THEN modifier layer.
-  Still open: Spear's two-target crit, and porting Build 3's generic
-  Defensive-trigger (`declareAction`) system in place of the current
-  two-hardcoded-interception-point version — Wonderland v2 reused Build
-  3's *condition-tracking* idea but not that particular piece.
+  Sixth pass implemented Spear's two-cell Critical Hit (GDD §4.5): a
+  Strike at Spear's max range (cheb=2, straight line) also strikes the
+  intervening cheb=1 cell first, at normal damage, and forces the
+  declared cell's own hit to Critical if that first hit connected —
+  factored the single-target resolution logic out of `tryStrike()` into
+  `resolveStrikeHit()` so it can run once or twice per declaration. Still
+  open: porting Build 3's generic Defensive-trigger (`declareAction`)
+  system in place of the current two-hardcoded-interception-point
+  version — Wonderland v2 reused Build 3's *condition-tracking* idea but
+  not that particular piece.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
