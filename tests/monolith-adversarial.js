@@ -230,7 +230,11 @@ async function chebyshevMoveToward(page){
   // past the part that isn't being tested" case the harness skill names).
   await page.evaluate(() => Codex._test.clearRoster());
   const cardIds = await page.evaluate(() => CARD_LIBRARY.map(c => c.id));
-  const mixedDeck = cardIds.filter(id => ['card-inflict', 'card-heal', 'card-root', 'card-evade', 'card-inflict-and-afflict', 'card-strike-or-mov', 'card-afflict', 'card-hinder', 'card-disarm', 'card-jumbie'].includes(id));
+  // card-root/card-disarm no longer exist as standalone Basic cards —
+  // Root and Disarm are Ultimate-only per GDD §11.2 (see monolith-arena.html's
+  // big comment above OPERATORS); swapped for two other real Basic ids
+  // so this fixture still has 10 entries.
+  const mixedDeck = cardIds.filter(id => ['card-inflict', 'card-heal', 'card-obstruct', 'card-evade', 'card-inflict-and-afflict', 'card-strike-or-mov', 'card-afflict', 'card-hinder', 'card-occlude', 'card-jumbie'].includes(id));
   await page.evaluate((deck) => {
     // Vann's deck is deterministic on purpose (all Inflict) — per the
     // harness skill's "deterministic fixtures beat incidental ones" rule,

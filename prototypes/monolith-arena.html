@@ -11,6 +11,47 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.21.0 — 2026-08-06 — CORRECTNESS: Basic-vs-Ultimate Aggressive
+                          operator tiering fixed — a real, previously-
+                          shipped balance bug, found auditing GDD §11.1/
+                          §11.2/§11.10 directly. Disarm, Root, Blind,
+                          Crush, Capture, and Scry were sold as ordinary
+                          20-Ini Basic cards; per the GDD they're
+                          Ultimate-only absolute effects (stat straight to
+                          0/ceiling, ANY cost) — a player could buy
+                          "Strike → 0" for base cost with no scaling and
+                          no counterplay. All six now carry
+                          tier:'ultimate' and CARD_LIBRARY no longer
+                          auto-generates a standalone "card-X" entry for
+                          them (or for thenOnly:true operators) — only
+                          reachable via a hand-authored ULTIMATE_CARDS
+                          .effects array now. Same audit surfaced 9
+                          operators named in the GDD's own tables that
+                          were never built: Displace (1-cell knockback),
+                          Drain (steal a stat, 1:1 with cost — GDD's
+                          "until end of turn" reversion not implemented,
+                          a stated simplification), Impose (places a copy
+                          of the resolving card into the target's hand —
+                          what Nhül Partikül actually needs), Empower and
+                          Surge (thenOnly:true — "Special Strike"/
+                          "Special Movement" modeled as an immediate bonus
+                          Strike / a move bounded by the specialMovement
+                          stat, stated interpretations since neither has
+                          any other stated mechanic), and Exhaust/Defeat/
+                          Void/Siphon (Ultimate-only pairs of Afflict/
+                          Inflict/Banish/Drain — Defeat requires
+                          autoWin:true per its own GDD text; see new
+                          ult-annihilate). applyOperator() gained a 5th
+                          `card` argument (for Impose's self-reference)
+                          threaded through all 6 call sites. Fixed NLDR's
+                          and Ala zyu Haad's seeded decks (card-capture/
+                          card-scry no longer exist standalone) and a
+                          direction bug in the new displace-knockback
+                          resolver (`Math.sign(...) || 1` incorrectly
+                          forced a diagonal nudge on a pure vertical/
+                          horizontal push). See MONOLITH_RULESET.md's
+                          Fundamental Operators section for the full
+                          correction writeup.
   v0.20.0 — 2026-08-06 — IF/THEN modifier implemented for Basic Abilities
                           (GDD §10.3, +10 Ini). New MODIFIERS.IF_THEN
                           entry; new IF_THEN_CONDITIONS vocabulary
@@ -843,23 +884,61 @@ function resetWonderlandTurnCounters(u){
    Duplicated rather than imported, per this repo's no-shared-imports
    convention.
    ============================================================ */
+// GDD §11.1/11.2/11.10: Basic and Ultimate Aggressive operators are TWO
+// SEPARATE TIERS connected by a pairing table, not one flat list — a
+// Basic operator scales with cost (20:1 or 1:1); its Ultimate pair is an
+// absolute expression (stat straight to 0/ceiling, ANY cost) and is
+// `tier:'ultimate'`-only, never playable as a standalone 20-Ini card (see
+// CARD_LIBRARY below, which only auto-generates a Basic "card-X" entry
+// for operators WITHOUT tier:'ultimate' or thenOnly:true). This was a
+// real, previously-shipped bug: Disarm/Root/Blind/Crush/Capture/Scry were
+// built as ordinary 20-Ini Basic cards, letting a player buy an absolute
+// effect (e.g. Strike straight to 0) for base cost — a live balance
+// exploit, not a documented gap, corrected here along with the missing
+// operators these tables also named (Displace/Drain/Impose/Empower/Surge
+// Basic; Exhaust/Defeat/Void/Siphon Ultimate) that were never built at all.
 const OPERATORS = {
   inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
   afflict:  { name:'Afflict',  category:'aggressive', kind:'stat-reduce-1to1', stat:'initiative' },
   hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce-20to1', stat:'strike' },
   obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce-20to1', stat:'distanceRemaining' },
   occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce-20to1', stat:'abilityRange' },
-  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
-  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
-  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },
   seal:     { name:'Seal',     category:'aggressive', kind:'deck-discard' },
   jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
   banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
-  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
   glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
-  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
   destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
-  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
+  // Basic — new, GDD §11.1, never built before this pass.
+  displace: { name:'Displace', category:'aggressive', kind:'displace-knockback' },
+  drain:    { name:'Drain',    category:'aggressive', kind:'drain-stat', stat:'initiative' },
+  impose:   { name:'Impose',   category:'aggressive', kind:'impose-self' },
+  // "THEN-effect only, never a primary effect" (GDD §11.1) — excluded
+  // from CARD_LIBRARY's auto-generated Basic-card list the same way
+  // tier:'ultimate' operators are; only reachable as an IF/THEN modifier
+  // operatorId (see COMPOSED_CARDS' Empower/Surge examples below).
+  // "Special Strike"/"Special Movement" have no other stated mechanic in
+  // the GDD beyond being named variants, so they're modeled by reusing
+  // this build's existing Critical-Hit-capable Strike (Empower) and a
+  // move bounded by the specialMovement stat instead of the normal
+  // distanceRemaining budget (Surge) — stated interpretations, not guesses
+  // at an undocumented sub-system.
+  empower:  { name:'Empower',  category:'aggressive', kind:'special-strike', thenOnly:true },
+  surge:    { name:'Surge',    category:'aggressive', kind:'special-movement', thenOnly:true },
+  // Ultimate-only — GDD §11.2/§11.10's Basic-to-Ultimate Pairing
+  // Reference. `tier:'ultimate'` is the gate CARD_LIBRARY checks.
+  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike', tier:'ultimate' },
+  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining', tier:'ultimate' },
+  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange', tier:'ultimate' },
+  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive', tier:'ultimate' },
+  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand', tier:'ultimate' },
+  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true, tier:'ultimate' },
+  exhaust:  { name:'Exhaust',  category:'aggressive', kind:'stat-set-zero', stat:'initiative', tier:'ultimate' },
+  // "Requires declared Auto-Win condition" (GDD §11.2) — only ever used
+  // on an Ultimate card that also carries autoWin:true (the existing
+  // self-declared confirm() gate); see ult-annihilate below.
+  defeat:   { name:'Defeat',   category:'aggressive', kind:'instant-defeat', tier:'ultimate' },
+  void:     { name:'Void',     category:'aggressive', kind:'erase-discard', tier:'ultimate' },
+  siphon:   { name:'Siphon',   category:'aggressive', kind:'drain-stat', stat:'initiative', tier:'ultimate' },
 
   // Defensive/Reactive — readied ahead of time (readyDefensiveCard), then
   // consumed later by declareAction() when an opponent action matching
@@ -902,6 +981,7 @@ const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 }, IF_THEN: { cos
 const IF_THEN_CONDITIONS = {
   'wonderland-open': { label:"caster's Wonderland is Open", check: (u, target) => u.openWonderlandActive },
   'target-life-below-half': { label:"target's Life is below half", check: (u, target) => target.life !== undefined && target.life < target.maxLife / 2 },
+  'target-out-of-strike-range': { label:"target is out of Weapon Strike range", check: (u, target) => target.x !== undefined && !inWeaponRange(u.weaponMain, target.x-u.x, target.y-u.y) },
 };
 function checkIfThenCondition(kind, u, target){ return !!IF_THEN_CONDITIONS[kind]?.check(u, target); }
 const COMPOSED_CARDS = [
@@ -914,6 +994,14 @@ const COMPOSED_CARDS = [
   // closest real GDD precedent for the second one.
   { id:'card-inflict-if-wonderland-then-afflict', name:'Inflict, IF Wonderland Open THEN Afflict', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'afflict', condition:'wonderland-open' } },
   { id:'card-hinder-if-half-life-then-jumbie', name:'Hinder, IF target below half Life THEN Jumbie', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'jumbie', condition:'target-life-below-half' } },
+  // Empower/Surge examples — "THEN-effect only" (GDD §11.1), so these are
+  // the only way either operator is reachable at all. Closely mirrors
+  // Rykndu's Strength Storm ("Inflict 20 damage. IF target is out of
+  // striking range THEN declare Special Movement toward them") and
+  // Slayer's Tactic's own use of Special Strike, the real GDD precedents
+  // for these two.
+  { id:'card-inflict-if-out-of-range-then-surge', name:'Inflict, IF target out of range THEN Surge', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'surge', condition:'target-out-of-strike-range' } },
+  { id:'card-hinder-if-wonderland-then-empower', name:'Hinder, IF Wonderland Open THEN Empower', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'empower', condition:'wonderland-open' } },
 ];
 // Ultimate cards — identical data to monolith-codex.html's copy. See that
 // file's own comment above ULTIMATE_CARDS for exactly what's implemented
@@ -933,9 +1021,19 @@ const ULTIMATE_CARDS = [
   // isn't built yet (see this file's Ultimate-cards comment above), so
   // this card is the bounded Scry+Seal subset, not a literal port.
   { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
+  // Demonstrates Defeat (GDD §11.2: "Target immediately enters Defeated
+  // state. Requires declared Auto-Win condition") — paired with Exhaust
+  // as its second main effect (both Ultimate-only, both new this pass).
+  { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
 ];
 const CARD_LIBRARY = [
-  ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
+  // Ultimate-tier and THEN-only operators never get an auto-generated
+  // standalone Basic card — the whole point of retiering them (see the
+  // big comment above OPERATORS) is that they're unreachable except
+  // through a hand-authored ULTIMATE_CARDS entry (`.effects`) or an
+  // IF/THEN modifier's operatorId (COMPOSED_CARDS), never as a base
+  // 20-Ini card of their own.
+  ...Object.entries(OPERATORS).filter(([id, op]) => op.tier !== 'ultimate' && !op.thenOnly).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
   ...ULTIMATE_CARDS,
 ];
@@ -1069,7 +1167,7 @@ const PRESET_AI_SQUAD = [
       sustainCond:{ kind:'talisman-at-round-end', count:2 },
       effectId:'talisman-aoe-plus-one',
     }},
-    deck:['card-destroy','card-capture','card-mojo','card-transpose','card-occlude','card-jumbie','card-parry','card-shield','card-banish','ult-cataclysm'],
+    deck:['card-destroy','card-inflict','card-mojo','card-transpose','card-occlude','card-jumbie','card-parry','card-shield','card-banish','ult-cataclysm'],
   },
   {
     esoriId:'preset-ala-zyu-haad', name:'Ala zyu Haad', class:'bishop', position:'saboteur', rarity:1,
@@ -1082,7 +1180,7 @@ const PRESET_AI_SQUAD = [
       sustainCond:{ kind:'close-on-weapon-strike' },
       effectId:'direct-damage-aggressive',
     }},
-    deck:['card-banish','card-parry','card-nazar','card-shield','card-accelerate','card-afflict','card-giveIni','card-scry','card-jumbie','ult-nhul-particul'],
+    deck:['card-banish','card-parry','card-nazar','card-shield','card-accelerate','card-afflict','card-giveIni','card-glimpse','card-jumbie','ult-nhul-particul'],
   },
 ];
 
@@ -2189,7 +2287,7 @@ function playUltimateCard(u, card, cost){
     discardCard(u, card.id);
     if (u.wonderlandProgress) u.wonderlandProgress.lastCardPlayedId = card.id;
     checkWonderlandActivation(u);
-    targets.forEach(t => card.effects.forEach(opId => applyOperator(opId, u, t, cost)));
+    targets.forEach(t => card.effects.forEach(opId => applyOperator(opId, u, t, cost, card)));
     logMsg(`${u.name} unleashes ${card.name} on all ${targets.length} valid target(s) in range.`, u.team);
     renderBattle();
     const w = checkWin();
@@ -2278,14 +2376,14 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
       // card's base operator "by default" — that was a real bug (the base
       // operator was firing unconditionally here, so an OR card applied
       // BOTH effects instead of the one actually chosen).
-      applyOperator(chosenOperatorId, u, target, cost);
+      applyOperator(chosenOperatorId, u, target, cost, card);
     } else if (card.effects){
       // Ultimate — both main effects apply, always (Ultimate-level OR
       // between the two isn't implemented, see ULTIMATE_CARDS' own note).
-      card.effects.forEach(opId => applyOperator(opId, u, target, cost));
+      card.effects.forEach(opId => applyOperator(opId, u, target, cost, card));
     } else {
-      applyOperator(card.operatorId, u, target, cost);
-      if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost);
+      applyOperator(card.operatorId, u, target, cost, card);
+      if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost, card);
       // IF/THEN (GDD §10.3) — checked once, at resolution, against the
       // caster/target as they stand right now (not a persistent watcher).
       // Same-family only (the modifier's own operatorId is drawn from the
@@ -2295,7 +2393,7 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
       // built here. Silently no-ops when unmet — same "unmet gate, no
       // error state" shape as ifWonderlandOpen on Ultimates.
       if (card.modifier?.type === 'IF_THEN' && checkIfThenCondition(card.modifier.condition, u, target)){
-        applyOperator(card.modifier.operatorId, u, target, cost);
+        applyOperator(card.modifier.operatorId, u, target, cost, card);
       }
     }
     // "Aggressive Abilities deal direct damage" (Ala zyu Haad's Singular
@@ -2355,7 +2453,7 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
    MONOLITH_RULESET.md ties life effects 1:1 to Initiative spent on the
    card, not to a fixed per-operator number.
    ============================================================ */
-function applyOperator(operatorId, caster, target, cost){
+function applyOperator(operatorId, caster, target, cost, card){
   const op = OPERATORS[operatorId];
   switch(op.kind){
     case 'life-damage':
@@ -2463,6 +2561,117 @@ function applyOperator(operatorId, caster, target, cost){
         target.ownerTeam = caster.team;
         logMsg(`${caster.name} captures a ${TALISMAN_TYPES[target.typeId].label}.`, caster.team);
       }
+      break;
+    }
+    case 'displace-knockback': {
+      // GDD §11.1: "Forcibly moves target a specified number of cells in
+      // a specified direction" — no source amount stated; a 1-cell
+      // knockback directly away from the caster is a stated default
+      // (consistent with this doc's other unspecified-amount defaults).
+      // No-op if the destination is off-board, an obstacle, or occupied
+      // — the same "declared but can't land" shape every other
+      // board-position effect in this build already has.
+      if (target.x === undefined) break;
+      // Pure vertical/horizontal pushes (target directly above/below or
+      // left/right of caster) must stay 0 on the other axis — no `|| 1`
+      // fallback, which would incorrectly force a diagonal nudge even
+      // when the caster and target share a row or column.
+      const dx = Math.sign(target.x - caster.x);
+      const dy = Math.sign(target.y - caster.y);
+      const nx = target.x + dx, ny = target.y + dy;
+      if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE) break;
+      if (OBSTACLES.has(`${nx},${ny}`)) break;
+      if (battle.units.some(t => !t.removed && t.x === nx && t.y === ny)) break;
+      target.x = nx; target.y = ny;
+      logMsg(`${caster.name} displaces ${target.name}.`, caster.team);
+      break;
+    }
+    case 'drain-stat': {
+      // Drain (Basic) and Siphon (Ultimate) share this kind — GDD says
+      // Drain's transfer lasts only "until end of current turn" while
+      // Siphon's is permanent; this build doesn't implement Drain's
+      // reversion (turn-scoped bookkeeping for an arbitrary stat is a
+      // bigger, separate lift), so both resolve identically: permanent,
+      // 1:1 with cost, the same ratio already established for
+      // Initiative-based effects (Afflict). A stated simplification.
+      if (target.activePassive === 'shield'){ logMsg(`${target.name}'s Shield nullifies the effect.`, target.team); break; }
+      const amount = Math.min(cost, target[op.stat]);
+      target[op.stat] = Math.max(0, target[op.stat] - amount);
+      caster[op.stat] += amount;
+      logMsg(`${caster.name} drains ${amount} Initiative from ${target.name}.`, caster.team);
+      break;
+    }
+    case 'impose-self': {
+      // GDD §11.1: "Places a specified card into opponent's hand" — the
+      // only shape every real GDD usage of Impose actually needs is
+      // self-referential (a card imposing a copy of itself, per Nhül
+      // Partikül), so that's what this implements: pushes a copy of the
+      // resolving `card`'s own id, respecting the normal hand-size cap
+      // (no source text states Impose bypasses it, unlike a forced draw).
+      if (!card) break;
+      if (target.hand.length < target.maxHandSize){
+        target.hand.push(card.id);
+        logMsg(`${caster.name} imposes ${card.name || cardDescription(card)} into ${target.name}'s hand.`, caster.team);
+      } else {
+        logMsg(`${target.name}'s hand is full — nothing is imposed.`, target.team);
+      }
+      break;
+    }
+    case 'special-strike': {
+      // Empower — "THEN-effect only" (GDD §11.1). "Special Strike" has no
+      // other stated mechanic beyond being a named variant, so this reuses
+      // the existing Critical-damage math: an immediate bonus Strike at
+      // critDmg if the target is currently in weapon range. A stated
+      // simplification: resolved as guaranteed direct damage, not routed
+      // through the full declareAction-capable resolveStrikeHit/tryStrike
+      // pipeline (a bonus effect firing mid-resolution of another card
+      // pausing for its own separate Defensive response window is a
+      // bigger, separate architectural lift than this pass builds).
+      if (target.x === undefined || !inWeaponRange(caster.weaponMain, target.x-caster.x, target.y-caster.y)){
+        logMsg(`${caster.name}'s Empower finds no target in Weapon Strike range.`, caster.team);
+        break;
+      }
+      applyLifeDamage(target, caster.critDmg);
+      logMsg(`${caster.name}'s Empower grants a Special Strike on ${target.name} for ${caster.critDmg}.`, caster.team);
+      break;
+    }
+    case 'special-movement': {
+      // Surge — "THEN-effect only" (GDD §11.1). Grants immediate
+      // repositioning toward the target, up to the caster's own
+      // specialMovement stat, ignoring the normal Movement budget
+      // (distanceRemaining) entirely — that's the "special" part.
+      if (target.x === undefined) break;
+      const reach = reachableCells(caster.x, caster.y, caster.specialMovement);
+      let best = null, bestDist = Infinity;
+      for (const key of Object.keys(reach)){
+        const [cx, cy] = key.split(',').map(Number);
+        const d = chebyshev(target.x-cx, target.y-cy);
+        if (d < bestDist){ bestDist = d; best = [cx, cy]; }
+      }
+      if (best && (best[0] !== caster.x || best[1] !== caster.y)){
+        caster.x = best[0]; caster.y = best[1];
+        logMsg(`${caster.name}'s Surge grants Special Movement toward ${target.name}.`, caster.team);
+      }
+      break;
+    }
+    case 'instant-defeat': {
+      // Defeat — GDD §11.2: "Target immediately enters Defeated state.
+      // Requires declared Auto-Win condition" — only ever fired from an
+      // Ultimate card that also carries autoWin:true (the existing
+      // self-declared confirm() gate already satisfied by the time
+      // applyOperator runs). Reuses the exact same Defeated/removed
+      // branching applyLifeDamage's own zero-life case already has.
+      if (target.life === undefined) break;
+      target.life = 0;
+      if (target.rallied){ target.removed = true; logMsg(`${target.name} is removed from the battle.`, target.team); }
+      else { target.defeated = true; target.distance = 1; logMsg(`${target.name} is Defeated.`, target.team); }
+      break;
+    }
+    case 'erase-discard': {
+      // Void — Ultimate pair of Banish (which removes 1 discard card).
+      const count = target.discard.length;
+      target.discard = [];
+      logMsg(`${caster.name} erases ${target.name}'s entire discard pile (${count} card${count===1?'':'s'}).`, caster.team);
       break;
     }
     case 'nullify-talisman': {

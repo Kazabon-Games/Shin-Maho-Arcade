@@ -380,13 +380,18 @@ call-site code):
 |---|---|
 | `wonderland-open` | The caster's own Open Wonderland is active |
 | `target-life-below-half` | The target's Life is below half its max |
+| `target-out-of-strike-range` | The target is outside the caster's current Weapon Strike range |
 
-Both are grounded in real GDD card text (Wonderland-gated effects appear
-throughout the GDD; "opponent has less than half Life" appears in
-Rykndu's Slayer's Tactic), and both are checkable with data this engine
-already tracks. Two example cards demonstrate it (`card-inflict-if-
-wonderland-then-afflict`, `card-hinder-if-half-life-then-jumbie`), the
-same hand-authored-`COMPOSED_CARDS` pattern AND/OR already use.
+All three are grounded in real GDD card text (Wonderland-gated effects
+appear throughout the GDD; "opponent has less than half Life" appears in
+Rykndu's Slayer's Tactic; "target is out of striking range" appears in
+Rykndu's Strength Storm), and all are checkable with data this engine
+already tracks. Example cards demonstrate each (`card-inflict-if-
+wonderland-then-afflict`, `card-hinder-if-half-life-then-jumbie`,
+`card-inflict-if-out-of-range-then-surge`, `card-hinder-if-wonderland-
+then-empower` — the last two are also the only way Empower/Surge are
+reachable at all, since both are `thenOnly:true`), the same
+hand-authored-`COMPOSED_CARDS` pattern AND/OR already use.
 
 **Same-family only** — the modifier's own `operatorId` must be drawn from
 the same ability family as the primary effect, per GDD's stated filtering
@@ -410,15 +415,67 @@ implementation status above).
 
 ## Fundamental Operators (the ability-authoring vocabulary)
 
-**Aggressive** (target opponent): Inflict (−Life), Afflict (−Initiative),
-Hinder (−Weapon Strike), Obstruct (−Movement), Occlude (−Range), Destroy
-(remove a Talisman), Seal (opponent deck → discard), Jumbie (opponent hand
-→ discard), Banish (remove a card from play — hand, deck, or discard),
-Disarm (Weapon Strike → 0), Root (Movement → 0), Blind (Range → 0), Crush
-(discard a Passive), Capture (take control of a target Talisman), Glimpse
-(reveal a random card in opponent's hand — listed as Aggressive in
-`Monolith_Library.pdf`, as Utility in `Monolith_Ruleset_Document_v1.pdf`;
-**treated as Aggressive**, matching the more detailed Library entry).
+**⚠ Corrected mid-project — read this before trusting any earlier prose in
+this document that names Disarm/Root/Blind/Crush/Capture/Scry as
+ordinary cards.** GDD §11.1/§11.2/§11.10 define Basic and Ultimate
+Aggressive operators as **two separate tiers connected by a pairing
+table**, not one flat list — every Basic operator that reduces a stat has
+an Ultimate-only "absolute expression" pair that takes the stat straight
+to 0/ceiling *regardless of cost*, and per §11.1's own italicized rule,
+"Ultimate operators... are only available on Ultimate Abilities." This
+build shipped Disarm, Root, Blind, Crush, Capture, and Scry as ordinary
+20-Ini Basic cards for a full nine increments of this project before the
+mistake was caught auditing the primary source directly — **a live
+balance-breaking bug** (a player could buy "Strike → 0, no scaling, no
+counterplay" for base cost), not a documented gap. Corrected: those six
+now carry `tier:'ultimate'` and are unreachable except through a
+hand-authored `ULTIMATE_CARDS` entry's `.effects` — see
+`CARD_LIBRARY`'s filter in both documents. The same audit surfaced nine
+operators named in the GDD's tables that had never been built at all:
+**Displace, Drain, Impose, Empower, Surge** (Basic — Empower/Surge are
+additionally `thenOnly:true`, "THEN-effect only, never a primary effect"
+per §11.1, so they're *only* reachable as an IF/THEN modifier's
+`operatorId`, never a standalone card either) and **Exhaust, Defeat,
+Void, Siphon** (Ultimate-only) — all built this pass, see below.
+
+**Aggressive — Basic tier** (target opponent, 20 Ini): Inflict (−Life),
+Afflict (−Initiative), Hinder (−Weapon Strike), Obstruct (−Movement),
+Occlude (−Range), Destroy (remove a Talisman), Seal (opponent deck →
+discard), Jumbie (opponent hand → discard), Banish (remove a card from
+play — hand, deck, or discard), Glimpse (reveal a random card in
+opponent's hand — listed as Aggressive in `Monolith_Library.pdf`, as
+Utility in `Monolith_Ruleset_Document_v1.pdf`; **treated as Aggressive**,
+matching the more detailed Library entry, and now also matching GDD
+§11.1's own table). **New this pass:** Displace (knockback 1 cell
+directly away from caster — GDD states no amount, a stated default; a
+no-op if the destination is off-board/obstacle/occupied), Drain (steal a
+declared stat 1:1 with cost — GDD's own wording says the transfer lasts
+only "until end of current turn"; this build doesn't implement that
+reversion, a stated scope simplification, so it resolves as permanent,
+identically to its own Ultimate pair Siphon), Impose (places a copy of
+the resolving card itself into the target's hand, respecting the normal
+hand-size cap — the literal shape every real GDD usage of Impose actually
+needs, since Nhül Partikül imposes itself), Empower and Surge (THEN-effect
+only — see the Modifiers section; "Special Strike"/"Special Movement" have
+no other stated mechanic beyond being named variants, so Empower is
+modeled as an immediate bonus Strike at Critical damage if the target is
+in weapon range, and Surge as an immediate move toward the target bounded
+by the caster's own `specialMovement` stat, ignoring the normal Movement
+budget entirely — both stated interpretations, not guesses at an
+undocumented sub-system).
+
+**Aggressive — Ultimate tier** (target opponent, Ultimate cards only,
+absolute effects regardless of cost): Disarm (Strike → 0), Root
+(Movement → 0), Blind (Range → 0), Crush (discard the active Passive
+entirely), Capture (take control of a Talisman, any cost), Scry (reveal
+the entire hand). **New this pass:** Exhaust (Initiative → 0), Defeat
+(target immediately enters Defeated state — GDD: "Requires declared
+Auto-Win condition," so this only ever fires from an Ultimate card that
+also carries `autoWin:true`; see `ult-annihilate`), Void (erase the
+target's entire discard pile — Ultimate pair of Banish), Siphon (permanent
+1:1 stat transfer — Ultimate pair of Drain, and functionally identical to
+it in this build, since Drain's own "until end of turn" reversion isn't
+built either).
 
 **Defensive** (trigger off an opponent's action): Nazar (nullify an
 incoming Aggressive), Parry (reflect Weapon Strike damage), Mojo (nullify
@@ -721,18 +778,22 @@ Give Mov, Regeneration/Preemptive → Regen/Gather); `ult-devastate` stands
 in for her actual Ultimate, Blade Waltz (multi-target AoE Strike — not
 buildable without Talisman-style area targeting on a Strike).
 
-**NLDR** (Rook/Infiltrator, GDD §12.3) — `card-destroy`, `card-capture`,
+**NLDR** (Rook/Infiltrator, GDD §12.3) — `card-destroy`, `card-inflict`,
 `card-mojo`, `card-transpose`, `card-occlude`, `card-jumbie`,
 `card-parry`, `card-shield`, `card-banish`, `ult-cataclysm`. Approximates
-her Talisman-centric identity directly (Eldritch Disruption → Destroy,
-Eldritch Swap → Capture, Eldritch Barrier → Mojo/Nullify); `ult-cataclysm`
-(Target All + Auto-Win) stands in for Eldritch Apocalypse, her actual
-Ultimate (AoE Talisman-range boost with a multi-Talisman defeat
-condition).
+her Talisman-centric identity directly (Eldritch Disruption → Destroy +
+Inflict, Eldritch Barrier → Mojo/Nullify); `ult-cataclysm` (Target All +
+Auto-Win, which already resolves Disarm via its own `.effects` array —
+one of the two operators retiered to Ultimate-only this pass) stands in
+for Eldritch Apocalypse, her actual Ultimate (AoE Talisman-range boost
+with a multi-Talisman defeat condition). Previously listed `card-capture`
+here — Capture is Ultimate-only per the operator-tier correction above
+and no longer exists as a standalone card; swapped for Inflict, matching
+Eldritch Disruption's own stated direct-damage half.
 
 **Ala zyu Haad** (Bishop/Saboteur, GDD §12.1) — `card-banish`,
 `card-parry`, `card-nazar`, `card-shield`, `card-accelerate`,
-`card-afflict`, `card-giveIni`, `card-scry`, `card-jumbie`, and a real,
+`card-afflict`, `card-giveIni`, `card-glimpse`, `card-jumbie`, and a real,
 newly-authored Ultimate: **`ult-nhul-particul`** ("Nhül Partikül": Scry
 AND Seal — added to `ULTIMATE_CARDS` in both documents). Several of her
 named abilities map onto existing operators directly rather than
@@ -743,7 +804,10 @@ Ultimate built from Root + Seal + an IF/THEN modifier and remains
 deliberately unauthored (see the Known unresolved gaps entry below); her
 seeded Wonderland instead triggers on **`ult-nhul-particul`**, her other,
 buildable authored Ultimate — a stated stand-in, not a claim that
-Nhül Partikül and Daedalus Tesseract are the same ability.
+Nhül Partikül and Daedalus Tesseract are the same ability. Previously
+listed `card-scry` here — Scry is Ultimate-only per the operator-tier
+correction above; swapped for `card-glimpse`, Scry's own Basic-tier pair
+per GDD §11.10, an even better fit for her information-themed profile.
 
 Every character's deck is a flat 10 cards, same as any other Esori's —
 GDD's per-character Deck Format sizes (Rykndu: Focused, 9+1; Ala zyu

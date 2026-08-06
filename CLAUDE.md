@@ -173,6 +173,40 @@ short on purpose.
   applications at all (Impose-into-hand, Open-Wonderland-directly),
   outside what this pass's operator-application model can express. See
   MONOLITH_RULESET.md's Modifiers section for the full ruling.
+  **The user has since asked for every remaining documented gap closed
+  before showing this build to alpha testers** — work resumed on that
+  basis. Eleventh pass, auditing the primary GDD source directly for the
+  first item on that list, found something bigger than expected: GDD
+  §11.1/§11.2/§11.10 define Basic and Ultimate Aggressive operators as
+  two separate tiers connected by a pairing table, and this build had
+  shipped Disarm/Root/Blind/Crush/Capture/Scry as ordinary 20-Ini Basic
+  cards for nine increments straight — a live balance-breaking bug (buy
+  "Strike → 0" for base cost, no scaling, no counterplay), not a
+  documented gap. Fixed: those six are now `tier:'ultimate'`, unreachable
+  except through a hand-authored Ultimate card's `.effects`. The same
+  audit surfaced 9 operators the GDD's own tables name but this build
+  never had at all — Displace, Drain, Impose, Empower, Surge (Basic;
+  Empower/Surge are additionally `thenOnly:true`, GDD's own "THEN-effect
+  only, never primary" restriction) and Exhaust, Defeat, Void, Siphon
+  (Ultimate) — all built and verified this pass, including a real new
+  Ultimate card (`ult-annihilate`, Defeat + Exhaust) and two new IF/THEN
+  example cards demonstrating Empower/Surge. Also fixed the three canon
+  Grimoires' now-broken references (NLDR's `card-capture`, Ala zyu Haad's
+  `card-scry`) and a real direction bug caught while building Displace's
+  knockback (`Math.sign(...) || 1` forced a diagonal nudge even on a pure
+  vertical/horizontal push). See MONOLITH_RULESET.md's Fundamental
+  Operators section for the full writeup. Still ahead on the "close every
+  gap" list: the Nazar→Nullify/Parry→Reflect/Mojo→Resist rename (the GDD
+  states outright these three are "superseded... for broader
+  application," and Mojo's replacement, Resist, is a completely different
+  mechanic — temporary immunity to a declared category, not a
+  Talisman-nullifier), 4 new Basic Defensive operators (Intercept/
+  Disrupt/Unravel/Counter) that directly fill 4 of the "6 unwired
+  triggers" gap, 5 new Ultimate Defensive operators (Nullify All/Rewind/
+  Suppress/Forbid/Sever), Ultimate-level ALSO/IF-THEN (needed for
+  Daedalus Tesseract and Nhül Partikül's full effect), rebuilding the
+  canon decks once the Defensive rename lands, AI playing Ultimate/
+  Defensive/OR cards, Refine's ally-targeting half, and Rhyzl Step.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

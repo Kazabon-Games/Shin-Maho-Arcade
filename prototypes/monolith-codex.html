@@ -11,6 +11,18 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.20.0 — 2026-08-06 — CORRECTNESS: Basic-vs-Ultimate Aggressive
+                          operator tiering fixed — mirrors Arena's real
+                          fix (that file's matching entry has the full
+                          writeup). Disarm/Root/Blind/Crush/Capture/Scry
+                          now carry tier:'ultimate'; CARD_LIBRARY no
+                          longer generates a standalone card for
+                          tier:'ultimate' or thenOnly:true operators. Added
+                          the 9 operators these tables also named but had
+                          never been built: Displace/Drain/Impose/Empower/
+                          Surge (Basic) and Exhaust/Defeat/Void/Siphon
+                          (Ultimate). Data-only here — no battle-runtime
+                          resolution logic in this doc.
   v0.19.0 — 2026-08-06 — IF/THEN modifier data mirrored from Arena
                           (MODIFIERS.IF_THEN, IF_THEN_CONDITIONS, two new
                           COMPOSED_CARDS) so the Grimoire/deck editor
@@ -776,6 +788,14 @@ const TALISMAN_TYPES = {
    the exact same free-text-can't-be-parsed boundary Open Wonderland's
    Activation Condition already established, not a new kind of guess.
    ============================================================ */
+// GDD §11.1/11.2/11.10: Basic and Ultimate Aggressive operators are TWO
+// SEPARATE TIERS connected by a pairing table — see Arena's copy of this
+// comment for the full explanation (this was a real, previously-shipped
+// balance bug: Disarm/Root/Blind/Crush/Capture/Scry were sold as ordinary
+// 20-Ini Basic cards when they're supposed to be Ultimate-only absolute
+// effects). `tier:'ultimate'` and `thenOnly:true` operators are excluded
+// from the deck editor's Basic-card list the same way Arena's CARD_LIBRARY
+// excludes them from battle.
 const OPERATORS = {
   // Aggressive — target one opponent, 20 Ini base
   inflict:  { name:'Inflict',  category:'aggressive', kind:'life-damage' },
@@ -783,17 +803,26 @@ const OPERATORS = {
   hinder:   { name:'Hinder',   category:'aggressive', kind:'stat-reduce-20to1', stat:'strike' },
   obstruct: { name:'Obstruct', category:'aggressive', kind:'stat-reduce-20to1', stat:'distanceRemaining' },
   occlude:  { name:'Occlude',  category:'aggressive', kind:'stat-reduce-20to1', stat:'abilityRange' },
-  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike' },
-  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining' },
-  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange' },
   seal:     { name:'Seal',     category:'aggressive', kind:'deck-discard' },
   jumbie:   { name:'Jumbie',   category:'aggressive', kind:'hand-discard' },
   banish:   { name:'Banish',   category:'aggressive', kind:'banish-card' },
-  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive' },
   glimpse:  { name:'Glimpse',  category:'aggressive', kind:'reveal-random-hand-card' },
-  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand' },
   destroy:  { name:'Destroy',  category:'aggressive', kind:'destroy-talisman', targetsTalisman:true },
-  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true },
+  displace: { name:'Displace', category:'aggressive', kind:'displace-knockback' },
+  drain:    { name:'Drain',    category:'aggressive', kind:'drain-stat', stat:'initiative' },
+  impose:   { name:'Impose',   category:'aggressive', kind:'impose-self' },
+  empower:  { name:'Empower',  category:'aggressive', kind:'special-strike', thenOnly:true },
+  surge:    { name:'Surge',    category:'aggressive', kind:'special-movement', thenOnly:true },
+  disarm:   { name:'Disarm',   category:'aggressive', kind:'stat-set-zero', stat:'strike', tier:'ultimate' },
+  root:     { name:'Root',     category:'aggressive', kind:'stat-set-zero', stat:'distanceRemaining', tier:'ultimate' },
+  blind:    { name:'Blind',    category:'aggressive', kind:'stat-set-zero', stat:'abilityRange', tier:'ultimate' },
+  crush:    { name:'Crush',    category:'aggressive', kind:'discard-passive', tier:'ultimate' },
+  scry:     { name:'Scry',     category:'aggressive', kind:'reveal-full-hand', tier:'ultimate' },
+  capture:  { name:'Capture',  category:'aggressive', kind:'capture-talisman', targetsTalisman:true, tier:'ultimate' },
+  exhaust:  { name:'Exhaust',  category:'aggressive', kind:'stat-set-zero', stat:'initiative', tier:'ultimate' },
+  defeat:   { name:'Defeat',   category:'aggressive', kind:'instant-defeat', tier:'ultimate' },
+  void:     { name:'Void',     category:'aggressive', kind:'erase-discard', tier:'ultimate' },
+  siphon:   { name:'Siphon',   category:'aggressive', kind:'drain-stat', stat:'initiative', tier:'ultimate' },
 
   // Defensive/Reactive — 20 Ini base. Nazar/Parry/Nullify Cost are
   // "readied" when played (self-cast, no board target — see
@@ -855,6 +884,7 @@ const MODIFIERS = {
 const IF_THEN_CONDITIONS = {
   'wonderland-open': { label:"caster's Wonderland is Open" },
   'target-life-below-half': { label:"target's Life is below half" },
+  'target-out-of-strike-range': { label:"target is out of Weapon Strike range" },
 };
 // A small hand-authored set demonstrating composed (modifier) cards —
 // everything else in the library is generated straight from OPERATORS
@@ -865,6 +895,8 @@ const COMPOSED_CARDS = [
   { id:'card-strike-or-mov', name:'Give Strike or Give Mov', operatorId:'giveStrike', modifier:{ type:'OR', operatorId:'giveMov' } },
   { id:'card-inflict-if-wonderland-then-afflict', name:'Inflict, IF Wonderland Open THEN Afflict', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'afflict', condition:'wonderland-open' } },
   { id:'card-hinder-if-half-life-then-jumbie', name:'Hinder, IF target below half Life THEN Jumbie', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'jumbie', condition:'target-life-below-half' } },
+  { id:'card-inflict-if-out-of-range-then-surge', name:'Inflict, IF target out of range THEN Surge', operatorId:'inflict', modifier:{ type:'IF_THEN', operatorId:'surge', condition:'target-out-of-strike-range' } },
+  { id:'card-hinder-if-wonderland-then-empower', name:'Hinder, IF Wonderland Open THEN Empower', operatorId:'hinder', modifier:{ type:'IF_THEN', operatorId:'empower', condition:'wonderland-open' } },
 ];
 // Ultimate cards — hand-authored, not generated: an Ultimate names 2 main
 // effects (both existing OPERATORS) instead of 1, plus flags for the
@@ -880,9 +912,10 @@ const ULTIMATE_CARDS = [
   // subset of its full named effect (see monolith-arena.html's copy of
   // this comment for what's dropped: the Impose/draw-lock IF/THEN tail).
   { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
+  { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
 ];
 const CARD_LIBRARY = [
-  ...Object.entries(OPERATORS).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
+  ...Object.entries(OPERATORS).filter(([id, op]) => op.tier !== 'ultimate' && !op.thenOnly).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
   ...ULTIMATE_CARDS,
 ];
