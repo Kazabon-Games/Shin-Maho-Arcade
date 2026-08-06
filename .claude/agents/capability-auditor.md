@@ -28,11 +28,52 @@ to catch.
 
 1. **Build the real capability surface first, don't work from memory or a
    greatest-hits list.** Per domain, the actual surface includes at least:
-   - **Canvas 2D:** compositing modes beyond `source-over`
-     (`globalCompositeOperation`), `Path2D`, `ImageData`/pixel-level
-     manipulation, `OffscreenCanvas` (+ Worker), `ctx.filter`, clip
-     regions, pattern fills, `createConicGradient`, sub-pixel/DPR-aware
-     rendering discipline.
+   - **Canvas 2D** (real grep-verified state as of 2026-08-06 — this list
+     was unverified prose before this pass, unlike the Web Audio list
+     below; every item here has now been checked the same way):
+     `globalCompositeOperation` (confirmed in-use in 6 of 7 files, but
+     only **1 of the 26 real blend modes** the spec defines has ever been
+     used anywhere — `'lighter'`, always for additive glow/particle
+     stacking. `multiply`/`screen`/`overlay`/`color-dodge`/`color-burn`/
+     `hard-light`/`soft-light`/`difference`/`exclusion`/`hue`/
+     `saturation`/`color`/`luminosity` and the rest: confirmed zero, a
+     single-technique monoculture inside an already-adopted API, not a
+     totally-unused one), `Path2D` (confirmed real use in **exactly one
+     file**, `index.html`'s arcade-sigil ring — NOT
+     `iridescentcosmology.html`, despite that file's own changelog
+     comment explicitly claiming its title crest uses "Path2D (geometry
+     defined once instead of rebuilt every frame)": grep for `new Path2D`
+     in that file returns zero matches, and the actual crest-draw code
+     rebuilds its arc via `beginPath()`/`arc()` every single animation
+     frame — the exact "a claim is not evidence" trap this role's own
+     method item 5 already names, just caught here for a comment's
+     technique claim instead of a node's connection state), `ImageData`/
+     pixel-level manipulation (confirmed zero anywhere), `OffscreenCanvas`
+     (+ Worker, confirmed zero anywhere — the Canvas 2D mirror of
+     `AudioWorklet`'s own zero-usage finding below), `ctx.filter`
+     (confirmed zero anywhere — CSS filters applied directly to canvas
+     draws have never been tried, despite `filter`/`backdrop-filter`
+     being used on real DOM elsewhere in every game), clip regions
+     (`ctx.clip()`, confirmed in-use in **exactly one file**, Runeshatter
+     — a deliberate, already-documented capability-audit-driven reach per
+     that game's own `GAME_7_PILLARS.md` §5, explicitly citing "zero uses
+     anywhere in this portfolio before this pass" in its own comments;
+     not yet propagated), pattern fills (`createPattern`, same file, same
+     pass, same propagation-not-absence signal), `createConicGradient`
+     (confirmed in-use in 3 files — `index.html`, `iridescentcosmology.
+     html`, `runeshatter.html` — a real, spreading technique; Runeshatter's
+     is the first use INSIDE actual gameplay rather than portal/menu
+     chrome only), sub-pixel/DPR-aware rendering (`devicePixelRatio`,
+     confirmed in-use in 5 of 6 shipped-game files — **missing in the
+     Rykndu prototype**, the studio's newest and most actively-developed
+     project, a real findable gap: a DPR-unaware canvas renders visibly
+     soft on any real high-DPI mobile display, the actual target platform).
+     Full detail on the faceted-gem-rendering technique specifically —
+     including that it's a deliberately scoped subset, not this studio's
+     default Canvas 2D language, with Rykndu's own rig rendering as the
+     proof restraint is already correctly exercised elsewhere — see the
+     `faceted-gem-rendering` skill's own framing (reworded 2026-08-06 for
+     exactly this reason).
    - **Web Audio API:** the full node graph beyond gain/oscillator/
      compressor/convolver already in use — `WaveShaperNode` (distortion
      curves, confirmed in-use for tension-gated whole-bus drive in 3 of 6

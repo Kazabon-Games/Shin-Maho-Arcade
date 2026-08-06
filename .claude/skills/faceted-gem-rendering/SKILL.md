@@ -1,16 +1,53 @@
 ---
 name: faceted-gem-rendering
-description: Rendering game entities (enemies, bosses, pickups, board tiles) as faceted cut-gem shapes on Canvas 2D — this studio's core visual identity technique. Use whenever adding a new entity type that should render as a "crystalline"/"gem" shape, and especially before generating that shape's vertices — the technique has shipped generic twice and been fixed twice; read this first so a third game doesn't repeat it.
+description: Rendering game entities (enemies, bosses, pickups, board tiles) as faceted cut-gem shapes on Canvas 2D — the studio's proven technique for exactly that job, NOT a default for all visual work. Use when a new entity genuinely wants a "crystalline"/"gem" identity (an enemy, a match-3-style board tile, a pickup), and especially before generating that shape's vertices — the technique has shipped generic twice and been fixed twice; read this first so a third game doesn't repeat it. Do NOT reach for this on a humanoid/rigged character, a reference map, or anything whose job is legibility over "juice" — see the "subset, not default" section below before defaulting to it.
 ---
 
 # Faceted Gem Rendering
 
-This is Kazabon Game Studio's signature Canvas 2D rendering technique,
-used for every enemy in Wonderland and every tile in Sigil Chain. The
-*technique* (facet-shading) is proven and cheap and should be reused
-as-is. The *shape data* fed into it is where this has gone wrong, twice,
-in exactly the same way — read the "the mistake, twice" section before
-generating vertices for anything new.
+**A subset technique, not the studio's default visual language** (made
+explicit 2026-08-06, after this file's own "signature"/"core visual
+identity technique" framing risked reading as more universal than the
+studio's actual practice has ever treated it). The full alternating-
+facet-fan technique below is genuinely proven for one specific job — an
+enemy, boss, pickup, or match-3-style board tile that wants to read as a
+"cut gem" — and used, correctly, for exactly that job: every enemy in
+Iridescent Cosmology, every tile in Sigil Chain and Runeshatter, pickups
+in Wardfall/Infall (the radial-gradient variant, see below). It is
+**not** the studio's rendering language for everything drawn on Canvas
+2D, and two real, already-shipped precedents show the studio's own
+practice already knows this:
+
+- **Rykndu's fighting-game rig deliberately does NOT use the facet-fan
+  technique for its character.** It reuses only the underlying
+  `shadeHex()` color-shift *utility function* — a flat-shaded outline
+  pass on each limb segment, its own comment explicit about the
+  distinction: "flat fill instead of a linear gradient, with a same-hue-
+  darker outline pass (`shadeHex(color,-38,-10)`, not a universal...
+  [black])." Reusing the color-math tool while correctly rejecting the
+  full crystal-shading treatment for a humanoid rig is the right call,
+  already made once — the pattern to follow, not an exception to explain
+  away.
+- **`cartography` (see that agent's own file) exists specifically
+  because this technique was the wrong call once already** — a GM's
+  reference map needs a legend read in under a second, not a "juiced"
+  crystalline shape, and that role's entire mandate is refusing the
+  reflexive reach for this skill where legibility matters more than
+  identity.
+
+**The check, before reaching for this skill on anything new:** does the
+entity's *job* actually call for a "cut gem" read (combat identity,
+juice, a collectible's appeal), or does it call for something else
+(legibility, a humanoid silhouette, a UI chrome element, a reference
+diagram)? If the latter, this skill is the wrong tool — reuse only the
+`shadeHex()` color-math primitive if it helps, the way Rykndu did, not
+the full technique.
+
+The *technique* itself (facet-shading), where it IS the right call, is
+proven and cheap and should be reused as-is. The *shape data* fed into
+it is where this has gone wrong, twice, in exactly the same way — read
+the "the mistake, twice" section before generating vertices for anything
+new.
 
 ## The technique itself — `shadeHex` + alternating-facet fill
 
