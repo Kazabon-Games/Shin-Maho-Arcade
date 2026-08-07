@@ -11,6 +11,54 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.24.0 — 2026-08-06 — All 5 GDD §11.4 Ultimate Defensive operators:
+                          Nullify All, Rewind, Suppress, Forbid, Sever —
+                          the "Exception" single-effect-only Ultimate tier
+                          paired with the 4 Basic Defensive operators from
+                          v0.23.0 (Nullify All/Nullify, Rewind/Intercept,
+                          Suppress/Disrupt, Forbid/Unravel, Sever/Counter).
+                          New ULTIMATE_DEFENSIVE_CARDS array (5 single-
+                          operator cards, `category:'defensive'` not
+                          'ultimate' so they route through the existing
+                          Defensive-readying flow instead of
+                          playUltimateCard's targeting/Target-All logic —
+                          cardCost() special-cased to still charge 50 Ini
+                          via the operator's own tier). Stated rulings:
+                          Nullify All cancels the triggering card (like
+                          Nullify) AND calls endTurn() to force the
+                          opponent's turn to end immediately (retroactively
+                          undoing earlier actions this same turn isn't
+                          built — no action journal exists); Rewind
+                          restores ALL units to a new
+                          battle.turnStartPositions snapshot (refreshed
+                          every beginUnitTurn) rather than just halting
+                          the declared move like Intercept — stats/hand/
+                          Initiative untouched per the GDD text; Suppress
+                          opens a named-operator picker (battle.
+                          pendingSuppress, same shape as Nullify Cost's)
+                          and adds to a new battle.lockedOperators list,
+                          checked in playHandCard/aiChooseAndPlayCard via
+                          new isOperatorLockedForTeam() — the draw itself
+                          still succeeds, only future plays of the named
+                          operator are blocked; Forbid splices the placed
+                          Talisman instance out of inventory outright
+                          (destroyed, not returned — the literal contrast
+                          with Unravel); Sever negates with no numeric
+                          penalty and records a permanent block in a new
+                          battle.severedPairs list, checked in tryCast,
+                          renderBattle's targeting, AND finalizeCast
+                          directly (since the AI's own Supportive-card
+                          path calls finalizeCast straight, bypassing
+                          tryCast's UI-targeting filter). Verified with a
+                          new test-ultimate-defensive.js (26/26) — Rewind's
+                          whole-board-restore claim specifically checked by
+                          drifting an ally's position mid-turn via a fast
+                          test-hook and confirming Rewind reverts it too,
+                          not just the mover. 192 regression checks green
+                          in total after this pass. See
+                          MONOLITH_RULESET.md's Defensive section for the
+                          full per-operator writeup.
+
   v0.23.0 — 2026-08-06 — 4 new GDD §11.3 "(NEW)" Basic Defensive
                           operators: Intercept, Disrupt, Unravel, Counter
                           — closing 4 of the "6 unwired triggers" gap.
@@ -1091,6 +1139,24 @@ const OPERATORS = {
   disrupt:   { name:'Disrupt',   category:'defensive', kind:'defensive-disrupt-draw', trigger:'card-drawn' },
   unravel:   { name:'Unravel',   category:'defensive', kind:'defensive-unravel-talisman', trigger:'talisman-placement-declared' },
   counter:   { name:'Counter',   category:'defensive', kind:'defensive-counter-supportive', trigger:'supportive-played' },
+  // GDD §11.4's 5 Ultimate Defensive operators — "Exception: available on
+  // Ultimate Abilities only... uses exactly ONE of these as its primary
+  // effect, not two." `tier:'ultimate'` keeps each out of CARD_LIBRARY's
+  // auto-generated Basic-card list (same mechanism Disarm/Root/etc. use)
+  // — each is instead hand-authored once, as a single-operator card, in
+  // ULTIMATE_DEFENSIVE_CARDS below (not a 2-effect ULTIMATE_CARDS entry —
+  // there IS no second effect here). `trigger` matches each one's stated
+  // Basic Pair from the GDD table (Nullify All → Nullify's own
+  // aggressive-played; Rewind → Intercept's movement-declared; Suppress →
+  // Disrupt's card-drawn; Forbid → Unravel's talisman-placement-declared;
+  // Sever → Counter's supportive-played) — same trigger, a strictly
+  // stronger absolute effect, exactly the Basic/Ultimate pairing shape
+  // Disarm/Root/etc. already established for Aggressive operators.
+  nullifyAll: { name:'Nullify All', category:'defensive', kind:'defensive-nullify-all', trigger:'aggressive-played', tier:'ultimate' },
+  rewind:     { name:'Rewind',      category:'defensive', kind:'defensive-rewind', trigger:'movement-declared', tier:'ultimate' },
+  suppress:   { name:'Suppress',    category:'defensive', kind:'defensive-suppress', trigger:'card-drawn', tier:'ultimate', needsAbilityPicker:true },
+  forbid:     { name:'Forbid',      category:'defensive', kind:'defensive-forbid', trigger:'talisman-placement-declared', tier:'ultimate' },
+  sever:      { name:'Sever',       category:'defensive', kind:'defensive-sever', trigger:'supportive-played', tier:'ultimate' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -1167,16 +1233,33 @@ const ULTIMATE_CARDS = [
   // as its second main effect (both Ultimate-only, both new this pass).
   { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
 ];
+// GDD §11.4's "Exception" — a single-operator card, not the usual 2-effect
+// ULTIMATE_CARDS shape (there is no second main feat to pair). `category`
+// is set explicitly to 'defensive' (NOT 'ultimate') so these route through
+// playHandCard's existing Defensive-readying branch, not playUltimateCard
+// (which assumes `.effects`/targeting/Target-All — none of which apply to
+// a card that readies instead of casting at a target). cardCost() special-
+// cases `OPERATORS[operatorId].tier === 'ultimate'` to still charge the
+// full 50 Ini base despite `category` reading 'defensive' here.
+const ULTIMATE_DEFENSIVE_CARDS = [
+  { id:'ult-nullify-all', name:'Nullify All', category:'defensive', operatorId:'nullifyAll' },
+  { id:'ult-rewind',      name:'Rewind',      category:'defensive', operatorId:'rewind' },
+  { id:'ult-suppress',    name:'Suppress',    category:'defensive', operatorId:'suppress' },
+  { id:'ult-forbid',      name:'Forbid',      category:'defensive', operatorId:'forbid' },
+  { id:'ult-sever',       name:'Sever',       category:'defensive', operatorId:'sever' },
+];
 const CARD_LIBRARY = [
   // Ultimate-tier and THEN-only operators never get an auto-generated
   // standalone Basic card — the whole point of retiering them (see the
   // big comment above OPERATORS) is that they're unreachable except
-  // through a hand-authored ULTIMATE_CARDS entry (`.effects`) or an
+  // through a hand-authored ULTIMATE_CARDS entry (`.effects`), a
+  // ULTIMATE_DEFENSIVE_CARDS entry (`.operatorId`, single-effect), or an
   // IF/THEN modifier's operatorId (COMPOSED_CARDS), never as a base
   // 20-Ini card of their own.
   ...Object.entries(OPERATORS).filter(([id, op]) => op.tier !== 'ultimate' && !op.thenOnly).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
   ...ULTIMATE_CARDS,
+  ...ULTIMATE_DEFENSIVE_CARDS,
 ];
 function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
 function cardCategory(card){ return card.category || OPERATORS[card.operatorId].category; }
@@ -1192,7 +1275,13 @@ function isAggressiveFlavored(card){
   return false;
 }
 function cardCost(card){
-  if (cardCategory(card) === 'ultimate') return 50;
+  // GDD §11.4's "Exception" Ultimate Defensive cards read as category
+  // 'defensive' (see ULTIMATE_DEFENSIVE_CARDS' own comment — deliberately
+  // NOT 'ultimate', so they route through the Defensive-readying flow,
+  // not playUltimateCard's targeting/Target-All logic) but still cost the
+  // full 50 Ini base per that same GDD exception. Checked via the
+  // operator's own tier, not the card's category.
+  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate') return 50;
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;
@@ -1591,6 +1680,10 @@ function beginDeployment(){
     pendingOr: null, // { casterId, targetId, cardId, cost } while waiting on an OR-modifier choice
     pendingWard: null, // { esoriId, cardId, cost } while waiting on Nullify Cost's named-ability picker (see resolveWardChoice)
     pendingResist: null, // { esoriId, cardId, cost } while waiting on Resist's category picker (see resolveResistCategory)
+    pendingSuppress: null, // { esoriId, cardId, cost } while waiting on Suppress's named-ability picker (see resolveSuppressChoice)
+    turnStartPositions: [], // { esoriId, x, y }[] snapshot refreshed every beginUnitTurn — Rewind (GDD §11.4) restores board positions to this
+    lockedOperators: [], // { operatorId, team }[] — Suppress's permanent-for-the-battle lock, checked in playHandCard
+    severedPairs: [], // { casterId, targetId }[] — Sever's permanent-for-the-battle Supportive block, checked in tryCast/renderBattle
     finished: false, // guards finishBattle() against double-applying rewards — see that function's own comment
     talismans: [], // placed-on-grid state: { id, ownerTeam, x, y, typeId }
     placingTalismanType: null, // set while in 'place-talisman' interaction mode
@@ -1699,6 +1792,15 @@ function startBattle(){
 }
 function beginUnitTurn(u){
   if (!u) return;
+  // Rewind (GDD §11.4): "Returns all characters to their grid positions
+  // at the start of the last turn." Stated ruling: refreshed every
+  // beginUnitTurn call, so "the last turn" reads as "the turn that's
+  // currently in progress when Rewind triggers" — since Rewind fires off
+  // a declared Movement mid-turn, the most recent snapshot is always the
+  // positions as they stood before this same turn's own movement
+  // happened, matching the GDD text without needing a longer position
+  // history than one snapshot deep.
+  battle.turnStartPositions = battle.units.map(x => ({ esoriId: x.esoriId, x: x.x, y: x.y }));
   u.distanceRemaining = u.distance;
   u.hasStruckThisTurn = false;
   drawCard(u);
@@ -1770,6 +1872,22 @@ function drawCard(u){
     if (def && def.operatorId === 'disrupt'){
       u.discard.push(drawn);
       logMsg(`${defender.name}'s Disrupt negates ${u.name}'s draw.`, defender.team);
+      renderBattle();
+      return;
+    }
+    // Suppress (GDD §11.4, Disrupt's Ultimate pair): "Locks a specific
+    // ability from being played for the remainder of the battle" — the
+    // named operator (chosen at ready-time, see resolveSuppressChoice) is
+    // added to battle.lockedOperators for the DRAWER's team (u.team, not
+    // the readying defender's team — it's u's future card plays being
+    // locked). The draw itself still happens normally; Suppress doesn't
+    // negate the draw the way Disrupt does, only the future playability
+    // of the named ability.
+    if (def && def.operatorId === 'suppress'){
+      const lockedOpId = def.suppressOperatorId;
+      battle.lockedOperators.push({ operatorId: lockedOpId, team: u.team });
+      u.hand.push(drawn);
+      logMsg(`${defender.name}'s Suppress locks ${u.name}'s team out of ${OPERATORS[lockedOpId].name} for the rest of the battle.`, defender.team);
       renderBattle();
       return;
     }
@@ -1927,7 +2045,7 @@ function logMsg(text, team){
    ============================================================ */
 function setInteractionMode(mode){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist || battle.pendingSuppress) return;
   battle.interactionMode = battle.interactionMode === mode ? null : mode;
   battle.castingCardId = null; // leaving 'cast' mode (or entering a different one) drops any in-progress card selection
   battle.placingTalismanType = null;
@@ -1967,7 +2085,7 @@ function reachableCells(x0, y0, maxSteps){
 }
 function handleBoardClick(x, y){
   const u = currentUnit();
-  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist || !battle.interactionMode) return;
+  if (!u || u.controller !== 'human' || battle.pendingOr || battle.pendingWard || battle.pendingResist || battle.pendingSuppress || !battle.interactionMode) return;
   if (battle.interactionMode === 'move') tryMove(u, x, y);
   else if (battle.interactionMode === 'strike') tryStrike(u, x, y);
   else if (battle.interactionMode === 'rally') tryRally(u, x, y);
@@ -1997,6 +2115,21 @@ function tryMove(u, x, y, onDone){
   declareAction('movement-declared', u, opponents, (def, defender) => {
     if (def && def.operatorId === 'intercept'){
       logMsg(`${defender.name}'s Intercept halts ${u.name}'s movement.`, defender.team);
+      renderBattle();
+      if (onDone) onDone();
+      return;
+    }
+    // Rewind (GDD §11.4, Intercept's Ultimate pair): restores every
+    // unit's grid position to battle.turnStartPositions (see
+    // beginUnitTurn's own comment for what "the last turn" resolves to
+    // here) — NOT just a halt of this one declared move like Intercept.
+    // Stats/hand/Initiative are explicitly untouched per the GDD text.
+    if (def && def.operatorId === 'rewind'){
+      battle.turnStartPositions.forEach(snap => {
+        const unit = battle.units.find(x => x.esoriId === snap.esoriId);
+        if (unit){ unit.x = snap.x; unit.y = snap.y; }
+      });
+      logMsg(`${defender.name}'s Rewind resets every character's position to the start of the turn.`, defender.team);
       renderBattle();
       if (onDone) onDone();
       return;
@@ -2252,6 +2385,20 @@ function tryPlaceTalisman(u, x, y){
       renderBattle();
       return;
     }
+    // Forbid (GDD §11.4, Unravel's Ultimate pair): "Permanently prevents
+    // a specific Talisman from ever being placed again this battle...
+    // does not return to hand to try again" — contrast with Unravel
+    // above, which leaves talismanInventory untouched. This specific
+    // instance is destroyed outright: spliced out of inventory, never
+    // placed, no Initiative spent (the placement never resolved).
+    if (def && def.operatorId === 'forbid'){
+      u.talismanInventory.splice(idx, 1);
+      logMsg(`${defender.name}'s Forbid destroys ${u.name}'s ${TALISMAN_TYPES[typeId].label} before it can be placed — it's gone for the rest of the battle.`, defender.team);
+      battle.interactionMode = null;
+      battle.placingTalismanType = null;
+      renderBattle();
+      return;
+    }
     u.talismanInventory.splice(idx, 1);
     u.initiative -= TALISMAN_PLACE_COST;
     // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
@@ -2306,7 +2453,7 @@ function activatePassiveCard(u, card){
    once (source text doesn't cap it the way Passive's "one at a time" is
    explicit about), so this is a plain array, not a single slot.
    ============================================================ */
-function readyDefensiveCard(u, card, cost, warded, resistCategory){
+function readyDefensiveCard(u, card, cost, warded, resistCategory, suppressOperatorId){
   u.initiative -= cost;
   discardCard(u, card.id);
   // warded (Nullify Cost only — see resolveWardChoice) is the specific
@@ -2316,9 +2463,12 @@ function readyDefensiveCard(u, card, cost, warded, resistCategory){
   // own default before this picker existed), checked in declareAction.
   // resistCategory (Resist only — see resolveResistCategory) is which of
   // the 4 declared categories (Damage/Control/Movement/Ability Effects)
-  // this readied Resist wards against.
-  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id, warded: warded || null, resistCategory: resistCategory || null });
-  const suffix = warded ? `, warded against ${cardById(warded).name}` : resistCategory ? `, vs ${RESIST_CATEGORY_LABELS[resistCategory]}` : '';
+  // this readied Resist wards against. suppressOperatorId (Suppress
+  // only — see resolveSuppressChoice) is the specific operator id GDD's
+  // "locks a specific ability" names — used once the trigger fires, not
+  // checked here.
+  u.readiedDefensives.push({ operatorId: card.operatorId, cardId: card.id, warded: warded || null, resistCategory: resistCategory || null, suppressOperatorId: suppressOperatorId || null });
+  const suffix = warded ? `, warded against ${cardById(warded).name}` : resistCategory ? `, vs ${RESIST_CATEGORY_LABELS[resistCategory]}` : suppressOperatorId ? `, naming ${OPERATORS[suppressOperatorId].name}` : '';
   logMsg(`${u.name} readies ${OPERATORS[card.operatorId].name}${suffix}.`, u.team);
   renderBattle();
 }
@@ -2350,6 +2500,21 @@ function resolveResistCategory(category){
   const card = cardById(p.cardId);
   if (!u || !card || !u.hand.includes(p.cardId)) { renderBattle(); return; }
   readyDefensiveCard(u, card, p.cost, null, category);
+}
+// Suppress's own hand-click opens an ability picker (battle.pendingSuppress,
+// same rendered-in-place-of-hand shape as pendingWard/pendingResist) —
+// GDD §11.4: "Locks a specific ability from being played" — naming which
+// OPERATOR (not a specific card instance; the caster can't see the
+// opponent's exact hand/deck contents, only what abilities exist at all)
+// gets locked once this readies and later triggers.
+function resolveSuppressChoice(operatorId){
+  const p = battle.pendingSuppress;
+  battle.pendingSuppress = null;
+  if (!p || !operatorId) { renderBattle(); return; }
+  const u = battle.units.find(x => x.esoriId === p.esoriId);
+  const card = cardById(p.cardId);
+  if (!u || !card || !u.hand.includes(p.cardId)) { renderBattle(); return; }
+  readyDefensiveCard(u, card, p.cost, null, null, operatorId);
 }
 /* ============================================================
    DEFENSIVE/REACTIVE — GENERIC INTERRUPT SYSTEM. Ported (in spirit, not
@@ -2440,6 +2605,11 @@ function isInflictFlavored(cardId){
   if (!card) return false;
   return card.effects ? card.effects.includes('inflict') : card.operatorId === 'inflict';
 }
+// Sever's permanent block (GDD §11.4) — checked wherever a Supportive
+// card's valid targets are computed, alongside team/defeated filters.
+function isSupportiveSevered(casterId, targetId){
+  return battle.severedPairs.some(p => p.casterId === casterId && p.targetId === targetId);
+}
 let pendingDefenseResponse = null; // { matches, onResolve } while #defensive-response-overlay is open
 // context.cardId (optional, only finalizeCast's 'aggressive-played' call
 // passes it) is the incoming card actually being declared — checked
@@ -2510,11 +2680,24 @@ function chooseDefensiveResponse(idx){
   const def = m.t.readiedDefensives.splice(m.idx, 1)[0];
   pending.onResolve(def, m.t);
 }
+// Suppress's own lock check (GDD §11.4): the card's PRIMARY operator
+// (`.effects[0]` for a 2-effect Ultimate, `.operatorId` for everything
+// else) matched against battle.lockedOperators for the playing unit's
+// team — a stated scope simplification, doesn't reach a locked operator
+// appearing only as an AND/IF-THEN modifier tail.
+function isOperatorLockedForTeam(card, team){
+  const opId = card.effects ? card.effects[0] : card.operatorId;
+  return battle.lockedOperators.some(l => l.operatorId === opId && l.team === team);
+}
 function playHandCard(cardId){
   const u = currentUnit();
   if (!u || u.controller !== 'human') return;
   const card = cardById(cardId);
   if (!card || !u.hand.includes(cardId)) return;
+  if (isOperatorLockedForTeam(card, u.team)){
+    logMsg(`${u.name} can't play ${cardDescription(card)} — locked by an opponent's Suppress.`, u.team);
+    return;
+  }
   const category = cardCategory(card);
   const cost = cardCost(card);
   if (u.initiative < cost) return;
@@ -2551,6 +2734,15 @@ function playHandCard(cardId){
     }
     if (card.operatorId === 'resist'){
       battle.pendingResist = { esoriId: u.esoriId, cardId: card.id, cost };
+      renderBattle();
+      return;
+    }
+    // Suppress (GDD §11.4 Ultimate Defensive) opens its own named-ability
+    // picker, same shape as Nullify Cost's — see resolveSuppressChoice.
+    // Nullify All/Rewind/Forbid/Sever ready with no picker at all, same
+    // as their Basic pairs (Nullify/Intercept/Unravel/Counter).
+    if (card.operatorId === 'suppress'){
+      battle.pendingSuppress = { esoriId: u.esoriId, cardId: card.id, cost };
       renderBattle();
       return;
     }
@@ -2633,7 +2825,7 @@ function tryCast(u, x, y){
   const target = battle.units.find(t => !t.removed && t.x === x && t.y === y);
   if (!target) return;
   if (targetCategory === 'aggressive' && (target.team === u.team || target.defeated)) return;
-  if (targetCategory === 'supportive' && (target.team !== u.team || target.defeated)) return;
+  if (targetCategory === 'supportive' && (target.team !== u.team || target.defeated || isSupportiveSevered(u.esoriId, target.esoriId))) return;
   if (chebyshev(x - u.x, y - u.y) > range) return;
   const cost = cardCost(card);
   if (u.initiative < cost) return;
@@ -2660,6 +2852,14 @@ function resolveOrChoice(chosenOperatorId){
   finalizeCast(u, target, card, p.cost, chosenOperatorId);
 }
 function finalizeCast(u, target, card, cost, chosenOperatorId){
+  // Sever's permanent block (GDD §11.4) — checked here too, not just in
+  // tryCast's own targeting filter, since the AI's own Supportive-card
+  // path (aiChooseAndPlayCard) calls finalizeCast directly and never
+  // routes through tryCast's target-picking UI at all.
+  if (cardCategory(card) === 'supportive' && target.esoriId && isSupportiveSevered(u.esoriId, target.esoriId)){
+    logMsg(`${u.name} can't target ${target.name} with ${cardDescription(card)} — that support line was permanently severed.`, u.team);
+    return;
+  }
   u.initiative -= cost;
   // Discard the played card *before* resolving its operator(s) — Refine's
   // "banish a random other card from your own hand" needs the just-played
@@ -2767,6 +2967,23 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     declareAction('supportive-played', u, opponents, (def, defender) => {
       if (!def){ proceedCast(); return; }
       logMsg(`${defender.name}'s ${OPERATORS[def.operatorId].name} negates ${u.name}'s ${cardDescription(card)}.`, defender.team);
+      // Sever (GDD §11.4, Counter's Ultimate pair): "Cancels a Supportive
+      // ability AND permanently breaks that support line — the caster
+      // can never target that specific ally with a Supportive ability
+      // again this battle." No numeric penalty (unlike Counter) — just
+      // negate plus a permanent block on this exact caster→target pair,
+      // checked in tryCast's own Supportive-targeting filter and
+      // renderBattle's targets computation (see isSupportiveSevered).
+      if (def.operatorId === 'sever'){
+        battle.severedPairs.push({ casterId: u.esoriId, targetId: target.esoriId });
+        logMsg(`${defender.name}'s Sever permanently breaks ${u.name}'s support line to ${target.name}.`, defender.team);
+        battle.interactionMode = null;
+        battle.castingCardId = null;
+        renderBattle();
+        const w = checkWin();
+        if (w) finishBattle(w);
+        return;
+      }
       const penaltyOp = OPERATORS[chosenOperatorId || card.operatorId];
       if (penaltyOp.kind === 'stat-increase'){
         target[penaltyOp.stat] = Math.max(0, target[penaltyOp.stat] - penaltyOp.amount);
@@ -2803,6 +3020,21 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     logMsg(`${target.name}'s ${OPERATORS[def.operatorId].name} nullifies ${u.name}'s ${cardDescription(card)}.`, target.team);
     battle.interactionMode = null;
     battle.castingCardId = null;
+    // Nullify All (GDD §11.4, Nullify's Ultimate pair): "Cancels every
+    // action declared by the opponent this turn. Opponent ends their
+    // turn immediately." Stated scope: this build cancels the specific
+    // incoming card that triggered it (same as Nullify, above) rather
+    // than retroactively undoing every EARLIER action u already took
+    // this turn — no action journal exists to replay/undo against, and
+    // guessing at one risks a much larger, unbounded feature. The
+    // unambiguous, mechanically self-contained half of the GDD text
+    // ("opponent ends their turn immediately") IS fully built: u's turn
+    // ends right here, exactly as if u had clicked End Turn themselves.
+    if (def.operatorId === 'nullifyAll'){
+      logMsg(`${target.name}'s Nullify All forces ${u.name}'s turn to end immediately.`, target.team);
+      endTurn();
+      return;
+    }
     renderBattle();
   }, { cardId: card.id });
 }
@@ -3091,7 +3323,7 @@ function aiChooseAndPlayCard(u){
   // of real evaluation basis (is Target All worth it, is the Auto-Win
   // condition actually true) the AI doesn't have yet, so it just plays a
   // different card instead of guessing at either.
-  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCategory(c) !== 'ultimate' && cardCost(c) <= u.initiative);
+  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCategory(c) !== 'ultimate' && cardCost(c) <= u.initiative && !isOperatorLockedForTeam(c, u.team));
   if (!affordable.length) return;
 
   if (!u.activePassive){
@@ -3180,7 +3412,7 @@ function renderBattle(){
   const active = currentUnit();
   const board = document.getElementById('battle-board');
   let reach = {}, targets = [], talismanTargets = [], placeCells = [];
-  if (active && active.controller === 'human' && !battle.pendingOr && !battle.pendingWard && !battle.pendingResist){
+  if (active && active.controller === 'human' && !battle.pendingOr && !battle.pendingWard && !battle.pendingResist && !battle.pendingSuppress){
     if (battle.interactionMode === 'move') reach = reachableCells(active.x, active.y, effectiveDistanceRemaining(active));
     if (battle.interactionMode === 'strike' && !active.hasStruckThisTurn){
       // Defeated (not yet removed) enemies are legal Strike targets too —
@@ -3204,6 +3436,7 @@ function renderBattle(){
       } else {
         targets = battle.units.filter(t => !t.removed && !t.defeated
           && (targetCategory === 'aggressive' ? t.team !== active.team : t.team === active.team)
+          && (targetCategory !== 'supportive' || !isSupportiveSevered(active.esoriId, t.esoriId))
           && chebyshev(t.x-active.x, t.y-active.y) <= range);
       }
     }
@@ -3249,7 +3482,7 @@ function renderBattle(){
       · Move left ${active.distanceRemaining} · Ability range ${active.abilityRange}${passiveNote}${wonderlandNote}${readiedNote}`;
   }
   const isHumanTurn = active && active.controller === 'human';
-  const blocked = !isHumanTurn || !!battle.pendingOr || !!battle.pendingWard || !!battle.pendingResist;
+  const blocked = !isHumanTurn || !!battle.pendingOr || !!battle.pendingWard || !!battle.pendingResist || !!battle.pendingSuppress;
   document.getElementById('action-move').disabled = blocked || active.distanceRemaining <= 0;
   document.getElementById('action-strike').disabled = blocked || active.hasStruckThisTurn;
   document.getElementById('action-rally').disabled = blocked;
@@ -3332,6 +3565,17 @@ function renderBattle(){
     handHint.textContent = 'Resist: grant temporary immunity to which declared category?';
     handGroup.innerHTML = Object.entries(RESIST_CATEGORY_LABELS).map(([key, label]) =>
       `<button class="opt-btn" onclick="resolveResistCategory('${key}')"><strong>${label}</strong></button>`
+    ).join('');
+  } else if (battle.pendingSuppress){
+    // "Locks a specific ABILITY" — named as an operator (what a card
+    // actually resolves to), not a specific card instance, since the
+    // caster can't see the opponent's exact hand/deck contents. Lists
+    // every Basic-tier operator (the same population CARD_LIBRARY
+    // auto-generates standalone cards from) as a nameable target.
+    handHint.textContent = 'Suppress: lock which ability for the rest of the battle?';
+    const lockable = Object.entries(OPERATORS).filter(([id, op]) => op.tier !== 'ultimate' && !op.thenOnly);
+    handGroup.innerHTML = lockable.map(([id, op]) =>
+      `<button class="opt-btn" onclick="resolveSuppressChoice('${id}')"><strong>${op.name}</strong></button>`
     ).join('');
   } else if (!isHumanTurn || !active){
     handHint.textContent = '';

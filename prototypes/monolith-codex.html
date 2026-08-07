@@ -11,6 +11,16 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.23.0 — 2026-08-06 — All 5 GDD §11.4 Ultimate Defensive operators,
+                          data-mirrored from Arena (that file's matching
+                          v0.24.0 entry has the full writeup and the
+                          actual battle-runtime resolution logic — this
+                          doc has none): Nullify All, Rewind, Suppress,
+                          Forbid, Sever. New ULTIMATE_DEFENSIVE_CARDS array
+                          (5 single-operator cards, category:'defensive'
+                          despite costing the flat 50 Ini Ultimate base —
+                          see Arena's own comment for why).
+
   v0.22.0 — 2026-08-06 — 4 new GDD §11.3 "(NEW)" Basic Defensive
                           operators, data-mirrored from Arena (that file's
                           matching v0.23.0 entry has the full writeup and
@@ -905,6 +915,17 @@ const OPERATORS = {
   disrupt:   { name:'Disrupt',   category:'defensive', kind:'defensive-disrupt-draw', trigger:'card-drawn' },
   unravel:   { name:'Unravel',   category:'defensive', kind:'defensive-unravel-talisman', trigger:'talisman-placement-declared' },
   counter:   { name:'Counter',   category:'defensive', kind:'defensive-counter-supportive', trigger:'supportive-played' },
+  // GDD §11.4's 5 Ultimate Defensive operators — single-effect-only
+  // Ultimates (the "Exception" — no second main feat), data-mirrored from
+  // Arena (that file's own OPERATORS comment has the full writeup and
+  // the actual battle-runtime resolution logic — this doc has none).
+  // `trigger` matches each one's stated Basic Pair (Nullify All→Nullify,
+  // Rewind→Intercept, Suppress→Disrupt, Forbid→Unravel, Sever→Counter).
+  nullifyAll: { name:'Nullify All', category:'defensive', kind:'defensive-nullify-all', trigger:'aggressive-played', tier:'ultimate' },
+  rewind:     { name:'Rewind',      category:'defensive', kind:'defensive-rewind', trigger:'movement-declared', tier:'ultimate' },
+  suppress:   { name:'Suppress',    category:'defensive', kind:'defensive-suppress', trigger:'card-drawn', tier:'ultimate', needsAbilityPicker:true },
+  forbid:     { name:'Forbid',      category:'defensive', kind:'defensive-forbid', trigger:'talisman-placement-declared', tier:'ultimate' },
+  sever:      { name:'Sever',       category:'defensive', kind:'defensive-sever', trigger:'supportive-played', tier:'ultimate' },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
@@ -970,15 +991,28 @@ const ULTIMATE_CARDS = [
   { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
   { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
 ];
+// GDD §11.4's "Exception" — single-operator cards, data-mirrored from
+// Arena (see that file's own comment for why `category` reads
+// 'defensive' here rather than 'ultimate' despite costing 50 Ini).
+const ULTIMATE_DEFENSIVE_CARDS = [
+  { id:'ult-nullify-all', name:'Nullify All', category:'defensive', operatorId:'nullifyAll' },
+  { id:'ult-rewind',      name:'Rewind',      category:'defensive', operatorId:'rewind' },
+  { id:'ult-suppress',    name:'Suppress',    category:'defensive', operatorId:'suppress' },
+  { id:'ult-forbid',      name:'Forbid',      category:'defensive', operatorId:'forbid' },
+  { id:'ult-sever',       name:'Sever',       category:'defensive', operatorId:'sever' },
+];
 const CARD_LIBRARY = [
   ...Object.entries(OPERATORS).filter(([id, op]) => op.tier !== 'ultimate' && !op.thenOnly).map(([id, op]) => ({ id:'card-'+id, name:op.name, operatorId:id })),
   ...COMPOSED_CARDS,
   ...ULTIMATE_CARDS,
+  ...ULTIMATE_DEFENSIVE_CARDS,
 ];
 function cardById(id){ return CARD_LIBRARY.find(c => c.id === id); }
 function cardCategory(card){ return card.category || OPERATORS[card.operatorId].category; }
 function cardCost(card){
-  if (cardCategory(card) === 'ultimate') return 50; // flat, per MONOLITH_RULESET.md — none of the hand-authored Ultimates use a costed modifier yet
+  // See Arena's matching comment — Ultimate Defensive cards read category
+  // 'defensive' but still cost 50 Ini, checked via the operator's tier.
+  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate') return 50; // flat, per MONOLITH_RULESET.md — none of the hand-authored Ultimates use a costed modifier yet
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;

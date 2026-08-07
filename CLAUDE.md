@@ -240,13 +240,34 @@ short on purpose.
   test-team-defensive.js (22/22, real UI-driven checks covering all 4
   operators' intercepted path plus a control check that the
   un-intercepted path still works once the readied card is spent) —
-  166 regression checks green in total after this pass. Still ahead on
-  the "close every gap" list: 5 new Ultimate Defensive operators (Nullify
-  All/Rewind/Suppress/Forbid/Sever — per GDD §11.4's "Exception," each is
-  a single-effect-only Ultimate), Ultimate-level ALSO/IF-THEN (needed for
-  Daedalus Tesseract and Nhül Partikül's full effect), AI playing
-  Ultimate/Defensive/OR cards, Refine's ally-targeting half, and Rhyzl
-  Step.
+  166 regression checks green in total after this pass. Fourteenth pass
+  built all 5 GDD §11.4 Ultimate Defensive operators — Nullify All,
+  Rewind, Suppress, Forbid, Sever — the "Exception" single-effect-only
+  Ultimate tier paired one-to-one with the 4 Basic Defensive operators
+  above. Each card reads `category:'defensive'` (not `'ultimate'`) so it
+  routes through the existing Defensive-readying flow rather than
+  playUltimateCard's targeting/Target-All logic, while `cardCost()`
+  special-cases the operator's own `tier:'ultimate'` to still charge the
+  full 50 Ini base. Stated rulings: Nullify All cancels the triggering
+  card (like Nullify) and calls `endTurn()` to force the opponent's turn
+  to end immediately — retroactively undoing earlier actions the same
+  turn isn't built, no action journal exists; Rewind restores ALL units
+  to a new `battle.turnStartPositions` snapshot (refreshed every
+  `beginUnitTurn`), not just the mover, the real distinction from
+  Intercept; Suppress opens a named-operator picker and adds to a new
+  `battle.lockedOperators` list — the draw itself still succeeds, only
+  future plays of the named operator are blocked for that team; Forbid
+  destroys the specific Talisman instance outright (spliced from
+  inventory, never returned — the literal Unravel contrast); Sever
+  negates with no numeric penalty and records a permanent block in a new
+  `battle.severedPairs` list, checked in both the UI-targeting filter and
+  directly in `finalizeCast` (since the AI's own Supportive path calls it
+  straight, bypassing the UI filter). Verified with a new
+  `test-ultimate-defensive.js` (26/26) — 192 regression checks green in
+  total after this pass. Still ahead on the "close every gap" list:
+  Ultimate-level ALSO/IF-THEN (needed for Daedalus Tesseract and Nhül
+  Partikül's full effect), AI playing Ultimate/Defensive/OR cards,
+  Refine's ally-targeting half, and Rhyzl Step.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

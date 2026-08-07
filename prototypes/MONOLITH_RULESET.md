@@ -609,40 +609,47 @@ un-intercepted path still behaves normally once the readied card is
 spent — confirming the team-wide scan doesn't accidentally block
 everything.
 
-Only two triggers remain genuinely unwired: (1) Ability Played (Any) has
-no authored operator of its own to validate against (only Suppress, an
-Ultimate-tier Defensive operator, is bound to it, and Ultimate-tier
-Defensive operators — Nullify All/Rewind/Suppress/Forbid/Sever — aren't
-built yet, see the table just below); (2)
-Defensive Ability Played is Nullify Cost's own GDD-bound trigger, but
-wiring it would mean intercepting a Defensive card the instant it's
-*readied*, before it even reaches `declareAction` — a genuinely different
-shape from every other trigger here, which all fire on an already
-in-flight declared action, not one still being set up. Nullify All,
-Rewind, Suppress, Forbid, and Sever (Ultimate, per GDD §11.4's own
-"Exception" — each is a single-effect-only Ultimate, not the usual two)
-are named in this document but not yet added to `OPERATORS` or wired to
-any call site — that's the next item on the "close every gap" list, not
-done in this pass. Adding a call site with no real content behind it
-risks guessing at behavior nothing has actually specified — the same
-"documented, bounded subset" standard this project holds Ultimate cards
-and Wonderland v2 to elsewhere.
+Only one trigger remains genuinely unwired now: Defensive Ability Played
+is Nullify Cost's own GDD-bound trigger, but wiring it would mean
+intercepting a Defensive card the instant it's *readied*, before it even
+reaches `declareAction` — a genuinely different shape from every other
+trigger here, which all fire on an already in-flight declared action, not
+one still being set up. Ability Played (Any) is now covered too, since
+its one bound operator (Suppress) is built (below) — Suppress just
+doesn't happen to declare `ability-played-any` as ITS OWN trigger (it's
+bound to `card-drawn`, per its Basic pair Disrupt), so that row of the
+table above stays theoretically nameable but has no operator that
+actually uses it, the same "named, zero real users" status Ability Played
+(Any) always had.
 
-**Ultimate Defensive operators — GDD §11.4, named here, not yet built:**
+**Fourteenth pass built all 5 GDD §11.4 Ultimate Defensive operators** —
+Nullify All, Rewind, Suppress, Forbid, Sever — the "Exception" tier
+paired one-to-one with the 4 Basic Defensive operators from the previous
+pass:
 
-| Operator | GDD effect | Basic pair |
-|---|---|---|
-| Nullify All | Cancels every action declared by the opponent this turn; opponent's turn ends immediately. | Nullify |
-| Rewind | Returns all characters to their grid positions at the start of the last turn — stats, hand state, and Initiative are NOT restored, board positions only. | Intercept |
-| Suppress | Locks a specific ability from being played for the remainder of the battle. | Disrupt |
-| Forbid | Permanently prevents a specific Talisman from ever being placed again this battle — unlike Unravel, it does not return to hand to try again. | Unravel |
-| Sever | Cancels a Supportive ability AND permanently breaks that support line — the caster can never target that specific ally with a Supportive ability again this battle. | Counter |
+| Operator | GDD effect | Basic pair | Stated ruling |
+|---|---|---|---|
+| Nullify All | "Cancels every action declared by the opponent this turn. Opponent ends their turn immediately." | Nullify | Cancels the specific incoming card that triggered it (same as Nullify) — retroactively undoing every EARLIER action the opponent already took this turn isn't built (no action journal exists to replay against, a stated scope limit). The unambiguous, self-contained half of the text — "opponent ends their turn immediately" — IS fully built: calls the same `endTurn()` a human clicking End Turn themselves would trigger. |
+| Rewind | "Returns all characters to their grid positions at the start of the last turn. Stats, hand state, and Initiative are NOT restored — only board positions." | Intercept | `beginUnitTurn` now snapshots every unit's `{x,y}` into `battle.turnStartPositions` on every turn start; Rewind restores ALL units to that snapshot (not just halting the one declared move the way Intercept does) — "the last turn" reads as "the turn currently in progress," since Rewind fires mid-declaration, before the current turn ends. |
+| Suppress | "Locks a specific ability from being played for the remainder of the battle." | Disrupt | Names an OPERATOR (via a ready-time picker, `#hand-card-group`, same shape as Nullify Cost's/Resist's) rather than a specific card instance — the caster can't see the opponent's exact hand/deck contents. The draw itself still succeeds (Suppress doesn't negate the draw the way Disrupt does); only future plays of the named operator, for the drawer's whole team, are blocked. Checked against a card's PRIMARY operator only (`.effects[0]` for a 2-effect Ultimate, `.operatorId` otherwise) — doesn't reach a locked operator appearing only as an AND/IF-THEN modifier tail, a stated scope simplification. |
+| Forbid | "Permanently prevents a specific Talisman from ever being placed again this battle. Unlike Unravel, it does not return to hand to try again." | Unravel | The specific Talisman instance being placed is spliced out of `talismanInventory` outright — destroyed, not placed, not returned — the literal contrast the GDD draws with Unravel. |
+| Sever | "Cancels a Supportive ability AND permanently breaks that support line — the caster can never target that specific ally with a Supportive ability again this battle." | Counter | Negates with NO numeric penalty (unlike Counter) and records a permanent `{casterId, targetId}` block in `battle.severedPairs`, checked in `tryCast`'s and `renderBattle`'s own Supportive-targeting filters AND directly in `finalizeCast` (since the AI's own Supportive-card path calls `finalizeCast` straight, bypassing `tryCast`'s UI-targeting filter entirely). |
 
-Per GDD §11.4's own "Exception" note, each of these is a **single-effect**
-Ultimate (not the usual two main effects) — still costs the full 50 Ini
-base, still declares a trigger, and can still carry up to two optional
-modifiers (ALSO/IF WONDERLAND OPEN), but doesn't pair a second main feat
-onto one reactive card. None of the five are implemented yet.
+Each reads card `category:'defensive'` explicitly (not `'ultimate'`) so
+it routes through the existing Defensive-readying flow in `playHandCard`
+rather than `playUltimateCard`'s targeting/Target-All logic, which
+doesn't apply to a card that readies instead of casting at a target —
+`cardCost()` special-cases `OPERATORS[operatorId].tier === 'ultimate'` to
+still charge the full 50 Ini base despite that. `declareAction`'s
+human-response-window options already name which unit each match belongs
+to (built last pass for the 4 Basic operators), so no further UI work was
+needed there for the Ultimate tier. Verified end-to-end with a new
+`test-ultimate-defensive.js` (26/26, real UI-driven Playwright checks) —
+Rewind's whole-board-restore claim specifically verified by drifting an
+ally's position mid-turn via a fast test-hook (standing in for "something
+else changed the board since the turn began," since only the active unit
+can move on its own turn in real play) and confirming Rewind reverts that
+ally too, the actual distinguishing behavior from Intercept.
 
 **Nullify Cost's "named ability" picker is now built**, closing the one
 simplification from the version above that had a concrete, buildable fix:
