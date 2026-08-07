@@ -567,35 +567,82 @@ the GDD's own §11.5 Trigger Reference table:
 |---|---|---|---|
 | `aggressive-played` | Opponent plays an Aggressive card | Nullify, Nullify All | ✅ `finalizeCast` — Nullify, Reflect (Inflict-scoped), Resist, Nullify Cost |
 | `weapon-strike-declared` | Opponent declares a Weapon Strike | Nullify, Reflect | ✅ `resolveStrikeHit` — Nullify, Reflect, Resist |
-| `movement-declared` | Opponent declares Movement | Intercept, Rewind | ❌ not wired |
-| `talisman-placement-declared` | Opponent declares Talisman placement | Unravel, Forbid | ❌ not wired |
-| `card-drawn` | Opponent draws a card | Disrupt, Suppress | ❌ not wired |
+| `movement-declared` | Opponent declares Movement | Intercept, Rewind | ✅ `tryMove` — Intercept |
+| `talisman-placement-declared` | Opponent declares Talisman placement | Unravel, Forbid | ✅ `tryPlaceTalisman` — Unravel |
+| `card-drawn` | Opponent draws a card | Disrupt, Suppress | ✅ `drawCard` — Disrupt |
+| `supportive-played` | Opponent plays a Supportive card | Counter, Sever | ✅ `finalizeCast` — Counter |
 | `ability-played-any` | Opponent plays any card, any family | Suppress | ❌ not wired |
 | `defensive-played` | Opponent plays a Defensive card | Nullify Cost | ❌ not wired |
-| `supportive-played` | Opponent plays a Supportive card | Counter, Sever | ❌ not wired |
 
-Only the first two have both a real operator using them *and* a natural
-single-target framing: Nullify/Reflect/Resist/Nullify Cost all defend the
-one specific unit the action is against, matching this engine's
-per-unit-scoped `readiedDefensives` model exactly. The other six remain
-named, documented vocabulary with no call site wired to them yet, for two
-different reasons, not one oversight: (1) Movement Declared, Talisman
-Placement Declared, Card Drawn, and Ability Played (Any) are declared
-actions with **no specific defending unit** — the prior prototype build
-this was ported from scanned every opposing unit's *hand* for a match
-instead of one target's readied list, a real architectural difference
-this engine's model doesn't share, and reproducing that team-wide-scan
-shape correctly is a separate, larger design question; (2) Defensive
-Played and Supportive Played *could* fit the single-target shape, but
-have zero authored operators to validate the wiring against — Intercept,
-Disrupt, Unravel, Counter (Basic) and Nullify All, Rewind, Suppress,
-Forbid, Sever (Ultimate) are now named in this document (see the two new
-operator tables below) but not yet added to `OPERATORS` or wired to any
-call site — that's the next item on the "close every gap" list, not done
-in this pass. Adding a call site with no real content behind it risks
-guessing at behavior nothing has actually specified — the same
+**Thirteenth pass built the 4 new GDD §11.3 "(NEW)" Basic Defensive
+operators** — Intercept, Disrupt, Unravel, Counter — closing 4 of what
+used to be "the 6 unwired triggers" gap. The real blocker the prior
+version of this doc named (Movement Declared/Talisman Placement
+Declared/Card Drawn have **no one predetermined defending unit** — unlike
+an incoming Aggressive card or Weapon Strike, which are always declared
+*against* one specific target) is solved by generalizing `declareAction`
+itself: its `target` parameter now accepts either the original single
+unit *or* an array of candidate units, scanned together for matches.
+Intercept/Disrupt/Unravel/Counter all ready normally (no picker — same
+shape as Nullify/Reflect) and, when their trigger fires, scan the acting
+unit's **whole opposing team** rather than one fixed target — the
+"team-wide scan" the prior prototype build used for exactly these
+triggers, now actually built rather than just cited as a gap. Each
+operator's own GDD one-line effect is worded loosely enough to need a
+stated ruling:
+
+| Operator | GDD effect (verbatim) | Stated ruling | Call site |
+|---|---|---|---|
+| Intercept | "Halts or punishes opponent repositioning." | Halts: the declared Movement is cancelled outright — no position change, no Movement budget spent, as if never declared. The "or punishes" alternate has no further stated mechanic to build against. | `tryMove` |
+| Disrupt | "Negates the draw or applies a penalty effect." | Negates the draw: the drawn card lands in the drawer's discard pile instead of their hand, rather than a separately-undefined penalty. | `drawCard` |
+| Unravel | "Returns the Talisman to the opponent's hand before it resolves." | This engine places Talismans from a per-unit inventory list, not the ability-card hand — the faithful equivalent is that the placement never happens at all: nothing leaves `talismanInventory`, no Initiative is spent, no board state is created. | `tryPlaceTalisman` |
+| Counter | "Negates the Supportive effect and applies a penalty to the intended ally target." | Mirrors the would-be effect back onto the same ally instead of granting it — a Give-stat card's own +1 becomes a −1, Heal's own cost-for-cost Life gain becomes cost-for-cost Life loss, the same "negate, then flip it back" shape Reflect already uses for Strikes/Inflict. Transpose and Accelerate (`swap-position`/`extra-turn`) have no numeric amount to mirror — Counter only negates those, no further penalty, a stated scope limit, not an oversight. | `finalizeCast`'s Supportive branch |
+
+`declareAction`'s human-response-window logic generalizes the same way:
+when 2+ matching readied responses come from *different* units (not just
+different operators on the same unit, the only shape the original
+single-target version had to handle), each option in the response window
+now names which unit it belongs to. Verified end-to-end with real
+UI-driven Playwright checks (`test-team-defensive.js`, 22/22) covering
+all 4 new operators' intercepted path AND a "control" check that the
+un-intercepted path still behaves normally once the readied card is
+spent — confirming the team-wide scan doesn't accidentally block
+everything.
+
+Only two triggers remain genuinely unwired: (1) Ability Played (Any) has
+no authored operator of its own to validate against (only Suppress, an
+Ultimate-tier Defensive operator, is bound to it, and Ultimate-tier
+Defensive operators — Nullify All/Rewind/Suppress/Forbid/Sever — aren't
+built yet, see the table just below); (2)
+Defensive Ability Played is Nullify Cost's own GDD-bound trigger, but
+wiring it would mean intercepting a Defensive card the instant it's
+*readied*, before it even reaches `declareAction` — a genuinely different
+shape from every other trigger here, which all fire on an already
+in-flight declared action, not one still being set up. Nullify All,
+Rewind, Suppress, Forbid, and Sever (Ultimate, per GDD §11.4's own
+"Exception" — each is a single-effect-only Ultimate, not the usual two)
+are named in this document but not yet added to `OPERATORS` or wired to
+any call site — that's the next item on the "close every gap" list, not
+done in this pass. Adding a call site with no real content behind it
+risks guessing at behavior nothing has actually specified — the same
 "documented, bounded subset" standard this project holds Ultimate cards
 and Wonderland v2 to elsewhere.
+
+**Ultimate Defensive operators — GDD §11.4, named here, not yet built:**
+
+| Operator | GDD effect | Basic pair |
+|---|---|---|
+| Nullify All | Cancels every action declared by the opponent this turn; opponent's turn ends immediately. | Nullify |
+| Rewind | Returns all characters to their grid positions at the start of the last turn — stats, hand state, and Initiative are NOT restored, board positions only. | Intercept |
+| Suppress | Locks a specific ability from being played for the remainder of the battle. | Disrupt |
+| Forbid | Permanently prevents a specific Talisman from ever being placed again this battle — unlike Unravel, it does not return to hand to try again. | Unravel |
+| Sever | Cancels a Supportive ability AND permanently breaks that support line — the caster can never target that specific ally with a Supportive ability again this battle. | Counter |
+
+Per GDD §11.4's own "Exception" note, each of these is a **single-effect**
+Ultimate (not the usual two main effects) — still costs the full 50 Ini
+base, still declares a trigger, and can still carry up to two optional
+modifiers (ALSO/IF WONDERLAND OPEN), but doesn't pair a second main feat
+onto one reactive card. None of the five are implemented yet.
 
 **Nullify Cost's "named ability" picker is now built**, closing the one
 simplification from the version above that had a concrete, buildable fix:

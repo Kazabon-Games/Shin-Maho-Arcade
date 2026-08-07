@@ -11,6 +11,48 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.23.0 — 2026-08-06 — 4 new GDD §11.3 "(NEW)" Basic Defensive
+                          operators: Intercept, Disrupt, Unravel, Counter
+                          — closing 4 of the "6 unwired triggers" gap.
+                          declareAction() generalized so its `target`
+                          param accepts a single unit OR an array — these
+                          4 triggers (Movement/Talisman-Placement/Card-
+                          Drawn/Supportive Declared) have no one
+                          predetermined defending unit the way an
+                          incoming Aggressive card or Weapon Strike does,
+                          so each readies normally then scans the acting
+                          unit's WHOLE opposing team when its trigger
+                          fires. Stated rulings for each's loosely-worded
+                          GDD one-liner: Intercept halts the declared
+                          Movement outright (tryMove, before the position
+                          update); Disrupt sends the drawn card to
+                          discard instead of hand (drawCard, before the
+                          push); Unravel cancels a Talisman placement
+                          before it consumes inventory/Initiative
+                          (tryPlaceTalisman); Counter negates a Supportive
+                          card AND mirrors the would-be effect back onto
+                          the intended ally as a penalty — a Give-stat's
+                          +1 becomes a -1, Heal's Life gain becomes Life
+                          loss (finalizeCast's new Supportive-interception
+                          branch; Transpose/Accelerate have no numeric
+                          amount to mirror, negate-only for those, a
+                          stated scope limit). declareAction()'s human-
+                          response-window logic now also names which UNIT
+                          each option belongs to, not just which operator,
+                          since matches can now come from different units
+                          on the same team. tryMove gained an optional
+                          onDone callback (mirrors resolveStrikeHit's own)
+                          since runAiTurn's post-move Strike check needs
+                          to run after any Intercept response resolves,
+                          not immediately after the call. Verified with a
+                          new test-team-defensive.js (22/22, real UI-
+                          driven Playwright checks covering all 4
+                          operators' intercepted path plus a control check
+                          that the un-intercepted path still works once
+                          the readied card is spent). See
+                          MONOLITH_RULESET.md's Defensive section for the
+                          full per-operator stated-ruling table.
+
   v0.22.0 — 2026-08-06 — CORRECTNESS: Defensive operator rename +
                           mechanic fix, found in the same GDD §11.3 audit
                           that surfaced the v0.21.0 tiering bug. Nazar,
@@ -1033,6 +1075,22 @@ const OPERATORS = {
   reflect:     { name:'Reflect',      category:'defensive', kind:'defensive-reflect-strike', trigger:['weapon-strike-declared', 'aggressive-played'], triggerFilter: (type, context) => type !== 'aggressive-played' || isInflictFlavored(context?.cardId) },
   resist:      { name:'Resist',       category:'defensive', kind:'defensive-resist-category', trigger:['aggressive-played', 'weapon-strike-declared'], needsCategory:true },
   nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
+  // The 4 GDD §11.3 "(NEW)" Basic Defensive operators — filling 4 of the
+  // "6 unwired triggers" gap this file's own DEFENSIVE_TRIGGERS comment
+  // used to name. Each readies with no picker (same shape as Nullify/
+  // Reflect — no `warded`/`resistCategory` to choose), and unlike Nullify/
+  // Reflect/Resist/Nullify Cost, each is checked against a whole opposing
+  // TEAM, not one predetermined target — see declareAction()'s `target`
+  // param, which now accepts either a single unit or an array. Their own
+  // GDD one-line effects ("halts or punishes," "negates the draw or
+  // applies a penalty effect," "applies a penalty to the intended ally
+  // target") are worded loosely enough to need a stated ruling for each —
+  // see the call sites (tryMove, drawCard, finalizeCast's Supportive
+  // branch) for the actual chosen interpretation of each.
+  intercept: { name:'Intercept', category:'defensive', kind:'defensive-intercept-movement', trigger:'movement-declared' },
+  disrupt:   { name:'Disrupt',   category:'defensive', kind:'defensive-disrupt-draw', trigger:'card-drawn' },
+  unravel:   { name:'Unravel',   category:'defensive', kind:'defensive-unravel-talisman', trigger:'talisman-placement-declared' },
+  counter:   { name:'Counter',   category:'defensive', kind:'defensive-counter-supportive', trigger:'supportive-played' },
 
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },
   giveStrike: { name:'Give Strike', category:'supportive', kind:'stat-increase', stat:'strike', amount:1 },
@@ -1694,7 +1752,29 @@ function drawCard(u){
     u.deck = shuffle(u.discard);
     u.discard = [];
   }
-  u.hand.push(u.deck.shift());
+  const drawn = u.deck.shift();
+  // Disrupt (GDD §11.3, NEW): "Opponent card draw → Negates the draw or
+  // applies a penalty effect." Stated ruling: "negates the draw" — the
+  // drawn card goes to the drawer's discard pile instead of their hand,
+  // rather than some separately-undefined "penalty effect." Scanned
+  // across the drawing unit's whole opposing team, same team-wide-scan
+  // shape as Intercept — Card Drawn has no one predetermined defending
+  // unit either. Resolves synchronously in every case this build's own
+  // turn-start/sustain-draw call sites actually hit (0/1 match or an
+  // AI-controlled defender) — none of them wait on a callback the way
+  // tryMove/tryPlaceTalisman do, a stated simplification for the rare
+  // human-multi-readied-Disrupt case, not a correctness gap for anything
+  // this build's own AI can trigger.
+  const opponents = battle.units.filter(t => t.team !== u.team && !t.removed);
+  declareAction('card-drawn', u, opponents, (def, defender) => {
+    if (def && def.operatorId === 'disrupt'){
+      u.discard.push(drawn);
+      logMsg(`${defender.name}'s Disrupt negates ${u.name}'s draw.`, defender.team);
+      renderBattle();
+      return;
+    }
+    u.hand.push(drawn);
+  });
 }
 function sustainPassive(u){
   if (!u.activePassive) return;
@@ -1894,15 +1974,40 @@ function handleBoardClick(x, y){
   else if (battle.interactionMode === 'cast') tryCast(u, x, y);
   else if (battle.interactionMode === 'place-talisman') tryPlaceTalisman(u, x, y);
 }
-function tryMove(u, x, y){
+// onDone (optional) is called once this declaration (and any Intercept
+// response to it) has fully resolved — same shape as resolveStrikeHit's
+// own onDone, needed because declareAction may pause for a human choice
+// before the move actually happens. runAiTurn is the one caller that
+// needs it — its own post-move Strike check reads u.x/u.y, which are only
+// current inside the callback.
+function tryMove(u, x, y, onDone){
   const reach = reachableCells(u.x, u.y, effectiveDistanceRemaining(u));
   const key = `${x},${y}`;
-  if (reach[key] === undefined) return;
-  if (!hasWonderlandEffect(u, 'unlimited-distance')) u.distanceRemaining -= reach[key];
-  u.x = x; u.y = y;
-  if (u.wonderlandProgress) u.wonderlandProgress.movedThisTurn = true;
-  logMsg(`${u.name} moves.`, u.team);
-  renderBattle();
+  if (reach[key] === undefined){ if (onDone) onDone(); return; }
+  const dist = reach[key];
+  // Intercept (GDD §11.3, NEW): "Opponent Movement declaration → Halts or
+  // punishes opponent repositioning." Stated ruling: "halts" — the
+  // declared move is cancelled outright (no position change, no
+  // Movement budget spent, exactly as if it were never declared); the
+  // GDD's alternate "or punishes" reading has no further stated mechanic
+  // to build against, so it isn't modeled. Scanned across the mover's
+  // whole opposing team, since Movement Declared has no one predetermined
+  // defending unit — see declareAction's own comment.
+  const opponents = battle.units.filter(t => t.team !== u.team && !t.removed);
+  declareAction('movement-declared', u, opponents, (def, defender) => {
+    if (def && def.operatorId === 'intercept'){
+      logMsg(`${defender.name}'s Intercept halts ${u.name}'s movement.`, defender.team);
+      renderBattle();
+      if (onDone) onDone();
+      return;
+    }
+    if (!hasWonderlandEffect(u, 'unlimited-distance')) u.distanceRemaining -= dist;
+    u.x = x; u.y = y;
+    if (u.wonderlandProgress) u.wonderlandProgress.movedThisTurn = true;
+    logMsg(`${u.name} moves.`, u.team);
+    renderBattle();
+    if (onDone) onDone();
+  });
 }
 function applyLifeDamage(target, amount){
   if (target.activePassive === 'evade'){
@@ -2128,23 +2233,43 @@ function tryPlaceTalisman(u, x, y){
   if (battle.talismans.filter(t => t.placerId === u.esoriId).length >= u.controlledTalisman) return;
   const idx = u.talismanInventory.indexOf(typeId);
   if (idx === -1) return;
-  u.talismanInventory.splice(idx, 1);
-  u.initiative -= TALISMAN_PLACE_COST;
-  // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
-  // at placement time — the bonus belongs to who placed it, not to
-  // whichever character later triggers it. "Talisman AoE +1" (NLDR's
-  // Shadow Sovereign effect) stacks the same way, only for Talismans
-  // placed while it's open — a talisman placed before it opened keeps
-  // its smaller AoE, matching how Cloak's bonus already only applies at
-  // placement time, not retroactively. active:false until the placer's
-  // own next turn begins — see beginUnitTurn.
-  const aoeBonus = hasWonderlandEffect(u, 'talisman-aoe-plus-one') ? 1 : 0;
-  battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, placerId: u.esoriId, x, y, typeId, aoe: u.talismanAoE + aoeBonus, active: false });
-  logMsg(`${u.name} places a ${TALISMAN_TYPES[typeId].label}.`, u.team);
-  battle.interactionMode = null;
-  battle.placingTalismanType = null;
-  checkWonderlandActivation(u); // "Control N or more Talismans simultaneously" — check the instant this placement could cross the threshold
-  renderBattle();
+  // Unravel (GDD §11.3, NEW): "Opponent Talisman placement → Returns the
+  // Talisman to the opponent's hand before it resolves." This engine
+  // places Talismans from a per-unit inventory list, not from the
+  // ability-card hand — the literal "hand" doesn't apply here, so the
+  // faithful equivalent is: the placement never happens at all (nothing
+  // leaves talismanInventory, no Initiative spent, no board state
+  // created), exactly as if it had been returned before it could
+  // resolve. Scanned across the placer's whole opposing team, same
+  // team-wide-scan shape as Intercept/Disrupt — Talisman Placement
+  // Declared has no one predetermined defending unit either.
+  const opponents = battle.units.filter(t => t.team !== u.team && !t.removed);
+  declareAction('talisman-placement-declared', u, opponents, (def, defender) => {
+    if (def && def.operatorId === 'unravel'){
+      logMsg(`${defender.name}'s Unravel returns ${u.name}'s ${TALISMAN_TYPES[typeId].label} before it can be placed.`, defender.team);
+      battle.interactionMode = null;
+      battle.placingTalismanType = null;
+      renderBattle();
+      return;
+    }
+    u.talismanInventory.splice(idx, 1);
+    u.initiative -= TALISMAN_PLACE_COST;
+    // aoe is captured from the placer's own talismanAoE stat (Cloak's +1)
+    // at placement time — the bonus belongs to who placed it, not to
+    // whichever character later triggers it. "Talisman AoE +1" (NLDR's
+    // Shadow Sovereign effect) stacks the same way, only for Talismans
+    // placed while it's open — a talisman placed before it opened keeps
+    // its smaller AoE, matching how Cloak's bonus already only applies at
+    // placement time, not retroactively. active:false until the placer's
+    // own next turn begins — see beginUnitTurn.
+    const aoeBonus = hasWonderlandEffect(u, 'talisman-aoe-plus-one') ? 1 : 0;
+    battle.talismans.push({ id: 'tal-' + Date.now() + '-' + Math.random().toString(16).slice(2), ownerTeam: u.team, placerId: u.esoriId, x, y, typeId, aoe: u.talismanAoE + aoeBonus, active: false });
+    logMsg(`${u.name} places a ${TALISMAN_TYPES[typeId].label}.`, u.team);
+    battle.interactionMode = null;
+    battle.placingTalismanType = null;
+    checkWonderlandActivation(u); // "Control N or more Talismans simultaneously" — check the instant this placement could cross the threshold
+    renderBattle();
+  });
 }
 
 /* ============================================================
@@ -2238,37 +2363,47 @@ function resolveResistCategory(category){
    own Trigger Reference table — every Defensive operator's `trigger`
    field must name one (or, per GDD §11.3's corrected Nullify/Reflect/
    Resist definitions, more than one — `trigger` may be a single string
-   or an array; declareAction handles both uniformly) of these. Only 2 of
-   the 8 have a real operator using them today (aggressive-played:
-   Nullify, Reflect [only against an incoming Inflict — see its
-   triggerFilter], Resist, Nullify Cost; weapon-strike-declared: Nullify,
-   Reflect, Resist) — not a claim of full 8-trigger coverage. The other 6
-   are named, documented vocabulary with no call site wired to them yet:
-   Movement Declared/Talisman Placement Declared/Card Drawn/Ability
-   Played (Any) aren't naturally single-target the way this engine's
-   readied-ability model requires (they're declared actions with no
-   specific defending unit — the prior prototype build scanned every
-   opposing unit's hand instead, a real architectural difference, not an
-   oversight), and Defensive/Supportive Played have no authored operator
-   to validate against yet. See MONOLITH_RULESET.md's Defensive/Reactive
-   section.
+   or an array; declareAction handles both uniformly) of these. 6 of the 8
+   now have a real operator using them (aggressive-played: Nullify,
+   Reflect [only against an incoming Inflict — see its triggerFilter],
+   Resist, Nullify Cost; weapon-strike-declared: Nullify, Reflect, Resist;
+   movement-declared: Intercept; card-drawn: Disrupt;
+   talisman-placement-declared: Unravel; supportive-played: Counter).
+   Defensive Ability Played and Ability Played (Any) remain unwired —
+   Nullify Cost is GDD-bound to defensive-played but that would mean
+   intercepting a Defensive card the instant it's *readied*, before it
+   even reaches declareAction itself (a genuinely different shape from
+   every other trigger here, which all fire on an already-in-flight
+   declared action); Ability Played (Any) has no operator of its own at
+   all (only Suppress, an Ultimate, is bound to it, and Ultimate-tier
+   Defensive operators aren't built yet — see MONOLITH_RULESET.md). See
+   that same doc's Defensive/Reactive section for the full per-trigger
+   status and each new operator's stated-ruling writeup.
 
    declareAction(type, u, target, onResolve, context) is what a call site
-   uses: `u` is the acting unit, `target` is the specific unit the action
-   is against (the only kind of target this system supports — see
-   above), and onResolve(def) is called with either the readied-defensive
-   record that intercepted the action, or null if nothing did. Resolves
-   synchronously (onResolve called before declareAction returns) whenever
-   there's 0 or 1 matching readied response, or the defender is
-   AI-controlled (nothing for an AI to be asked) — this is the exact same
-   behavior every prior version of this system already had, so any call
-   site that only ever sees 0-or-1 matches never notices the difference.
-   It only pauses for a real human choice — opening
-   #defensive-response-overlay — when the defender is human-controlled
-   AND has 2+ different readied responses to the SAME trigger (e.g. both
-   Nullify and Nullify Cost readied at once against an incoming
-   Aggressive card): a real behavioral improvement over the old code,
-   which silently auto-picked via array order without ever asking.
+   uses: `u` is the acting unit, `target` is either the one specific unit
+   the action is against (aggressive-played, weapon-strike-declared — the
+   original shape) OR an array of candidate units to scan (the 4 new
+   triggers above, none of which have one predetermined defending unit —
+   Intercept/Disrupt/Unravel/Counter all ready against "the opposing
+   team," matching the prior prototype build's own team-wide-scan
+   approach for these, now actually built rather than just documented as
+   a gap). onResolve(def, target) is called with the readied-defensive
+   record that intercepted the action (and which unit it belonged to), or
+   (null) if nothing did. Resolves synchronously (onResolve called before
+   declareAction returns) whenever there's 0 or 1 matching readied
+   response across every candidate, or none of the matching responses
+   belong to a human-controlled unit (nothing for an AI to be asked) —
+   this is the exact same behavior every prior version of this system
+   already had, so any call site that only ever sees 0-or-1 matches never
+   notices the difference. It only pauses for a real human choice —
+   opening #defensive-response-overlay — when 2+ different readied
+   responses match, at least one belonging to a human-controlled unit
+   (e.g. both Nullify and Nullify Cost readied at once against an
+   incoming Aggressive card, or two different allied units both having
+   readied Intercept against the same declared Movement): a real
+   behavioral improvement over the old code, which silently auto-picked
+   via array order without ever asking.
    ============================================================ */
 const DEFENSIVE_TRIGGERS = {
   'movement-declared': 'Movement Declared',
@@ -2317,36 +2452,51 @@ let pendingDefenseResponse = null; // { matches, onResolve } while #defensive-re
 // all bind to 2 triggers each per GDD §11.3's corrected definitions);
 // `triggerFilter(type, context)`, when present, narrows a match further
 // (Reflect's own "or incoming Inflict specifically" scoping).
+// `target` accepts either one specific unit (the original, still-default
+// shape — every single-target trigger: aggressive-played,
+// weapon-strike-declared) OR an array of units to scan across (the 4 new
+// team-wide triggers below: movement-declared, card-drawn,
+// talisman-placement-declared, supportive-played, none of which have one
+// predetermined "the unit this action is against" the way a Strike or a
+// targeted card does — see the DEFENSIVE_TRIGGERS comment above).
+// onResolve(def, target) now also receives which unit's readied response
+// matched, needed once matches can come from more than one candidate unit
+// — existing single-target callers that only use the first argument are
+// unaffected.
 function declareAction(type, u, target, onResolve, context){
-  const matches = (target?.readiedDefensives || [])
-    .map((d, idx) => ({ d, idx }))
-    .filter(({ d }) => {
+  const candidates = Array.isArray(target) ? target : [target];
+  const matches = [];
+  candidates.forEach(t => {
+    (t?.readiedDefensives || []).forEach((d, idx) => {
       const op = OPERATORS[d.operatorId];
-      if (!op) return false;
+      if (!op) return;
       const triggers = Array.isArray(op.trigger) ? op.trigger : [op.trigger];
-      if (!triggers.includes(type)) return false;
-      if (d.warded && context?.cardId !== d.warded) return false;
-      if (op.triggerFilter && !op.triggerFilter(type, context)) return false;
+      if (!triggers.includes(type)) return;
+      if (d.warded && context?.cardId !== d.warded) return;
+      if (op.triggerFilter && !op.triggerFilter(type, context)) return;
       if (d.resistCategory){
         const incomingCategory = type === 'weapon-strike-declared' ? 'damage' : resistCategoryOf(context?.cardId);
-        if (incomingCategory !== d.resistCategory) return false;
+        if (incomingCategory !== d.resistCategory) return;
       }
-      return true;
+      matches.push({ t, d, idx });
     });
-  if (!matches.length || target.controller !== 'human' || matches.length === 1){
+  });
+  const anyHuman = matches.some(m => m.t.controller === 'human');
+  if (!matches.length || !anyHuman || matches.length === 1){
     if (!matches.length){ onResolve(null); return; }
     // AI defenders always use their (only, or first) readied response —
     // there's no one to ask. A single match needs no choice either way.
-    const def = target.readiedDefensives.splice(matches[0].idx, 1)[0];
-    onResolve(def);
+    const m = matches[0];
+    const def = m.t.readiedDefensives.splice(m.idx, 1)[0];
+    onResolve(def, m.t);
     return;
   }
-  pendingDefenseResponse = { target, matches, onResolve };
+  pendingDefenseResponse = { matches, onResolve };
   const overlay = document.getElementById('defensive-response-overlay');
   document.getElementById('defensive-response-title').textContent =
-    `${target.name} has more than one ready response to ${u.name}'s ${DEFENSIVE_TRIGGERS[type]}.`;
-  document.getElementById('defensive-response-options').innerHTML = matches.map(({ d, idx }) =>
-    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">Use ${OPERATORS[d.operatorId].name}${d.warded ? ` (warded: ${escapeHtml(cardById(d.warded).name)})` : ''}${d.resistCategory ? ` (vs ${RESIST_CATEGORY_LABELS[d.resistCategory]})` : ''}</button>`
+    `${u.name}'s ${DEFENSIVE_TRIGGERS[type]} has more than one ready response against it.`;
+  document.getElementById('defensive-response-options').innerHTML = matches.map(({ t, d }, idx) =>
+    `<button class="btn secondary" onclick="chooseDefensiveResponse(${idx})">${escapeHtml(t.name)}: Use ${OPERATORS[d.operatorId].name}${d.warded ? ` (warded: ${escapeHtml(cardById(d.warded).name)})` : ''}${d.resistCategory ? ` (vs ${RESIST_CATEGORY_LABELS[d.resistCategory]})` : ''}</button>`
   ).join('') + `<button class="btn" onclick="chooseDefensiveResponse(-1)">Hold everything — let it resolve unopposed</button>`;
   overlay.style.display = 'flex';
 }
@@ -2356,8 +2506,9 @@ function chooseDefensiveResponse(idx){
   pendingDefenseResponse = null;
   document.getElementById('defensive-response-overlay').style.display = 'none';
   if (idx === -1){ pending.onResolve(null); return; }
-  const def = pending.target.readiedDefensives.splice(idx, 1)[0];
-  pending.onResolve(def);
+  const m = pending.matches[idx];
+  const def = m.t.readiedDefensives.splice(m.idx, 1)[0];
+  pending.onResolve(def, m.t);
 }
 function playHandCard(cardId){
   const u = currentUnit();
@@ -2592,9 +2743,46 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   // routing through finalizeCast, since intercepting per-target across a
   // multi-target declaration (each target potentially needing its own
   // real response-window choice) is a genuinely bigger, separate lift;
-  // see MONOLITH_RULESET.md. Non-Aggressive-flavored cards (Supportive/
-  // Passive/Utility/most Ultimates) never call declareAction at all here.
-  if (!isAggressiveFlavored(card)){ proceedCast(); return; }
+  // see MONOLITH_RULESET.md. Passive/Utility/most Ultimates never call
+  // declareAction at all here — only Aggressive-flavored (below) and
+  // Supportive (here) cards do.
+  if (!isAggressiveFlavored(card)){
+    if (cardCategory(card) !== 'supportive'){ proceedCast(); return; }
+    // Counter (GDD §11.3, NEW): "Opponent Supportive ability → Negates
+    // the Supportive effect and applies a penalty to the intended ally
+    // target." GDD names the penalty but doesn't define its magnitude —
+    // stated ruling: mirror the would-be effect back onto the same ally
+    // instead of granting it (a Give-stat card's own +1 becomes a −1;
+    // Heal's own cost-for-cost Life gain becomes cost-for-cost Life
+    // loss), the same "negate, then flip it back" shape Reflect already
+    // uses for Weapon Strikes and Inflict. Transpose and Accelerate
+    // (swap-position/extra-turn) have no numeric amount to mirror — for
+    // those, Counter only negates, no further penalty; a stated scope
+    // limit, not an oversight. Scanned across the caster's whole opposing
+    // team, same team-wide-scan shape as Intercept/Disrupt/Unravel —
+    // Supportive Ability Played has no one predetermined defending unit
+    // either (the card's own target is an ALLY of the caster, not an
+    // opponent).
+    const opponents = battle.units.filter(t => t.team !== u.team && !t.removed);
+    declareAction('supportive-played', u, opponents, (def, defender) => {
+      if (!def){ proceedCast(); return; }
+      logMsg(`${defender.name}'s ${OPERATORS[def.operatorId].name} negates ${u.name}'s ${cardDescription(card)}.`, defender.team);
+      const penaltyOp = OPERATORS[chosenOperatorId || card.operatorId];
+      if (penaltyOp.kind === 'stat-increase'){
+        target[penaltyOp.stat] = Math.max(0, target[penaltyOp.stat] - penaltyOp.amount);
+        logMsg(`${target.name} also suffers a penalty: −${penaltyOp.amount} ${penaltyOp.stat}.`, target.team);
+      } else if (penaltyOp.kind === 'life-heal'){
+        applyLifeDamage(target, cost);
+        logMsg(`${target.name} also suffers a penalty: −${cost} Life.`, target.team);
+      }
+      battle.interactionMode = null;
+      battle.castingCardId = null;
+      renderBattle();
+      const w = checkWin();
+      if (w) finishBattle(w);
+    }, { cardId: card.id });
+    return;
+  }
   declareAction('aggressive-played', u, target, (def) => {
     if (!def){ proceedCast(); return; }
     if (def.operatorId === 'reflect'){
@@ -2946,10 +3134,18 @@ function runAiTurn(){
           const d = chebyshev(target.x-cx, target.y-cy);
           if (d < bestDist){ bestDist = d; best = [cx,cy]; }
         }
-        if (best) tryMove(u, best[0], best[1]);
-        if (inWeaponRange(u.weaponMain, target.x-u.x, target.y-u.y) && !u.hasStruckThisTurn){
-          tryStrike(u, target.x, target.y);
-        }
+        const strikeIfInRange = () => {
+          if (inWeaponRange(u.weaponMain, target.x-u.x, target.y-u.y) && !u.hasStruckThisTurn){
+            tryStrike(u, target.x, target.y);
+          }
+        };
+        // tryMove's own declareAction (Intercept) resolves synchronously
+        // in every case except a human defender with 2+ readied
+        // responses — strikeIfInRange runs as its onDone callback rather
+        // than right after the call, so it always sees u.x/u.y as they
+        // actually ended up (unmoved, if Intercept halted it).
+        if (best) tryMove(u, best[0], best[1], strikeIfInRange);
+        else strikeIfInRange();
       }
     }
     if (currentUnit() === u && !u.removed) aiChooseAndPlayCard(u); // still this unit's turn (finishBattle inside tryStrike could have ended it)

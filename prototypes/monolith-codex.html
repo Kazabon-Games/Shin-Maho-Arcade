@@ -11,6 +11,17 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.22.0 — 2026-08-06 — 4 new GDD §11.3 "(NEW)" Basic Defensive
+                          operators, data-mirrored from Arena (that file's
+                          matching v0.23.0 entry has the full writeup and
+                          the actual battle-runtime resolution logic —
+                          this doc has none): Intercept, Disrupt, Unravel,
+                          Counter. Each scans a whole opposing team rather
+                          than one predetermined target when readied and
+                          later triggered — the real capability
+                          declareAction()'s generalized `target` param
+                          (single unit or array) unlocks in Arena.
+
   v0.21.0 — 2026-08-06 — CORRECTNESS: Defensive operator rename +
                           mechanic fix, mirrors Arena's real fix (that
                           file's matching v0.22.0 entry has the full
@@ -885,6 +896,15 @@ const OPERATORS = {
   reflect:     { name:'Reflect',      category:'defensive', kind:'defensive-reflect-strike', trigger:['weapon-strike-declared', 'aggressive-played'] },
   resist:      { name:'Resist',       category:'defensive', kind:'defensive-resist-category', trigger:['aggressive-played', 'weapon-strike-declared'], needsCategory:true },
   nullifyCost: { name:'Nullify Cost', category:'defensive', kind:'defensive-nullify-and-refund', trigger:'aggressive-played' },
+  // The 4 GDD §11.3 "(NEW)" Basic Defensive operators, data-mirrored from
+  // Arena (that file's own OPERATORS comment has the full per-operator
+  // stated-ruling writeup — this doc has no battle runtime to resolve
+  // them against). Each scans a whole opposing team rather than one
+  // predetermined target when readied and later triggered.
+  intercept: { name:'Intercept', category:'defensive', kind:'defensive-intercept-movement', trigger:'movement-declared' },
+  disrupt:   { name:'Disrupt',   category:'defensive', kind:'defensive-disrupt-draw', trigger:'card-drawn' },
+  unravel:   { name:'Unravel',   category:'defensive', kind:'defensive-unravel-talisman', trigger:'talisman-placement-declared' },
+  counter:   { name:'Counter',   category:'defensive', kind:'defensive-counter-supportive', trigger:'supportive-played' },
 
   // Supportive — target one ally, 20 Ini base
   giveMov:    { name:'Give Mov',    category:'supportive', kind:'stat-increase', stat:'distanceRemaining', amount:1 },

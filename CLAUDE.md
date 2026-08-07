@@ -217,12 +217,33 @@ short on purpose.
   independently per hit so Spear's two-cell Critical Hit still resolves
   correctly. Rebuilt NLDR's and Ala zyu Haad's seeded decks for the new
   card ids. 144 regression checks green across the committed suite and
-  five scratch verification scripts after this pass. Still ahead on the
-  "close every gap" list: 4 new Basic Defensive operators (Intercept/
-  Disrupt/Unravel/Counter) that directly fill 4 of the "6 unwired
-  triggers" gap, 5 new Ultimate Defensive operators (Nullify All/Rewind/
-  Suppress/Forbid/Sever — per GDD §11.4's "Exception," each is a
-  single-effect-only Ultimate), Ultimate-level ALSO/IF-THEN (needed for
+  five scratch verification scripts after this pass. Thirteenth pass
+  built the 4 new GDD §11.3 "(NEW)" Basic Defensive operators — Intercept,
+  Disrupt, Unravel, Counter — closing 4 of the "6 unwired triggers" gap.
+  The real blocker (Movement/Talisman-Placement/Card-Drawn/Supportive
+  Declared have no one predetermined defending unit, unlike an incoming
+  Aggressive card or Weapon Strike) is solved by generalizing
+  `declareAction()` itself: its `target` param now accepts a single unit
+  OR an array, so these 4 operators ready normally then scan the acting
+  unit's whole opposing team when their trigger fires — the team-wide
+  scan the prior prototype build used for exactly these triggers, now
+  actually built. Stated rulings for each's loosely-worded GDD one-liner:
+  Intercept halts the declared Movement outright; Disrupt sends the drawn
+  card to discard instead of hand; Unravel cancels a Talisman placement
+  before it consumes inventory/Initiative; Counter negates a Supportive
+  card AND mirrors the would-be effect back onto the ally as a
+  penalty (a Give-stat's +1 becomes a −1, Heal's Life gain becomes Life
+  loss — Transpose/Accelerate have no numeric amount to mirror, so
+  Counter only negates those). declareAction()'s human-response-window
+  now also names which unit each option belongs to, since matches can
+  come from different units on the same team. Verified with a new
+  test-team-defensive.js (22/22, real UI-driven checks covering all 4
+  operators' intercepted path plus a control check that the
+  un-intercepted path still works once the readied card is spent) —
+  166 regression checks green in total after this pass. Still ahead on
+  the "close every gap" list: 5 new Ultimate Defensive operators (Nullify
+  All/Rewind/Suppress/Forbid/Sever — per GDD §11.4's "Exception," each is
+  a single-effect-only Ultimate), Ultimate-level ALSO/IF-THEN (needed for
   Daedalus Tesseract and Nhül Partikül's full effect), AI playing
   Ultimate/Defensive/OR cards, Refine's ally-targeting half, and Rhyzl
   Step.
