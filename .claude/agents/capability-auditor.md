@@ -106,15 +106,21 @@ to catch.
      fight" (`iridescentcosmology.html:1593`) — that benchmark almost
      certainly measured a different load shape (an ongoing fight, not a
      simultaneous mass-death burst) and/or predates features added since.
-     **This is real, concrete evidence for the "is Canvas 2D enough"
-     question** — not a hypothetical: hundreds of small entities dying
-     and spawning particles in one frame is squarely the shape WebGL
-     solves and Canvas 2D's per-draw-call CPU cost does not, on a
-     mechanic that already ships today. Not yet mitigated in this pass —
-     candidate cheap fixes (object pooling for particles/gems, capping
-     simultaneous death-effects the way float-text is already capped,
-     `OffscreenCanvas`+Worker offload) not yet evaluated against a real
-     WebGL rewrite for whatever surface actually needs it.
+     **Confirmed with a real, benchmarked fix — see `webgl-batched-
+     instancing` (added 2026-08-06):** a self-contained WebGL2 instanced-
+     quad PoC (no library, no CDN — `reference/webgl-batched-quad-poc.html`
+     in Shin-Maho-Arcade), measured against this exact scenario with the
+     same methodology, same real entity caps: **176ms avg / 1,283ms worst
+     → 16.9ms avg / 33.4ms worst**, roughly 10x/38x. Real, not projected.
+     **Not adopted as a studio-wide default** — the skill's own explicit
+     decision criterion scopes this to games whose content genuinely has
+     hundreds of simultaneous small entities (this is currently true of
+     Iridescent Cosmology only; the other 5 games' puzzle/tile/1v1 shapes
+     have never shown this failure mode and don't need this). Context-
+     loss handling (a real WebGL-specific risk Canvas 2D doesn't have) is
+     confirmed NOT yet built in the PoC — required before any real
+     production use, named explicitly in the skill rather than deferred
+     silently.
    - **Web Audio API:** the full node graph beyond gain/oscillator/
      compressor/convolver already in use — `WaveShaperNode` (distortion
      curves, confirmed in-use for tension-gated whole-bus drive in 3 of 6
@@ -311,8 +317,8 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — thirteen skills exist as of
-  2026-08-06 (this line itself has now gone stale three times before this edit
+- **Skills library is at `.claude/skills/`** — fourteen skills exist as of
+  2026-08-06 (this line itself has now gone stale four times before this edit
   — first claiming "exactly three," then "eleven" — a live, recurring
   instance of the exact copy-drift risk `STUDIO_BIBLE.md` §17 names for
   this shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
@@ -323,7 +329,7 @@ operate from this summary:
   `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
   `safe-keyed-reimport` (`age-of-wonder` only),
   `game-audio-production-suite`/`music-theory-mood-mapping`/
-  `cross-game-ui-modules`
+  `webgl-batched-instancing`/`cross-game-ui-modules`
   (`Shin-Maho-Arcade` only). Don't cite a skill that isn't actually there
   for the repo you're in, and don't miss one that is.
 - **Apex standard, not just 'works.'** Art/rig fidelity, mood-driven
