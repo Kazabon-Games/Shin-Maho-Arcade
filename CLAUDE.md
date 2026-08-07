@@ -281,9 +281,23 @@ short on purpose.
   modifier type, it's that both cards' THEN-effects (Impose-into-hand,
   Open-Wonderland-directly) aren't operator applications at all, which no
   modifier type could express. Verified with a new `test-ultimate-also.js`
-  (8/8) — 200 regression checks green in total after this pass. Still
-  ahead on the "close every gap" list: AI playing Ultimate/Defensive/OR
-  cards, Refine's ally-targeting half, and Rhyzl Step.
+  (8/8) — 200 regression checks green in total after this pass. Sixteenth
+  pass closed the AI's own remaining gap: `aiChooseAndPlayCard` used to
+  filter OR-modifier cards and every Ultimate-category card out entirely,
+  with no Defensive branch at all. Fixed priority order per AI turn, one
+  card played: Passive → Defensive (readied once, simple stated defaults
+  for the 3 pickers — Nullify Cost wards "Any Aggressive," Resist wards
+  Damage, Suppress locks Inflict) → Basic Aggressive → Heal → any other
+  Supportive card (the fallback that exercises OR — always picks Option
+  A, the base operatorId, a stated default not an evaluation) → Ultimate
+  (non-Auto-Win, same target-picking shape at `ULTIMATE_RANGE` instead of
+  `abilityRange`). Auto-Win Ultimates stay skipped by design — the AI
+  can't judge a self-declared condition normally checked via a real
+  `confirm()` dialog. Verified with a new
+  `test-ai-plays-or-ultimate-defensive.js` (14/14, a real AI-Squad battle,
+  not Local Pass-and-Play) — 214 regression checks green in total after
+  this pass. Still ahead on the "close every gap" list: Refine's
+  ally-targeting half and Rhyzl Step.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

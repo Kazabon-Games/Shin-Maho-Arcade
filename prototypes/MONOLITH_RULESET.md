@@ -453,6 +453,66 @@ already names for both. Neither IF/THEN (Basic-only) nor ALSO
 (unconditional, no THEN-branch of its own) could express either effect
 even with the modifier-type question now fully resolved.
 
+## AI Behavior (Team B / preset opponent)
+
+**Fifteenth pass closed the last "AI playing Ultimate/Defensive/OR cards"
+gap.** `aiChooseAndPlayCard` previously filtered OR-modifier cards and
+every Ultimate-category card out of its candidate pool entirely, and had
+no Defensive branch at all — the AI simply never touched any of the
+three. None of what follows claims OPTIMAL play; it's the same bar this
+function already held itself to for Basic Aggressive/Supportive cards
+before this pass — legal, real play, not a guess dressed up as strategy.
+One card per AI turn, in this fixed priority order:
+
+1. **Passive** — activate one if none is active yet (unchanged).
+2. **Defensive** — ready one if nothing is currently readied
+   (`!u.readiedDefensives.length`, so the AI doesn't stack multiple at
+   once). The 3 operators with a ready-time picker get simple, stated
+   defaults: Nullify Cost wards "Any Aggressive Ability" (`warded: null`,
+   the blanket option); Resist wards the Damage category (the single most
+   universally relevant of the four); Suppress locks Inflict (the most
+   common Aggressive operator). Every other Defensive operator readies
+   the same way a human's default click would.
+3. **Basic Aggressive** (life-damage kind) — attack the lowest-Life enemy
+   in `abilityRange` (unchanged from before this pass).
+4. **Heal** — heal the lowest-Life wounded ally in `abilityRange`
+   (unchanged).
+5. **Any other Supportive card** (Give Mov/Strike/Ini/Range, Transpose,
+   Accelerate, and any OR-modifier card) — targets the first ally in
+   `abilityRange` (excluding a Sever-severed pair, `isSupportiveSevered`).
+   This is also the fallback that actually exercises the AI's OR-choice
+   path: **the AI always picks Option A** (the card's own base
+   `operatorId`), a simple stated default, not an evaluation of which
+   option is better.
+6. **Ultimate cards (non-Auto-Win)** — same target-picking shape as steps
+   3–4, at `ULTIMATE_RANGE` (4) instead of `abilityRange`. Target-All
+   Ultimates route through `playUltimateCard` itself (which does its own
+   targeting/no-valid-target handling); single-target Ultimates call
+   `finalizeCast` directly, the same way every Basic branch above already
+   did — so `ifWonderlandOpen` (normally gated inside `playUltimateCard`)
+   is checked explicitly in the AI's own candidate filter instead.
+   **Auto-Win Ultimates are still skipped outright** — the AI has no way
+   to judge whether a self-declared condition (checked via a real
+   `confirm()` dialog for a human) is actually true, and guessing risks
+   ending the battle on a false declaration; this is the one category
+   staying unplayed by design, not an oversight.
+
+Verified with a new `test-ai-plays-or-ultimate-defensive.js` (14/14, real
+AI-Squad-battle Playwright checks, not Local Pass-and-Play): a
+deterministic 3-card hand (one Defensive, one OR, one non-Auto-Win
+Ultimate) resolves across 3 of the AI's own turns in the documented
+priority order, each turn's specific effect verified (Defensive actually
+readies; the OR card's chosen effect — and only that effect — applies;
+the Ultimate's both main effects apply, 1:1 with its real spent cost).
+The test's own setup notes two real subtleties worth remembering for any
+future AI-battle test: an empty deck reshuffles from discard the moment
+something's been discarded (correct product behavior, but it reintroduces
+non-determinism into a fixed test hand unless discard is also cleared
+between checks), and Wand's weapon range is Chebyshev 2, not 1 — a
+"parked, out of the way" position that's merely Chebyshev-2 from a target
+is still a live Strike threat if that unit's Movement isn't also
+neutralized. 214 regression checks green in total after this pass.
+
 ## Fundamental Operators (the ability-authoring vocabulary)
 
 **⚠ Corrected mid-project — read this before trusting any earlier prose in

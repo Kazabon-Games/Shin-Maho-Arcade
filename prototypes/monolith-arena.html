@@ -11,6 +11,49 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.26.0 — 2026-08-06 — AI plays OR/Ultimate/Defensive cards — the last
+                          "AI playing Ultimate/Defensive/OR cards" gap.
+                          aiChooseAndPlayCard() previously filtered
+                          OR-modifier and every Ultimate-category card out
+                          of its candidate pool, with no Defensive branch
+                          at all. New fixed priority order, one card per
+                          AI turn: Passive → Defensive (readies once, no
+                          re-readying while one's still pending — Nullify
+                          Cost/Resist/Suppress get simple stated-default
+                          picker choices: "Any Aggressive Ability,"
+                          Damage, Inflict respectively) → Basic Aggressive
+                          → Heal → any other Supportive card (the new
+                          fallback branch, which is also what exercises
+                          the OR-choice path — always picks Option A, the
+                          card's own base operatorId) → Ultimate
+                          (non-Auto-Win only — the AI can't judge a
+                          self-declared Auto-Win condition, normally
+                          checked via a real confirm() dialog for a
+                          human, so those stay skipped by design), single-
+                          target via a direct finalizeCast call (mirrors
+                          every Basic branch above) with ifWonderlandOpen
+                          checked explicitly since playUltimateCard's own
+                          gate isn't reached that way, Target-All routed
+                          through playUltimateCard itself. Verified with a
+                          new test-ai-plays-or-ultimate-defensive.js
+                          (14/14) — a real AI Squad battle, not Local
+                          Pass-and-Play, injecting a deterministic 3-card
+                          hand and confirming each card resolves correctly
+                          across 3 of the AI's own turns. Two real
+                          debugging subtleties the test itself ran into,
+                          worth remembering for future AI-battle tests:
+                          an empty deck reshuffles from discard the
+                          instant something's been discarded (correct
+                          product behavior, but it un-determinizes a fixed
+                          test hand unless discard is also cleared between
+                          checks), and Wand's weapon range is Chebyshev 2,
+                          not 1 — a unit "parked out of the way" at
+                          distance 2 is still a live Strike threat unless
+                          its own Movement is neutralized too. 214
+                          regression checks green in total after this
+                          pass. See MONOLITH_RULESET.md's new AI Behavior
+                          section for the full priority-order writeup.
+
   v0.25.0 — 2026-08-06 — CORRECTNESS (doc scope, not a shipped bug): the
                           "close every gap" list's "Ultimate-level ALSO/
                           IF-THEN" item assumed Ultimates would eventually
@@ -3379,26 +3422,49 @@ function maybeRunAiTurn(){
    needs a real choice between two effects, which the AI doesn't have a
    basis to make yet, so it just plays a different card instead of
    guessing. This is a stated scope line, not an oversight. */
+// Priority order, one card per AI turn (unchanged from before this pass):
+// Passive > Defensive (readied, at most once until spent) > Aggressive
+// (Basic or Ultimate) > Heal > any other Supportive (covers OR cards,
+// see the fallback branch below) > single-target Ultimate. Auto-Win
+// Ultimates are the one category still skipped outright — the AI has no
+// way to judge whether a self-declared condition (checked via a real
+// confirm() dialog for a human) is actually true, and guessing risks
+// ending the battle on a false declaration. OR, Ultimate (non-auto-win),
+// and Defensive cards are all real AI behavior now, closing the rest of
+// this gap — none of the choices below claim to be OPTIMAL play, just
+// legal, real play, the same bar aiChooseAndPlayCard already held itself
+// to for Basic Aggressive/Supportive before this pass.
 function aiChooseAndPlayCard(u){
   if (!u.hand.length || u.initiative <= 0) return;
-  // OR-modifier cards and Ultimates are both skipped — see this
-  // function's own header comment for OR; Ultimates need the same kind
-  // of real evaluation basis (is Target All worth it, is the Auto-Win
-  // condition actually true) the AI doesn't have yet, so it just plays a
-  // different card instead of guessing at either.
-  const affordable = u.hand.map(cardById).filter(c => c && !(c.modifier?.type === 'OR') && cardCategory(c) !== 'ultimate' && cardCost(c) <= u.initiative && !isOperatorLockedForTeam(c, u.team));
+  const affordable = u.hand.map(cardById).filter(c => c && !c.autoWin && cardCost(c) <= u.initiative && !isOperatorLockedForTeam(c, u.team));
   if (!affordable.length) return;
 
   if (!u.activePassive){
     const passive = affordable.find(c => cardCategory(c) === 'passive');
     if (passive){ activatePassiveCard(u, passive); return; }
   }
+  // Defensive: ready one preemptively if nothing is readied yet, using
+  // simple stated defaults for the 3 pickers (Nullify Cost wards "Any
+  // Aggressive Ability"; Resist wards the Damage category, the single
+  // most universally relevant of the four; Suppress locks Inflict, the
+  // most common Aggressive operator) — not a claim of optimal targeting.
+  if (!u.readiedDefensives.length){
+    const defCard = affordable.find(c => cardCategory(c) === 'defensive');
+    if (defCard){
+      const cost = cardCost(defCard);
+      if (defCard.operatorId === 'nullifyCost') readyDefensiveCard(u, defCard, cost, null);
+      else if (defCard.operatorId === 'resist') readyDefensiveCard(u, defCard, cost, null, 'damage');
+      else if (defCard.operatorId === 'suppress') readyDefensiveCard(u, defCard, cost, null, null, 'inflict');
+      else readyDefensiveCard(u, defCard, cost);
+      return;
+    }
+  }
   const enemiesInRange = battle.units.filter(t => t.team !== u.team && !t.defeated && !t.removed && chebyshev(t.x-u.x, t.y-u.y) <= u.abilityRange);
   if (enemiesInRange.length){
     const aggCard = affordable.find(c => cardCategory(c) === 'aggressive' && OPERATORS[c.operatorId].kind === 'life-damage');
     if (aggCard){
       const target = enemiesInRange.reduce((a,b) => a.life < b.life ? a : b);
-      finalizeCast(u, target, aggCard, cardCost(aggCard));
+      finalizeCast(u, target, aggCard, cardCost(aggCard), aggCard.modifier?.type === 'OR' ? aggCard.operatorId : undefined);
       return;
     }
   }
@@ -3408,6 +3474,45 @@ function aiChooseAndPlayCard(u){
     if (healCard){
       const target = woundedAllies.reduce((a,b) => a.life < b.life ? a : b);
       finalizeCast(u, target, healCard, cardCost(healCard));
+      return;
+    }
+  }
+  // Any other Supportive card (Give Mov/Strike/Ini/Range, Transpose,
+  // Accelerate, and OR-modifier cards like card-strike-or-mov) — the
+  // fallback that actually exercises the AI's OR-choice path, defaulting
+  // to Option A (the card's own base operatorId) always. Skips a
+  // severed pair, same as the human targeting filter (isSupportiveSevered).
+  const alliesInRange = battle.units.filter(t => t.team === u.team && !t.defeated && !t.removed && t.esoriId !== u.esoriId
+    && chebyshev(t.x-u.x, t.y-u.y) <= u.abilityRange && !isSupportiveSevered(u.esoriId, t.esoriId));
+  if (alliesInRange.length){
+    const supportCard = affordable.find(c => cardCategory(c) === 'supportive' && c.operatorId !== 'heal');
+    if (supportCard){
+      const target = alliesInRange[0];
+      finalizeCast(u, target, supportCard, cardCost(supportCard), supportCard.modifier?.type === 'OR' ? supportCard.operatorId : undefined);
+      return;
+    }
+  }
+  // Ultimate cards (non-Auto-Win) — same shape as the Basic branches
+  // above, at ULTIMATE_RANGE instead of abilityRange. Target-All routes
+  // through playUltimateCard itself (it does its own targeting/no-valid-
+  // target handling); single-target Ultimates call finalizeCast directly,
+  // same as every Basic branch above — so ifWonderlandOpen (which
+  // playUltimateCard normally gates on) is checked here explicitly too.
+  const ultimateCards = affordable.filter(c => cardCategory(c) === 'ultimate' && (!c.ifWonderlandOpen || u.openWonderlandActive));
+  for (const card of ultimateCards){
+    if (card.targetAll){
+      playUltimateCard(u, card, cardCost(card));
+      if (!u.hand.includes(card.id)) return; // it actually resolved (card discarded) — stop here
+      continue; // no valid targets in range — try the next Ultimate instead of wasting the whole turn
+    }
+    const opCategory = OPERATORS[card.effects[0]].category;
+    const candidates = opCategory === 'aggressive'
+      ? battle.units.filter(t => t.team !== u.team && !t.defeated && !t.removed && chebyshev(t.x-u.x, t.y-u.y) <= ULTIMATE_RANGE)
+      : battle.units.filter(t => t.team === u.team && !t.defeated && !t.removed && chebyshev(t.x-u.x, t.y-u.y) <= ULTIMATE_RANGE);
+    if (candidates.length){
+      const target = candidates.reduce((a,b) => a.life < b.life ? a : b);
+      finalizeCast(u, target, card, cardCost(card));
+      return;
     }
   }
 }
