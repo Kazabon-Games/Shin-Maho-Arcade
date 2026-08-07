@@ -410,8 +410,48 @@ cross-family (e.g. an Aggressive primary with a "draw a card" THEN) or
 aren't operator applications at all (Special Strike/Special Movement,
 card-retrieval-from-discard) — see Seeded Canon Characters above for the
 approximations already in place; this pass doesn't change those.
-IF/THEN is not wired into Ultimate cards at all yet (see the Ultimate
-implementation status above).
+**⚠ Corrected mid-project:** earlier prose in this document (and the
+"close every gap" punch list in `CLAUDE.md`) framed the next Ultimate-tier
+gap as "Ultimate-level ALSO/IF-THEN," implying Ultimates would eventually
+get the same generic IF/THEN modifier Basic Abilities have. A direct
+re-read of GDD §10.3's own modifier-availability table says otherwise:
+"Ultimate Abilities can only use ALSO and IF WONDERLAND OPEN" — IF/THEN
+is explicitly Basic-Abilities-only, full stop, not a "not built yet" gap
+on the Ultimate tier at all. **ALSO is now built** (below); a generic
+Ultimate-level IF/THEN is not a real gap to close, because the GDD never
+grants Ultimates one.
+
+**ALSO (GDD §10.3, +10 Ini, "Ultimate Abilities only") is now built.**
+"Adds a second effect using an Ultimate operator" reads as a THIRD
+operator effect stacked onto a normal 2-effect Ultimate card — `card.
+modifier = { type:'ALSO', operatorId }`, applied unconditionally
+alongside the card's two main `.effects` (no condition of its own; that's
+IF WONDERLAND OPEN's separate, already-built job — gating the WHOLE card
+on Wonderland state, not one effect within it). Same-family rule extended
+from the Basic-tier AND/IF_THEN precedent: `card.modifier.operatorId` is
+drawn from the same category as `card.effects[0]`, matching whatever
+target-category filtering already picked the valid target — an
+Aggressive-flavored Ultimate's ALSO effect is always another Aggressive
+(usually Ultimate-tier) operator, never Supportive or Defensive.
+`cardCost()` adds ALSO's own `+10` on top of the flat 50 Ini Ultimate
+base (60 Ini total). Demonstrated with one new card, `ult-eviscerate`
+(Inflict + Afflict ALSO Disarm — Devastate's own effects plus an
+absolute, Ultimate-tier Strike-to-0). Verified with a new
+`test-ultimate-also.js` (8/8): confirms the 60 Ini cost, confirms all
+THREE effects actually apply (not just the normal two), and confirms the
+full spent cost (not just the 50 base) is what Inflict/Afflict's own 1:1
+life/Initiative math keys off — 200 regression checks green in total
+after this pass.
+
+**This still does not unblock Daedalus Tesseract or Nhül Partikül's full
+named effect** — their remaining blockers were never a missing modifier
+*type* in the first place, they're a modifier *target* problem: both
+cards' THEN-effects (Impose-a-card-into-hand, Open-Wonderland-directly)
+aren't operator applications at all, the same "not an operator, a direct
+game-state change" gap this document's Known Unresolved Gaps section
+already names for both. Neither IF/THEN (Basic-only) nor ALSO
+(unconditional, no THEN-branch of its own) could express either effect
+even with the modifier-type question now fully resolved.
 
 ## Fundamental Operators (the ability-authoring vocabulary)
 
@@ -977,18 +1017,24 @@ Building for **browser, single-file HTML/JS/Canvas, no backend**:
   the ally-targeting branch until clarified.
 - Nhül Partikül — its bounded Scry+Seal subset is now built
   (`ult-nhul-particul`, see Seeded Canon Characters above). IF/THEN itself
-  is now real for Basic Abilities (see the Modifiers section above), but
-  the full named ability's Impose/draw-lock tail still can't be built even
-  with it: it needs Ultimate-level IF/THEN (not wired to Ultimates yet)
-  AND its THEN-effect ("Impose the card into their hand") isn't an
-  operator application at all — same category of gap as Daedalus
-  Tesseract's own THEN-effect below.
+  is now real for Basic Abilities, and ALSO is now real for Ultimates
+  (see the Modifiers section above) — but neither can express the full
+  named ability's Impose/draw-lock tail, and per a corrected reading of
+  GDD §10.3 (Ultimate Abilities can ONLY use ALSO and IF WONDERLAND
+  OPEN — there is no Ultimate-tier IF/THEN to eventually wire up, that
+  was this document's own earlier misreading), there's no third modifier
+  type coming that would close this either. The real, permanent blocker:
+  its THEN-effect ("Impose the card into their hand") isn't an operator
+  application at all — same category of gap as Daedalus Tesseract's own
+  THEN-effect below.
 - Daedalus Tesseract — still fully unauthored (Root + Seal + an IF/THEN
   modifier); Ala zyu Haad's seeded AI Wonderland uses a documented
-  stand-in trigger instead (see Seeded Canon Characters above). Even with
-  Basic-Ability IF/THEN now built, this specific card needs two things
-  that still aren't: Ultimate-level ALSO/IF-THEN (Daedalus Tesseract is
-  Ultimate-tier), and its THEN-effect ("Open Wonderland") is a direct
+  stand-in trigger instead (see Seeded Canon Characters above). Its own
+  GDD text uses IF/THEN, but Daedalus Tesseract is Ultimate-tier, and
+  Ultimate Abilities can only carry ALSO/IF WONDERLAND OPEN per GDD
+  §10.3 — a literal port isn't just "not built yet," it's asking for a
+  modifier combination the ruleset itself doesn't allow on this card's
+  own tier. Its THEN-effect ("Open Wonderland") is also a direct
   game-state change, not an operator applied to a target — the same shape
   problem Nhül Partikül's own Impose tail has above, not something the
   same-family operator-application model this pass built can express.

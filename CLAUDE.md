@@ -264,10 +264,26 @@ short on purpose.
   directly in `finalizeCast` (since the AI's own Supportive path calls it
   straight, bypassing the UI filter). Verified with a new
   `test-ultimate-defensive.js` (26/26) — 192 regression checks green in
-  total after this pass. Still ahead on the "close every gap" list:
-  Ultimate-level ALSO/IF-THEN (needed for Daedalus Tesseract and Nhül
-  Partikül's full effect), AI playing Ultimate/Defensive/OR cards,
-  Refine's ally-targeting half, and Rhyzl Step.
+  total after this pass. Fifteenth pass corrected a scoping mistake in
+  this project's own gap list: "Ultimate-level ALSO/IF-THEN" assumed
+  Ultimates would get the same generic IF/THEN Basic Abilities have, but
+  GDD §10.3's own modifier table says "Ultimate Abilities can only use
+  ALSO and IF WONDERLAND OPEN" — IF/THEN is Basic-only, not a pending gap
+  on Ultimates at all. Built what the GDD actually specifies: ALSO
+  ("Adds a second effect using an Ultimate operator," +10 Ini) — a THIRD
+  operator effect stacked onto a normal 2-effect Ultimate card,
+  unconditional (no THEN-branch — that's IF WONDERLAND OPEN's separate,
+  already-built job). `cardCost()` previously ignored an Ultimate card's
+  modifier entirely; now adds ALSO's costDelta on top of the flat 50
+  base. New demonstrative card `ult-eviscerate` (Inflict + Afflict ALSO
+  Disarm, 60 Ini). This does **not** unblock Daedalus Tesseract or Nhül
+  Partikül's full named effect — their real blocker was never the
+  modifier type, it's that both cards' THEN-effects (Impose-into-hand,
+  Open-Wonderland-directly) aren't operator applications at all, which no
+  modifier type could express. Verified with a new `test-ultimate-also.js`
+  (8/8) — 200 regression checks green in total after this pass. Still
+  ahead on the "close every gap" list: AI playing Ultimate/Defensive/OR
+  cards, Refine's ally-targeting half, and Rhyzl Step.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

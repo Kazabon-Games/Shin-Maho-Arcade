@@ -11,6 +11,43 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.25.0 — 2026-08-06 — CORRECTNESS (doc scope, not a shipped bug): the
+                          "close every gap" list's "Ultimate-level ALSO/
+                          IF-THEN" item assumed Ultimates would eventually
+                          get the same generic IF/THEN Basic Abilities
+                          have. GDD §10.3's own modifier-availability
+                          table says otherwise: "Ultimate Abilities can
+                          only use ALSO and IF WONDERLAND OPEN" — IF/THEN
+                          is Basic-only, full stop, not a not-built-yet
+                          gap on Ultimates. Built what the GDD actually
+                          specifies: ALSO ("Adds a second effect using an
+                          Ultimate operator," +10 Ini, Ultimate Abilities
+                          only) — a THIRD operator effect on top of a
+                          normal 2-effect Ultimate card, unconditional (no
+                          THEN-branch of its own — that's IF WONDERLAND
+                          OPEN's separate job, already built). New
+                          MODIFIERS.ALSO entry; cardCost() now adds an
+                          Ultimate card's modifier costDelta on top of the
+                          flat 50 base (was previously ignored outright);
+                          finalizeCast's single-target path and
+                          playUltimateCard's Target-All path both apply
+                          card.modifier.operatorId when type is 'ALSO', in
+                          addition to the normal card.effects.forEach;
+                          cardDescription() renders it ("X + Y ALSO Z").
+                          New demonstrative card ult-eviscerate (Inflict +
+                          Afflict ALSO Disarm, 60 Ini). Does NOT unblock
+                          Daedalus Tesseract or Nhül Partikül's full named
+                          effect — their real blocker was never the
+                          modifier type, it's that both cards' THEN-
+                          effects (Impose-into-hand, Open-Wonderland-
+                          directly) aren't operator applications at all,
+                          something no modifier type (IF/THEN or ALSO)
+                          could express. Verified with a new
+                          test-ultimate-also.js (8/8) — 200 regression
+                          checks green in total after this pass. See
+                          MONOLITH_RULESET.md's Modifiers section for the
+                          full correction writeup.
+
   v0.24.0 — 2026-08-06 — All 5 GDD §11.4 Ultimate Defensive operators:
                           Nullify All, Rewind, Suppress, Forbid, Sever —
                           the "Exception" single-effect-only Ultimate tier
@@ -1173,7 +1210,7 @@ const OPERATORS = {
 
   refine: { name:'Refine', category:'utility', kind:'banish-own-random-card' },
 };
-const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 }, IF_THEN: { costDelta: 10 } };
+const MODIFIERS = { AND: { costDelta: 5 }, OR: { costDelta: 10 }, IF_THEN: { costDelta: 10 }, ALSO: { costDelta: 10 } };
 // IF/THEN's condition vocabulary (GDD §10.3: "+10 Ini, Basic Abilities
 // only, triggers only when condition is met") — checked once, at cast
 // resolution, not a persistent watcher. Two conditions, both grounded in
@@ -1232,6 +1269,13 @@ const ULTIMATE_CARDS = [
   // state. Requires declared Auto-Win condition") — paired with Exhaust
   // as its second main effect (both Ultimate-only, both new this pass).
   { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
+  // Demonstrates ALSO (GDD §10.3: "Adds a second effect using an
+  // Ultimate operator... Ultimate Abilities only," +10 Ini) — a THIRD
+  // effect stacked onto a normal 2-effect Ultimate card. Same-family rule
+  // extended from the Basic-tier AND/IF_THEN modifiers: Disarm
+  // (Aggressive-Ultimate) alongside Devastate's own Inflict+Afflict,
+  // never a Supportive/Defensive operator on an Aggressive-flavored card.
+  { id:'ult-eviscerate', name:'Eviscerate', category:'ultimate', effects:['inflict','afflict'], modifier:{ type:'ALSO', operatorId:'disarm' } },
 ];
 // GDD §11.4's "Exception" — a single-operator card, not the usual 2-effect
 // ULTIMATE_CARDS shape (there is no second main feat to pair). `category`
@@ -1280,8 +1324,12 @@ function cardCost(card){
   // NOT 'ultimate', so they route through the Defensive-readying flow,
   // not playUltimateCard's targeting/Target-All logic) but still cost the
   // full 50 Ini base per that same GDD exception. Checked via the
-  // operator's own tier, not the card's category.
-  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate') return 50;
+  // operator's own tier, not the card's category. ALSO (GDD §10.3, +10
+  // Ini, "Ultimate Abilities only") is the one modifier an Ultimate card
+  // can actually carry a cost for — added on top of the flat 50 base.
+  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate'){
+    return 50 + (card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0);
+  }
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;
@@ -1289,6 +1337,7 @@ function cardCost(card){
 function cardDescription(card){
   if (cardCategory(card) === 'ultimate'){
     let text = card.effects.map(id => OPERATORS[id].name).join(' + ');
+    if (card.modifier?.type === 'ALSO') text += ` ALSO ${OPERATORS[card.modifier.operatorId].name}`;
     if (card.targetAll) text += ' (Target All)';
     if (card.ifWonderlandOpen) text += ' (IF Wonderland Open)';
     if (card.autoWin) text += ' (Auto-Win)';
@@ -2788,7 +2837,10 @@ function playUltimateCard(u, card, cost){
     discardCard(u, card.id);
     if (u.wonderlandProgress) u.wonderlandProgress.lastCardPlayedId = card.id;
     checkWonderlandActivation(u);
-    targets.forEach(t => card.effects.forEach(opId => applyOperator(opId, u, t, cost, card)));
+    targets.forEach(t => {
+      card.effects.forEach(opId => applyOperator(opId, u, t, cost, card));
+      if (card.modifier?.type === 'ALSO') applyOperator(card.modifier.operatorId, u, t, cost, card); // see finalizeCast's matching comment
+    });
     logMsg(`${u.name} unleashes ${card.name} on all ${targets.length} valid target(s) in range.`, u.team);
     renderBattle();
     const w = checkWin();
@@ -2890,6 +2942,17 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
       // Ultimate — both main effects apply, always (Ultimate-level OR
       // between the two isn't implemented, see ULTIMATE_CARDS' own note).
       card.effects.forEach(opId => applyOperator(opId, u, target, cost, card));
+      // ALSO (GDD §10.3: "Adds a second effect using an Ultimate
+      // operator... Ultimate Abilities only") — a THIRD effect on top of
+      // the normal two, always applies once the card resolves (no
+      // condition of its own; IF WONDERLAND OPEN is the separate,
+      // already-built modifier that gates a whole card on Wonderland
+      // state — this is not that). Same-family rule extended from the
+      // Basic-tier AND/IF_THEN modifiers: card.modifier.operatorId is
+      // drawn from the same category as card.effects[0], so it always
+      // matches whatever target-category filtering already picked the
+      // valid target.
+      if (card.modifier?.type === 'ALSO') applyOperator(card.modifier.operatorId, u, target, cost, card);
     } else {
       applyOperator(card.operatorId, u, target, cost, card);
       if (card.modifier?.type === 'AND') applyOperator(card.modifier.operatorId, u, target, cost, card);

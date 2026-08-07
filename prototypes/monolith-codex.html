@@ -11,6 +11,20 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.24.0 — 2026-08-06 — ALSO modifier (GDD §10.3, +10 Ini, "Ultimate
+                          Abilities only"), data-mirrored from Arena (that
+                          file's matching v0.25.0 entry has the full
+                          writeup, the actual resolution logic, and the
+                          correction of this project's own earlier
+                          "Ultimate-level IF/THEN" scoping mistake — the
+                          GDD never grants Ultimates a generic IF/THEN,
+                          only ALSO and IF WONDERLAND OPEN). New
+                          MODIFIERS.ALSO entry; cardCost() now adds an
+                          Ultimate card's modifier costDelta on top of the
+                          flat 50 base; cardDescription() renders it. New
+                          demonstrative card ult-eviscerate (Inflict +
+                          Afflict ALSO Disarm, 60 Ini).
+
   v0.23.0 — 2026-08-06 — All 5 GDD §11.4 Ultimate Defensive operators,
                           data-mirrored from Arena (that file's matching
                           v0.24.0 entry has the full writeup and the
@@ -951,6 +965,7 @@ const MODIFIERS = {
   AND: { costDelta: 5 },  // Basic abilities only, per ruleset
   OR:  { costDelta: 10 },
   IF_THEN: { costDelta: 10 },
+  ALSO: { costDelta: 10 },  // Ultimate abilities only, per ruleset (GDD §10.3)
 };
 // IF/THEN's condition vocabulary — identical data to Arena's copy, which
 // is where the `check` functions actually run (this doc has no battle
@@ -990,6 +1005,10 @@ const ULTIMATE_CARDS = [
   // this comment for what's dropped: the Impose/draw-lock IF/THEN tail).
   { id:'ult-nhul-particul', name:'Nhül Partikül', category:'ultimate', effects:['scry','seal'] },
   { id:'ult-annihilate', name:'Annihilate', category:'ultimate', effects:['defeat','exhaust'], autoWin:true },
+  // Demonstrates ALSO (GDD §10.3, +10 Ini, Ultimate Abilities only) — a
+  // THIRD effect stacked onto Devastate's own Inflict+Afflict. See
+  // Arena's matching comment for the full writeup.
+  { id:'ult-eviscerate', name:'Eviscerate', category:'ultimate', effects:['inflict','afflict'], modifier:{ type:'ALSO', operatorId:'disarm' } },
 ];
 // GDD §11.4's "Exception" — single-operator cards, data-mirrored from
 // Arena (see that file's own comment for why `category` reads
@@ -1012,7 +1031,10 @@ function cardCategory(card){ return card.category || OPERATORS[card.operatorId].
 function cardCost(card){
   // See Arena's matching comment — Ultimate Defensive cards read category
   // 'defensive' but still cost 50 Ini, checked via the operator's tier.
-  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate') return 50; // flat, per MONOLITH_RULESET.md — none of the hand-authored Ultimates use a costed modifier yet
+  // ALSO (GDD §10.3, "Ultimate Abilities only") adds its own +10 on top.
+  if (cardCategory(card) === 'ultimate' || OPERATORS[card.operatorId]?.tier === 'ultimate'){
+    return 50 + (card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0);
+  }
   const base = cardCategory(card) === 'passive' ? 15 : 20;
   const modDelta = card.modifier ? MODIFIERS[card.modifier.type].costDelta : 0;
   return base + modDelta;
@@ -1020,6 +1042,7 @@ function cardCost(card){
 function cardDescription(card){
   if (cardCategory(card) === 'ultimate'){
     let text = card.effects.map(id => OPERATORS[id].name).join(' + ');
+    if (card.modifier?.type === 'ALSO') text += ` ALSO ${OPERATORS[card.modifier.operatorId].name}`;
     if (card.targetAll) text += ' (Target All)';
     if (card.ifWonderlandOpen) text += ' (IF Wonderland Open)';
     if (card.autoWin) text += ' (Auto-Win)';
