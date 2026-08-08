@@ -11,10 +11,22 @@
 // PLAYWRIGHT_CHROMIUM_PATH if Chromium isn't on Playwright's default
 // discovery path, and IRIDESCENT_COSMOLOGY_URL if not serving on the
 // default localhost:8935.
+//
+// Automated pass/fail (added 2026-08-08 — the engineering pass's own
+// Phase 1 audit found this was the one file in the whole studio's
+// 21-file `tests/` directory without one, contradicting
+// playwright-adversarial-harness's own explicit "every existing file in
+// this studio does this" claim; this file, the studio's largest and the
+// one that most needs a reliable automated gate, was the exception): a
+// real ok()/fail() counter plus a nonzero exit code on any failure,
+// matching the convention every sibling suite already follows.
 const { chromium } = require('playwright');
 
 const CHROMIUM_PATH = process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined;
 const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/iridescentcosmology.html';
+
+let pass = 0, fail = 0;
+function ok(cond, msg){ if(cond){ pass++; } else { fail++; console.log('  FAIL', msg); } }
 
 (async () => {
   const browser = await chromium.launch({
@@ -306,5 +318,20 @@ const BASE_URL = process.env.IRIDESCENT_COSMOLOGY_URL || 'http://localhost:8935/
   console.log('horizontal overflow hits:', overflowHits);
   console.log('downloads triggered:', downloads);
 
+  // The real gate. consoleErrors legitimately contains exactly one
+  // sandbox-environmental entry (the Google Fonts connection reset,
+  // filtered by URL via requestfailed above, per this file's own earlier
+  // bug-fix comment) when fontsRequestFailed is true -- anything beyond
+  // that one expected entry is a genuine new console error.
+  const unexplainedConsoleErrors = fontsRequestFailed
+    ? consoleErrors.filter(e => !e.includes('ERR_CONNECTION_RESET'))
+    : consoleErrors;
+  ok(unexplainedConsoleErrors.length === 0, `unexpected console errors: ${JSON.stringify(unexplainedConsoleErrors)}`);
+  ok(pageErrors.length === 0, `page errors: ${JSON.stringify(pageErrors)}`);
+  ok(overflowHits.length === 0, `horizontal overflow: ${JSON.stringify(overflowHits)}`);
+  ok(downloads.length >= 2, `expected at least 2 share-card downloads (stage-clear + death), got ${downloads.length}`);
+
   await browser.close();
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail > 0 ? 1 : 0);
 })().catch(e => { console.error('SCRIPT FAILED:', e); process.exit(1); });

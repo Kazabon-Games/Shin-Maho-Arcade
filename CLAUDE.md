@@ -33,11 +33,16 @@ short on purpose.
   read these before assuming a move/state isn't implemented; they exist
   specifically because the moveset was previously undocumented and that
   caused real bugs.
-- **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
-  each game's pre-implementation design doc (Game Designer / Visual-Art-
-  Director / Audio-Designer / Engineer / Capability-Auditor sign-off),
-  written *before* code, not after. No equivalent exists yet for Games 1–2
-  (`Studio-Internal-`'s handover docs cover those retroactively instead).
+- **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_5_PILLARS.md` /
+  `GAME_7_PILLARS.md`** — each game's pre-implementation design doc (Game
+  Designer / Visual-Art-Director / Audio-Designer / Engineer /
+  Capability-Auditor sign-off), written *before* code, not after.
+  `GAME_5_PILLARS.md` (Rykndu, `prototypes/`) was added after the other
+  three and missed this list until a 2026-08-08 gap audit caught it — the
+  same drift risk the studio's shared skill-count blocks already name,
+  just showing up in this file instead. No equivalent exists yet for
+  Games 1–2 (`Studio-Internal-`'s handover docs cover those retroactively
+  instead).
 - **`tests/`** — one Playwright suite per game (`<game>-adversarial.js`),
   plus narrower feature suites (`<game>-audio.js`, `rig-*.js` for Rykndu).
   No unit-test framework — every suite drives a real served page via

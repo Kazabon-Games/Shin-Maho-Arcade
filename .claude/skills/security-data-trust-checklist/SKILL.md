@@ -89,9 +89,13 @@ new case needing its own explicit look, SRI-feasible or not).
 Top 10:2025).** Confirm the app doesn't silently corrupt state or crash on
 malformed input it didn't produce itself: a hand-edited or truncated
 `localStorage` value, a bad/partial JSON import. `age-of-wonder`'s
-`json-import-validation` skill already covers this for that repo's
-import-across-documents flow — cite it rather than re-deriving the same
-check there. `Shin-Maho-Arcade` has no equivalent named check today for
+`safe-keyed-reimport` skill already covers this for that repo's
+import-across-documents flow (corrected 2026-08-08 — this citation
+previously pointed at `json-import-validation`, a skill name that was
+never actually written as a file in either repo; a live gap-audit found
+the citation itself real, just pointing at the wrong name) — cite it
+rather than re-deriving the same check there. `Shin-Maho-Arcade` has no
+equivalent named check today for
 its own localStorage save/load path specifically (as distinct from
 `age-of-wonder`'s cross-document import case) — if reviewing a game there,
 confirm a corrupted/manually-edited save value degrades to a fresh-state
