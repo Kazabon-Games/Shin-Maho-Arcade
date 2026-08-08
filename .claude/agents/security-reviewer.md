@@ -134,8 +134,8 @@ operate from this summary:
 - **Color language**: gold/yellow = reward/currency only, never a hostile
   entity; red (`--danger`) = threat/damage; green (`--ok`) = safe/health.
   Check any new hex against this before proposing it.
-- **Skills library is at `.claude/skills/`** — fifteen skills exist as of
-  2026-08-07 (this line itself has now gone stale five times before this edit
+- **Skills library is at `.claude/skills/`** — sixteen skills exist as of
+  2026-08-08 (this line itself has now gone stale six times before this edit
   — first claiming "exactly three," then "eleven" — a live, recurring
   instance of the exact copy-drift risk `STUDIO_BIBLE.md` §17 names for
   this shared block; don't trust a hardcoded count here, `STUDIO_BIBLE.md`
@@ -143,7 +143,7 @@ operate from this summary:
   `faceted-gem-rendering`, `pwa-offline-games`,
   `security-data-trust-checklist`, `difficulty-curve-calibration`,
   `color-language-audit`, `playwright-adversarial-harness`,
-  `incident-postmortem`. Repo-scoped: `overlay-focus-trap`/
+  `incident-postmortem`, `engineering-architecture-decisions`. Repo-scoped: `overlay-focus-trap`/
   `safe-keyed-reimport` (`age-of-wonder` only),
   `game-audio-production-suite`/`music-theory-mood-mapping`/
   `webgl-batched-instancing`/`visual-theory-shape-motion-mapping`/
