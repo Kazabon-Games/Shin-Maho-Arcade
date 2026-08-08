@@ -67,8 +67,9 @@ skill.
 **6. Exceptional-condition handling (also new in OWASP Top 10:2025):**
 does the app degrade gracefully on malformed input it didn't produce
 itself (a hand-edited localStorage value, a truncated JSON import)?
-`age-of-wonder` has `json-import-validation` for its cross-document import
-case; `Shin-Maho-Arcade`'s own localStorage save/load path has no
+`age-of-wonder` has `safe-keyed-reimport` for its cross-document import
+case (corrected 2026-08-08 — see `security-data-trust-checklist`'s own
+correction note); `Shin-Maho-Arcade`'s own localStorage save/load path has no
 equivalent named check yet — confirm a corrupted save falls back to a
 fresh default rather than throwing uncaught.
 
