@@ -2073,6 +2073,21 @@ textarea.form-input{min-height:70px;resize:vertical;}
   </div>
 </div>
 
+<!-- CRASH RECOVERY — see Game's loop()/handleCrash for when this shows.
+     Deliberately minimal: no dependency on live game state (which may be
+     what just broke), a single safe recovery action. -->
+<div class="overlay" id="crashOverlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-label="Something went wrong">
+    <h2>SOMETHING WENT WRONG</h2>
+    <p style="opacity:.8;line-height:1.5;">
+      The run hit an unexpected error and stopped itself to avoid
+      corrupting your save. A crash report was saved automatically —
+      you can review or export it from Report an issue.
+    </p>
+    <button class="btn primary" onclick="Music.uiClick();Game.recoverFromCrash()">RETURN TO MENU</button>
+  </div>
+</div>
+
 <div class="meta-row">
   <div id="versionMarker">IRIDESCENT COSMOLOGY v2.15.1</div>
   <button class="icon-btn" onclick="Music.uiClick();this.textContent = Music.toggleMute() ? '🔇' : '🔊'" title="Mute music" aria-label="Mute music">🔊</button>
@@ -2194,6 +2209,35 @@ const OK_COLOR = cssVar('--ok');
 // per the comment above, just never swept for these two).
 const GOLD_COLOR = cssVar('--gold');
 const DANGER_COLOR = cssVar('--danger');
+
+// Global error safety net — closes a real, confirmed gap (zero global
+// error handlers existed anywhere in this file before this pass).
+// Registered here, early, rather than at the bottom of the file —
+// standard convention is to install these before the rest of the app
+// initializes, so a throw during any later module's own setup (not just
+// during actual gameplay) still gets captured, not just errors after
+// everything has already finished loading. Does NOT by itself keep the
+// game loop alive (a rAF callback that throws still dies the same way it
+// always did) — that's Game's own loop()/handleCrash try/catch,
+// deliberately kept separate since window 'error'/'unhandledrejection'
+// fire only AFTER a callback has already died, too late to resume it.
+// This exists for errors OUTSIDE the loop (an onclick handler, a
+// timeout, a rejected promise, or a throw during another module's own
+// init) that would otherwise vanish into the console with no trace and
+// no way for a bug report to reference them. Guarded since Bugrep isn't
+// defined yet this early in the file — by the time any of these can
+// actually fire (script parsing has to finish before any async event
+// reaches this listener), Bugrep is long since initialized.
+window.addEventListener('error', (e) => {
+  if(typeof Bugrep !== 'undefined' && Bugrep.logCrash){
+    Bugrep.logCrash('Uncaught error: ' + e.message + (e.filename ? (' @ ' + e.filename + ':' + e.lineno) : ''));
+  }
+});
+window.addEventListener('unhandledrejection', (e) => {
+  if(typeof Bugrep !== 'undefined' && Bugrep.logCrash){
+    Bugrep.logCrash('Unhandled promise rejection: ' + String(e.reason && e.reason.message || e.reason));
+  }
+});
 
 // death/victory stats used to just be set as static text — a count-up tween
 // gives them the same "weight" the rest of the juice layer already has
@@ -5665,24 +5709,98 @@ const Game = (function(){
   let acc = 0;
   let timeScale = 1;        // juice hook: Events subscribers may tween this
 
+  // Crash safety net — real, proven necessity, not speculative hardening.
+  // v2.11.0's changelog entry records the exact failure this closes: an
+  // uncaught throw inside update()'s call stack (shadeHex(undefined) on a
+  // boss with no .color) happened before loop()'s own trailing
+  // requestAnimationFrame(loop) call, which meant the throw killed the
+  // entire sim/render loop permanently — "recoverable only by force-
+  // quitting to the menu; the run itself was unsalvageable." That
+  // specific site got fixed at its root cause, correctly — but the
+  // general architectural vulnerability (ANY future uncaught exception
+  // anywhere in update()/render() kills the whole loop the same way, with
+  // zero on-screen indication anything went wrong) was never closed.
+  // `crashed` stops update()/render() from running again once tripped
+  // (so a persistently-broken render path can't re-throw every single
+  // frame forever), while requestAnimationFrame(loop) below is now
+  // ALWAYS called regardless — the actual fix. The last good frame stays
+  // frozen behind a real recovery overlay instead of a silent, unexplained
+  // freeze with no way out short of a reload.
+  let crashed = false;
+  let lastCrashMessage = '';
+  function handleCrash(err){
+    crashed = true;
+    lastCrashMessage = String(err && err.message || err);
+    const details = 'Auto-captured game-loop crash:\n' + String(err && err.message || err)
+      + (err && err.stack ? ('\n\n' + err.stack.slice(0, 1200)) : '');
+    // Breadcrumb context — what was actually happening when this fired,
+    // not just the bare stack trace. A small, deliberately narrow subset
+    // (not the full _test.state() dump, which includes things like full
+    // weapons/passives/items objects that add noise without adding
+    // diagnostic value for a crash specifically) of exactly what's likely
+    // relevant to a rendering/simulation crash.
+    const context = {
+      elapsed, level, kills, stage,
+      enemies: enemies?enemies.length:0, particles: particles?particles.length:0,
+      gems: gems?gems.length:0, bossActive: !!boss, boss2Active: !!boss2,
+      px: player?player.x:null, py: player?player.y:null,
+    };
+    if(typeof Bugrep !== 'undefined' && Bugrep.logCrash) Bugrep.logCrash(details, context);
+    document.getElementById('hud').classList.remove('show');
+    const el = document.getElementById('crashOverlay');
+    if(el) el.classList.add('show');
+  }
+  function recoverFromCrash(){
+    // toMenu() alone isn't enough: render() keeps drawing whatever's
+    // still in enemies/particles/etc. every frame regardless of
+    // `running`, and that state may still carry the exact poisoned
+    // values that caused the crash (e.g. a NaN player position
+    // propagating into an enemy's facing-angle calc, corrupting a
+    // sprite-frame array index into `undefined`, which drawImage then
+    // rejects) — clearing `crashed` without clearing the state that
+    // caused it reopens the same throw on the very next frame. Confirmed
+    // live: an earlier version of this function only reset camX/camY and
+    // the crash recurred immediately. Mirrors the same reset start()
+    // already does for a fresh run (player=null is the same pre-game
+    // state render() already handles correctly before the player has
+    // ever clicked Play, not a new, unhandled state).
+    player = null;
+    enemies = []; bullets = []; gems = []; particles = []; novaRings = []; mines = []; sunderBeams = [];
+    chests = []; helpers = [];
+    boss = null; bossProjectiles = [];
+    boss2 = null; boss2Trails = [];
+    camX = 0; camY = 0;
+    running = false; paused = false; levelChoosing = false;
+    toMenu();
+    crashed = false;
+    const el = document.getElementById('crashOverlay');
+    if(el) el.classList.remove('show');
+  }
+
   function loop(ts){
     let frameDt = (ts - lastTs)/1000;
     lastTs = ts;
     if(frameDt > 0.25) frameDt = 0.25; // tab-switch clamp
     atmosphereTime += frameDt; // always advances — menu backdrop stays alive even pre-run/paused
-    if(running && !paused && !levelChoosing){
-      acc += frameDt * timeScale;
-      let steps = 0;
-      while(acc >= SIM_DT && steps < MAX_STEPS){
-        update(SIM_DT);
-        if(!running) break; // died mid-step — stop consuming, but keep looping for the idle backdrop
-        acc -= SIM_DT;
-        steps++;
+    if(!crashed){
+      try {
+        if(running && !paused && !levelChoosing){
+          acc += frameDt * timeScale;
+          let steps = 0;
+          while(acc >= SIM_DT && steps < MAX_STEPS){
+            update(SIM_DT);
+            if(!running) break; // died mid-step — stop consuming, but keep looping for the idle backdrop
+            acc -= SIM_DT;
+            steps++;
+          }
+          if(steps === MAX_STEPS) acc = 0; // shed backlog rather than spiral
+        }
+        render();
+      } catch(err){
+        handleCrash(err);
       }
-      if(steps === MAX_STEPS) acc = 0; // shed backlog rather than spiral
     }
-    render();
-    requestAnimationFrame(loop);
+    requestAnimationFrame(loop); // always rescheduled, crashed or not — see handleCrash's own comment above
   }
   lastTs = performance.now();
   requestAnimationFrame(loop); // starts immediately — atmosphere is alive from page load, not just after Play
@@ -6023,7 +6141,7 @@ const Game = (function(){
     state: () => ({ running, paused, levelChoosing, elapsed, kills, level, xp, xpNeed, timeScale,
       hp: player?player.hp:null, maxhp: player?player.maxhp:null, enemies: enemies?enemies.length:0,
       bullets: bullets?bullets.length:0, gems: gems?gems.length:0, mines: mines?mines.length:0,
-      particles: particles?particles.length:0,
+      particles: particles?particles.length:0, crashed, lastCrashMessage,
       fx: { available: FxRenderer.available, glAvailable: FxRenderer._test.glAvailable,
         contextLost: FxRenderer._test.contextLost, instanceCount: FxRenderer._test.instanceCount },
       weapons: weapons?{...weapons}:null, passives: passives?{...passives}:null,
@@ -6090,7 +6208,7 @@ const Game = (function(){
     return { running, paused, levelChoosing, hp: player?player.hp:null, maxhp: player?player.maxhp:null };
   }
 
-  return { start, pick, togglePause, abandonRun, toMenu, renderMenuBest, setTimeScale, getTimeScale, setShake, dash, dashState, skipToBoss, getRunStatus, getLastRunStats: () => lastRunStats, _test };
+  return { start, pick, togglePause, abandonRun, toMenu, renderMenuBest, setTimeScale, getTimeScale, setShake, dash, dashState, skipToBoss, getRunStatus, getLastRunStats: () => lastRunStats, recoverFromCrash, _test };
 })();
 
 /* =====================================================================
@@ -8565,8 +8683,44 @@ const Bugrep = (function(){
     a.download = `bugreports_iridescentcosmology_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
   }
+  // Pure data write, deliberately independent of open()'s pause-toggling
+  // dance (open() reads live game state via Game._test.state() and can
+  // call Game.togglePause() — both unsafe to invoke from a crash-recovery
+  // path where game state may itself be the thing that just broke).
+  // Used by Game's own crash safety net (see loop()'s handleCrash) and by
+  // the global window 'error'/'unhandledrejection' listeners below.
+  // Basic dedup, real research-grounded gap this closes: without it, a
+  // genuinely reproducible bug (the same code path throwing on every
+  // retry, or a tab left open replaying the same fault) fills the
+  // report list with near-identical entries, drowning the one real
+  // signal in noise -- the same problem industry error-tracking tools
+  // (Sentry et al.) solve with stack-trace-fingerprint grouping. This is
+  // a much smaller version of the same idea, sized to what a localStorage-
+  // only, no-backend bug list actually needs: skip writing a new entry
+  // if the last one has the same message and landed within the last 60s.
+  let lastCrashMessage = '', lastCrashAt = 0;
+  function logCrash(details, context){
+    const message = String(details).split('\n')[0];
+    const now = Date.now();
+    if(message === lastCrashMessage && (now - lastCrashAt) < 60000) return;
+    lastCrashMessage = message; lastCrashAt = now;
+    // Breadcrumb context, real research-grounded gap this closes: a bare
+    // stack trace with no state around it ("what was happening when this
+    // fired") is exactly what real error-monitoring convention adds
+    // breadcrumbs to fix. Reuses Game._test.state()'s own already-exposed
+    // fields rather than new instrumentation -- cheap, real context.
+    let full = details;
+    if(context){
+      try { full += '\n\nContext at crash time:\n' + JSON.stringify(context); }
+      catch(e){ /* context isn't guaranteed serializable (e.g. circular refs) -- the message/stack above is still the real report */ }
+    }
+    const l = loadAll();
+    l.push({ category:'Bug', title:'Automatic crash report', details: full, document:'iridescentcosmology_v1', timestamp:new Date().toISOString() });
+    store(l);
+    badge();
+  }
   badge();
-  return { open, close, cat, save, del, exportAll };
+  return { open, close, cat, save, del, exportAll, logCrash };
 })();
 
 /* =====================================================================
