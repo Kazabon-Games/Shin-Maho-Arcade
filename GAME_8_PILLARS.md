@@ -159,6 +159,94 @@ Chain-Reaction**. Card preview should reuse the real chain-jump visual
 (§4's infection-pulse treatment) once it exists, the same "reuse the real
 technique, don't fake it" rule governing every other card.
 
+### 1a. Story — kept deliberately simple, load-bearing for theme, not a script
+
+> The Swarm isn't many creatures. It's one signal wearing many bodies —
+> every member bound to the same shared nervous thread, which is exactly
+> what let it grow this far unchecked. You carry the **Break**: a rare
+> counter-signal that does nothing to a single host except spread,
+> silently, to the next host still listening on the same thread. You're
+> not here to kill the Swarm one at a time. You're here to make it kill
+> itself.
+
+One idea, chosen specifically because it requires zero new vocabulary —
+every mechanic name already locked in §2 is a direct consequence of this
+premise, not flavor text bolted on after: **Infection** is introducing the
+Break to a host; **Contagion** is the shared thread it travels; **Vectors**
+are delivery mechanisms; **Chitin** is harvested shed casing, paid per
+host broken; **Relics** are found fragments that refine the Break itself.
+
+**Why this is load-bearing for §3/§4, not just narrative color**: the
+Swarm's palette (§3.4 — moss-olive/burnt-orange/violet-magenta/cobalt/
+maroon) reads organic/decay-toned *because the story says it's a body,
+not a machine*. The Break needs to be the one visibly non-organic thing
+on screen — see §1b's new player/UI accent decision below, which this
+story directly justifies rather than an arbitrary "needed a color that
+doesn't collide." Same for §4's mode choice: this is a controlled-
+demolition premise (a system understood well enough to turn against
+itself), not a horror premise (a monster to fear) — the concrete reason A
+Dorian ("grounded, determined, not hopeless") was the correct register
+against Iridescent Cosmology's D Phrygian ("tension, dread"), not an
+arbitrary "pick an unused mode."
+
+**Deliberately not decided here**: whether any of this narrative
+surfaces as literal on-screen text (a menu subtitle, a run-end line) or
+stays purely a design-language framing device the way Infall's own
+"Cinder"/"Wells" naming never appears as prose in-game — every other
+shipped game in this portfolio is wordless/mechanical in actual UI copy
+(Wardfall, Infall, Sigil Chain all name their mechanics without ever
+narrating them to the player), and Swarmbreak should default to that same
+established convention unless a specific screen genuinely needs a line
+of text to land. Flagged as open in §9 below, not assumed either way.
+
+**New color/audio decisions this story locks in, not previously in §3/§4**:
+- **Player/Break accent color**: `#5ce8e0` (clean signal-cyan) — checked
+  against every reserved token the same way §3.4's table was built:
+  vs `--gold` 187.4, vs `--neon` 172.6, vs `--danger` 172.9, vs `--ok`
+  100.4 (closest — a real, deliberate choice: the Break is the thing
+  actually keeping the player alive, so a moderate kinship with the
+  safety token is thematically correct, not an accident), vs `--neon2`
+  147.1, vs `--ink` 189.6, vs `--ink-soft` 152.9. Clears every band above
+  the 40-flag line by a wide margin, and — unlike every hostile-tier hue
+  in §3.4 — is the only cool, clean, non-organic color in the entire
+  roster, which is the actual design intent, not incidental.
+- **UI chrome** (buttons, HUD accents, Relic Draft panel borders): reuses
+  this same signal-cyan rather than the studio's default `--neon`
+  gold-adjacent chrome, so the player's own interface reads as "part of
+  the Break," not generic arcade UI layered on top of an organic game.
+
+### 1b. Screens — the studio's real, established overlay set, not invented fresh
+
+Grounded directly in what every shipped game already has
+(`menuOverlay`/`pauseOverlay`/`deathOverlay`/`settingsOverlay`/
+`achieveOverlay`/`shopOverlay`/`bugOverlay`, confirmed via
+`infall.html:183-289`) plus Iridescent Cosmology's own `levelOverlay`
+(the real precedent for a mid-run pick-one-of-several card screen,
+`iridescentcosmology.html:1961`) and `crashOverlay`
+(`iridescentcosmology.html:2079`, ported per §7.4):
+
+| Screen | Overlay id | Purpose |
+|---|---|---|
+| Title / Main Menu | `menuOverlay` | Logo, play button, best-run stats, links to Settings/Shop/Achievements |
+| In-game HUD | `hud` (always-on, not an overlay) | Health, Chitin count, elapsed/wave timer, equipped Relic icons |
+| Relic Draft | `relicOverlay` | Mid-run 1-of-3 pick — direct rename of the `levelOverlay` shape for this game's own currency (Relics, not a level-up pool) |
+| Pause | `pauseOverlay` | Standard |
+| Run End | `deathOverlay` | Score, Chitin earned, share card |
+| Settings | `settingsOverlay` | Standard |
+| Chitin Shop | `shopOverlay` | Cosmetics + relic-pool expansion (§2e/§5) |
+| Relic Codex | `codexOverlay` *(new — see §9)* | Browse every relic definition ever unlocked via §2e's relic-pool-expansion currency sink; the direct analog of IC's `evoLibraryOverlay` |
+| Achievements | `achieveOverlay` | Standard |
+| Crash Recovery | `crashOverlay` | Built in from kickoff per §7.4, not retrofitted |
+| Report Issue | `bugOverlay` | Standard |
+
+**Deliberately not scoped**: a mode-select screen (Swarmbreak is
+single-mode; nothing in §2 names a second mode, unlike Rykndu's real
+Gauntlet/Duel split) and a tutorial/onboarding overlay (no shipped game in
+this portfolio has one — every prior game teaches its one clear rule
+through play, per §14's own mechanics test, and Swarmbreak's rule is
+stated to be exactly as legible). Both named here so neither reads as an
+oversight if asked about later.
+
 ---
 
 ## 2. Core mechanics
@@ -708,3 +796,90 @@ appearing because a producer directive said "use capability." That
 distinction is what makes this document a real pillars doc and not five
 technique demos stapled together — checkable again, the same way, once a
 build exists.
+
+---
+
+## 9. Open items, named plainly — real gaps, not implied covered
+
+Per this studio's own "name the gap, don't smooth it over" standard, a
+direct check of this document against itself and against the studio's own
+established pillars-doc convention (`GAME_4_PILLARS.md`'s full shape, used
+as the rigor bar throughout) surfaces real items still open:
+
+**Already named as open earlier in this doc, restated here so they don't
+get lost in a 700-line document**:
+- §7.2: whether WebGL2 context-loss falls back to a *reduced* Canvas 2D
+  entity cap or a named, accepted low-fps degraded mode — not decided.
+- §7.6: whether the horde gets a minimum-separation/anti-stack rule — the
+  one choice that determines whether the spatial-hash grid keeps its real
+  benefit at Surge peak, or eats Infall's own "grid made it worse under
+  clustering" failure mode. Not decided.
+- §1a: whether any story beat surfaces as literal on-screen text, or
+  stays a pure design-language framing device (the portfolio default).
+  Not decided.
+- Resolved Conflict #1: IndexedDB vs. `localStorage` — flagged back to
+  the producer last turn, still awaiting a real answer either way.
+
+**Not previously named — found by re-checking this doc's own shape
+against `GAME_4_PILLARS.md`'s, the same cross-check discipline that
+caught the five Resolved Conflicts in the first place**:
+- **No control scheme.** Every prior pillars doc has one (Infall's §2
+  "Launch & Control" — keyboard/stick/touch inputs stated explicitly).
+  This doc never says how a player actually moves, aims, or fires a
+  Vector. A real, load-bearing gap for an action game specifically, not
+  a cosmetic omission.
+- **No accessibility section.** Infall's §3.6 (`prefers-reduced-motion`
+  scope, informational-vs-decorative split) has no Swarmbreak
+  counterpart. Given §3.5 already names a high design-taste risk around
+  the horde's shape-legibility, an accessibility pass (colorblind-safe
+  check on the five-tier hostile palette specifically, not just the
+  reserved-token RGB-distance table) is a real, not-yet-done item — the
+  five-tier palette in §3.4 has never been run through a colorblind
+  simulation, only a raw-RGB-distance check.
+- **No WCAG contrast-ratio check on the new UI accent.** §1a's new
+  `#5ce8e0` signal-cyan and the Chitin-gold HUD numbers were checked
+  against `color-language-audit`'s reserved-hue distance rule, but never
+  against `visual-art-director`'s own now-standing WCAG 2.2 AA
+  contrast-ratio sweep (the same live Playwright check that found and
+  fixed `--ink-soft` studio-wide in August). Real text-on-background pairs
+  don't exist yet since there's no build, but this should be the first
+  thing checked once one does, not assumed to pass because the hue
+  cleared a different test.
+- **No boss-fight design, despite bosses being named as a required
+  hand-authored entity type.** §3.3 states bosses need hand-authored
+  silhouettes; §3 (Surge set-pieces) implies scripted climax moments; but
+  no specialist pass actually designed what a boss *does* — a unique
+  attack pattern, a phase structure, anything beyond "a bigger enemy."
+  This is the single largest content gap in the document: every other
+  section has real mechanical depth, and the boss is currently a
+  placeholder category, not a designed encounter.
+- **No UI copy pass beyond mechanic names.** §1a's story gives Health,
+  Chitin, and the Relic Draft a real thematic frame, but no actual
+  HUD/menu label text is written (does the HUD say "Health" or something
+  thematic? What does the Relic Draft's title read?) — left fully open,
+  correctly deferred alongside the portal card per §1's own stated
+  reasoning, but worth being explicit that "deferred" and "decided" are
+  different things here.
+- **§7.7's test-plan is thinner than its own precedent.** Infall's §7
+  names the two genuinely novel pieces of logic needing explicit
+  adversarial coverage (pixel→pull-target resolution, fusion
+  candidate-pool edge cases). This doc's §7.7 only names test *file
+  names*, not which of Swarmbreak's own novel logic (the contagion
+  chain-jump queue under `MAX_CHAIN_JUMPS_PER_TICK` pressure, the 8-slot
+  relic economy's edge cases, the Surge-peak instance-budget ceiling)
+  needs the same explicit treatment. A real gap versus the rigor bar this
+  doc claims to match, not a nitpick.
+- **Every numeric constant in §2/§3/§6/§7 is Estimated, zero playtest
+  data** — stated honestly throughout the document already, restated here
+  as one consolidated fact rather than scattered across a dozen
+  individual disclaimers, per `difficulty-curve-calibration`'s own
+  reporting discipline.
+
+**What is genuinely NOT a gap, stated so it isn't re-litigated**: the
+five Resolved Conflicts already caught and closed the cross-role
+consistency risks this kind of blind-consultation process exists to
+catch (vocabulary, entity-count budget, IndexedDB, infected-state color,
+the plague-green collision) — those are closed, not open. The capability
+sign-off table above is a real, checkable commitment, not aspirational.
+This section is the honest remainder, not a signal the rest of the
+document is shaky.
