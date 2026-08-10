@@ -57,11 +57,13 @@ and IndexedDB becomes a genuine Trial at that point, inheriting
 `wonderland/persistence.js`'s proven single-owner-module/fail-loud/
 namespaced-key pattern rather than being reinvented ad hoc.
 
-**Producer note**: this is the one resolution in this document that
-directly overrides part of the original brief. If a real replay/run-history
-feature is wanted in Game 8's first ship (not deferred), that changes this
-call back to Adopt — flagging this explicitly rather than deciding it
-unilaterally against a stated producer preference.
+**Confirmed by producer decision, 2026-08-10**: `localStorage`, not
+IndexedDB, for Game 8's initial ship. No replay/run-history feature is
+in scope for first ship — the trigger condition above that would flip
+this to Adopt is explicitly not being exercised now. Left in place, not
+deleted, as the real record of why the call was made and what would
+change it, per this studio's own "name the gap, don't smooth it over"
+convention.
 
 ### 2. Peak entity count — Game Designer's real numbers vs. Engineer's estimate
 
@@ -970,13 +972,15 @@ recommendations — no longer open**:
   of this decision, not yet Tier-2/3 — still needs real playtest data per
   `SWARMBREAK_QUALITY_PLAN.md`'s calibration gate.
 
+**Also resolved, 2026-08-10**: Resolved Conflict #1 (IndexedDB vs.
+`localStorage`) — confirmed `localStorage` for initial ship, no
+replay/run-history feature in scope. See §1's own updated note.
+
 **Still open, restated here so they don't get lost in a 900+-line
 document**:
 - §1a: whether any story beat surfaces as literal on-screen text, or
   stays a pure design-language framing device (the portfolio default).
   Not decided.
-- Resolved Conflict #1: IndexedDB vs. `localStorage` — flagged back to
-  the producer last turn, still awaiting a real answer either way.
 
 **Not previously named — found by re-checking this doc's own shape
 against `GAME_4_PILLARS.md`'s, the same cross-check discipline that
