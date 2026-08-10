@@ -207,7 +207,7 @@ on paper.
 | WebGL2 batched instancing, `MAX_INSTANCES=4608` | **Trial** (not Adopt — the technique is Adopt studio-wide, but this is its first deployment on the *combat-critical horde itself*, not decorative particles) | Real Playwright frame-time capture at actual Surge peak, plus the still-unmeasured CPU-side simulation cost |
 | IndexedDB | **Hold** — correct, deliberate, already stated in-doc | A real per-run replay/timeline feature entering scope; success with `localStorage` alone never flips this |
 | Dual-technique audio synthesis | **Trial** — both techniques are studio firsts | The delay-time bug-guard implemented and tested (not just documented); the "describe what's happening from music alone" test actually run |
-| Crash-only recovery from kickoff | **Adopt** — correctly, a retrofit of an already-shipped, already-fixed-once pattern | Just confirm `tests/game8-crash-recovery.js` exists, passes, and the full-state-reset (not partial) behavior carries over correctly |
+| Crash-only recovery from kickoff | **Adopt** — correctly, a retrofit of an already-shipped, already-fixed-once pattern | Just confirm `tests/swarmbreak-crash-recovery.js` exists, passes, and the full-state-reset (not partial) behavior carries over correctly |
 | Spatial-hash grid | Near-**Adopt** (ported pattern) | — |
 | Anti-stack soft steering force | **Trial** — new, self-named risk of quietly breaking the core mechanic if miscalibrated | The already-specified A/B chain-length-distribution test actually run, not just planned |
 

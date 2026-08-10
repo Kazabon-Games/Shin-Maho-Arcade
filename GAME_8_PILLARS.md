@@ -799,6 +799,16 @@ at `comboMult≈1.7` (6,800) + three Surge chains (26,400) →
 
 ## 7. Engineering notes
 
+**File naming, stated explicitly so a next session doesn't have to
+infer it**: `swarmbreak.html` at repo root (matching every shipped
+game's own lowercase-title-as-filename convention — `iridescentcosmology.html`,
+`sigilchain.html`, `wardfall.html`, `infall.html`, `runeshatter.html`),
+`swarmbreak-sw.js` + `swarmbreak.webmanifest` per §8's PWA scope,
+`tests/swarmbreak-adversarial.js` + the two named feature suites below
+— never `game8-*` or `game8.html`. This doc previously used `game8-*`
+test-file names inconsistently with that convention in a few places;
+corrected throughout as of this pass.
+
 ### 7.1 WebGL2 scope — exactly which entities render batched, from day one
 
 Inherits Iridescent Cosmology's own real split, not a new invention:
@@ -838,7 +848,7 @@ Port `iridescentcosmology.html:2868-2887` directly: capture
 function rebuilding every GL resource from scratch, called identically
 from both `init()` and the `restored` listener. Port the
 `_test.simulateContextLoss()`/`simulateContextRestore()` hooks too, so
-`tests/game8-fxrenderer.js` (mirroring `iridescentcosmology-fxrenderer.js`'s
+`tests/swarmbreak-fxrenderer.js` (mirroring `iridescentcosmology-fxrenderer.js`'s
 naming) can actually exercise this path in Playwright, not trust it
 untested.
 
@@ -905,7 +915,7 @@ matching the studio's mid-to-high range. Plus `FxRenderer` and `Grid`
 (§7.6, independently justified below) = **13 total** — above Wardfall's
 12, just under Game 1's 15. Checked against the three-trigger pattern:
 module-count pressure is real (one trigger, borderline); real git history
-and a persistent `tests/game8-adversarial.js` from initial scope (both
+and a persistent `tests/swarmbreak-adversarial.js` from initial scope (both
 mandated by current studio convention) keep the other two triggers absent.
 One of three doesn't cross the stated architecture-pass threshold — but
 it's the axis to watch, the same flag raised for Wardfall entering Game 4.
@@ -961,9 +971,9 @@ real code existed.
 
 ### 7.7 Test coverage, built in from initial scope
 
-`tests/game8-adversarial.js` written as part of initial scope, matching
+`tests/swarmbreak-adversarial.js` written as part of initial scope, matching
 Infall/Wardfall's precedent, not Iridescent Cosmology's or Sigil Chain's
-original gap. `tests/game8-fxrenderer.js` and `tests/game8-crash-recovery.js`
+original gap. `tests/swarmbreak-fxrenderer.js` and `tests/swarmbreak-crash-recovery.js`
 (mirroring `iridescentcosmology-fxrenderer.js`/`-crash-recovery.js`'s real,
 shipped shape) from day one, not retrofitted after the fact — directly
 answering `ENGINEERING_TEAM_UPGRADE_2026-08.md`'s own top-named open gap.
