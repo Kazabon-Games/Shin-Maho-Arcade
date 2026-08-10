@@ -381,17 +381,29 @@ below) is dangerous or trivial can actually be evaluated until this
 number exists. Survival-tag relic magnitude (§2c names the category, no
 number) is the same gap one level down.
 
-**Not resolved here** — this needs a joint Engineer/Game Designer pass,
-not a unilateral pick, per `difficulty-curve-calibration`'s own process
-(state the target before the number, don't back into one). The only
-internal precedent this studio has is Game 1's shipped `100 +
-vitality×15` (`iridescentcosmology.html:3294`) — usable as a real
-Estimated starting point for calibration, explicitly not as a decision:
-Swarmbreak's own base HP has never been chosen, only borrowed as a
-placeholder for the numbers already worked in §2g below. **This is now
-the single highest-leverage open item in this document** — every
-Estimated damage number elsewhere (§2a, §2g, §6) is unverifiable against
-a real pool until this is set.
+**Resolved by producer decision (2026-08-10): `PLAYER_BASE_HP = 100`,
+flat, no per-run scaling.** Deliberately simpler than Game 1's `100 +
+vitality×15` (`iridescentcosmology.html:3294`) — Swarmbreak's relic
+system (§2c), not a leveling stat, is the intended power curve, so HP
+itself stays a fixed denominator every other number reads against,
+consistent with the "one clear rule" discipline §14 already holds the
+rest of the doc to. **Damage numbers scale as percentages of this pool**,
+not as independent flat values — the convention going forward for any
+new damage source: state it as "≈X% of `PLAYER_BASE_HP`," the same way
+§2g's worked numbers already (coincidentally) did against the borrowed
+placeholder below. This closes what was the single highest-leverage open
+item in this document — every Estimated damage number elsewhere (§2a,
+§2g, §6) now has a real pool to be checked against, though the numbers
+themselves stay Tier-0/Estimated (`SWARMBREAK_QUALITY_PLAN.md`'s
+calibration gate) until a real playtest measures them.
+
+**Survival-tag relic magnitude** (§2c names the category, no number) is
+the immediate next number this unblocks — Estimated starting point:
+each Survival-tag rank adds `+15 max HP` (mirroring Game 1's own
+per-rank increment exactly, `iridescentcosmology.html:3294`), so a full
+3-slot/rank-3 Survival build reaches `100 + 9×15 = 235` max HP — real
+enough to size against Feedback Pulse and infection DoT below, still
+Tier-0 until measured.
 
 ### 2g. Boss encounter — "Feedback Pulse," an extension of the core rule, not a new one
 
@@ -444,14 +456,17 @@ does not read, stated explicitly:
 - **Should interact with Survival-tag relics** exactly like any other
   damage source — the intended counterplay axis, not a bug.
 
-**Worked numbers, Estimated, explicitly contingent on §2f's still-open
-HP number**: against the borrowed 100-HP placeholder, max infection DoT
-(49.3) is ≈49% of the pool; a conservative starting `FEEDBACK_BASE=8`,
-`hop cap=6` → 48 flat damage, ≈48% of the pool in one hit — threatens
-without guaranteeing a kill for an average-Survival build. Deliberately
-starting conservative: walking a punishing number down after a bad-feeling
-playtest is cheaper than un-killing players during it. **These numbers are
-placeholders on a placeholder** — real once §2f resolves, not before.
+**Worked numbers, Estimated, now real against §2f's resolved
+`PLAYER_BASE_HP=100`**: max infection DoT (49.3) is ≈49% of the pool; a
+conservative starting `FEEDBACK_BASE=8`, `hop cap=6` → 48 flat damage,
+≈48% of the pool in one hit — threatens without guaranteeing a kill for a
+no-Survival build, and drops to ≈20% against the 235-HP full-Survival
+build named in §2f. Deliberately starting conservative: walking a
+punishing number down after a bad-feeling playtest is cheaper than
+un-killing players during it. **No longer placeholders on a placeholder**
+— Tier-1 (Estimated, with a stated intended outcome) per
+`SWARMBREAK_QUALITY_PLAN.md`'s calibration gate; promotion to Tier-2/3
+still needs real playtest data.
 
 ---
 
@@ -946,15 +961,14 @@ recommendations — no longer open**:
   determines whether the spatial-hash grid keeps its real benefit at Surge
   peak is made, with a named A/B verification test to confirm it in code.
 
-**The single highest-leverage open item, found this pass — see §2f**:
-- **Player base HP is undefined anywhere in this document.** Every damage
-  number in the doc (Infection DoT, the new Feedback Pulse boss damage) is
-  a rate with no stated pool to check it against — structurally the same
-  root cause as the original Drain-mechanic incident this studio's own
-  catalog already names. Not resolved unilaterally here; needs a joint
-  Engineer/Game Designer pass. This blocks meaningfully evaluating every
-  other balance number in the document, which is why it's listed first
-  even though it was found last.
+**Resolved by producer decision, 2026-08-10 — see §2f**:
+- **Player base HP** — `PLAYER_BASE_HP = 100`, flat. Was the single
+  highest-leverage open item in the document (every damage-rate number
+  had no pool to check against); now closed, with Survival-tag relic
+  magnitude (`+15 HP`/rank) resolved alongside it as the next number down.
+  Every Estimated number in §2a/§2g/§6 is Tier-1 (real target stated) as
+  of this decision, not yet Tier-2/3 — still needs real playtest data per
+  `SWARMBREAK_QUALITY_PLAN.md`'s calibration gate.
 
 **Still open, restated here so they don't get lost in a 900+-line
 document**:
