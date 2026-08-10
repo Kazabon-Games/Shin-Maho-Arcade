@@ -46,7 +46,10 @@ short on purpose.
   breaking that pattern instead of repeating it a third time. No
   equivalent exists yet for
   Games 1–2 (`Studio-Internal-`'s handover docs cover those retroactively
-  instead).
+  instead). `GAME_8_PILLARS.md` also has a companion,
+  `SWARMBREAK_QUALITY_PLAN.md` — a full six-team quality/robustness
+  consolidation report (verification methodology per role, not a second
+  design doc); no other game has one yet.
 - **`tests/`** — one Playwright suite per game (`<game>-adversarial.js`),
   plus narrower feature suites (`<game>-audio.js`, `rig-*.js` for Rykndu).
   No unit-test framework — every suite drives a real served page via

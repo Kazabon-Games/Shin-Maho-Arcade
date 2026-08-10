@@ -308,13 +308,19 @@ itself surfaced, not a pre-existing design decision.
 
 ```
 dmgMult(r) = 1 + min(r,5)×0.12 + max(0,r-5)×0.06   // r = summed Damage-tag relic ranks
-                                                       // REUSED VERBATIM from Iridescent
+                                                       // curve reused from Iridescent
                                                        // Cosmology's shipped dmgMult()
                                                        // (iridescentcosmology.html:3413-3415)
-                                                       // — not a new curve invented here
 ```
-Worst case, all 8 slots Damage-tag at rank 3 (`r=24`): `dmgMult = 1 +
-5×0.12 + 19×0.06 = 2.74×`.
+**Correction, caught by the Game Designer's own recomputation, not
+assumed away**: this was originally cited as "reused verbatim" — it
+isn't, and the doc shouldn't claim it is. Game 1's real shipped function
+carries a second factor, `× (1 + Persist.data.upgrades.output×0.08)`,
+Game 1's permanent Grimoire-shop bonus. Swarmbreak correctly excludes
+that factor — consistent with §5's "no gameplay-affecting unlocks"
+decision — but the curve above is the *base* formula only, deliberately
+missing one term Game 1 has, not a verbatim port. Worst case, all 8 slots
+Damage-tag at rank 3 (`r=24`): `dmgMult = 1 + 5×0.12 + 19×0.06 = 2.74×`.
 
 ### 2c. Relic draft — replacing continuous leveling
 
@@ -359,6 +365,93 @@ expansion** — unlocking new relic *definitions* into the draft pool, never
 buffing an existing relic's numbers, never granting starting stats. This
 gives real roguelike-deckbuilder replay variety (a wider pool changes what
 builds are *possible*) without ever reopening §6's proof.
+
+### 2f. Player HP — a real gap, found by independent recomputation, blocking everything else
+
+**Found during the quality-consolidation pass (2026-08-09), not present
+in the original consultation**: this document states real infection-DoT
+numbers (18–49.3 damage over 3s, §2a) and a real compound-multiplier
+ceiling (§6), but **never once states a player base-HP value anywhere** —
+confirmed by grep, not assumed. That's not a cosmetic omission: every
+damage number in this document is a rate without a denominator, the exact
+shape of the original Drain incident's own root cause ("358hp/sec against
+a ~200-300hp pool" — the pool mattered as much as the rate). Nothing about
+whether infection DoT, contact damage, or the new Feedback Pulse (§2g,
+below) is dangerous or trivial can actually be evaluated until this
+number exists. Survival-tag relic magnitude (§2c names the category, no
+number) is the same gap one level down.
+
+**Not resolved here** — this needs a joint Engineer/Game Designer pass,
+not a unilateral pick, per `difficulty-curve-calibration`'s own process
+(state the target before the number, don't back into one). The only
+internal precedent this studio has is Game 1's shipped `100 +
+vitality×15` (`iridescentcosmology.html:3294`) — usable as a real
+Estimated starting point for calibration, explicitly not as a decision:
+Swarmbreak's own base HP has never been chosen, only borrowed as a
+placeholder for the numbers already worked in §2g below. **This is now
+the single highest-leverage open item in this document** — every
+Estimated damage number elsewhere (§2a, §2g, §6) is unverifiable against
+a real pool until this is set.
+
+### 2g. Boss encounter — "Feedback Pulse," an extension of the core rule, not a new one
+
+Closes §9's own previously-named gap ("no boss-fight design despite
+bosses being a required entity type") with a real proposal, not just an
+acknowledgment. Per §14's mechanics test, the boss should extend the
+game's one clear rule, not introduce a second one.
+
+**The boss is not immune to Infection** — a Plague Vector applies it
+normally, and a boss that dies while infected attempts a normal
+death-jump against nearby adds, same rule as every other entity.
+Carving out boss-immunity would be exactly the kind of unrelated
+exception §14 warns against, with no design reason behind it.
+
+**The boss's one signature ability reads the existing chain-adjacency
+graph rather than writing a new system**: on a timer, it finds the
+nearest currently-infected enemy within `CONTAGION_RADIUS_MAX` (120px,
+the existing clamp — no new constant) of itself, walks that enemy's live
+infection chain toward the player up to a capped hop count, and — if the
+walk reaches the player — fires, with damage scaling by **hops found**,
+not by anything the player directly controls. No infected enemy near the
+boss means the pulse does nothing. This inverts the game's own core
+incentive (get dense, get infected, chain for score) into a real
+liability near a boss specifically — the same rule, a new context, not a
+new mechanic.
+
+**Phase structure as one continuous function of `healthMargin`** (reusing
+the audio team's own signal, §4), not three hand-scripted, unrelated
+phases — a low-HP boss's pulse reaches farther and hits harder, one
+underlying value driving the escalation.
+
+**Compounding-multiplier check, run preemptively rather than discovered
+in playtest** — every multiplier Feedback Pulse's damage formula does and
+does not read, stated explicitly:
+- `Feedback Pulse damage = FEEDBACK_BASE × min(hops_found, FEEDBACK_HOP_CAP)`.
+- **Must NOT read `dmgMult()`** — a player stacking Damage-tag relics for
+  their own offense would otherwise simultaneously buff the boss's
+  counter-attack against them, the same "two reasonable-looking
+  multipliers on the same stat" shape already closed once in §2a.
+- **Must NOT read `comboMult()` or route through `CHAIN_KILL_BASE`** —
+  this is a damage mechanic, not a scoring one; the word "chain" being
+  shared by both systems is a real naming-collision risk for whoever
+  implements this, flagged explicitly so it isn't wired into the score
+  pipeline by accident and reopen §6's proof.
+- **Should read `CONTAGION_RADIUS_MAX`** (reused, not duplicated) and its
+  own small, boss-specific hop cap — distinct from `MAX_CHAIN_JUMPS_PER_TICK`,
+  which caps a per-tick real-time cascade across the whole horde; this is
+  one bounded query fired occasionally and needs a much smaller cap, not
+  the same 400.
+- **Should interact with Survival-tag relics** exactly like any other
+  damage source — the intended counterplay axis, not a bug.
+
+**Worked numbers, Estimated, explicitly contingent on §2f's still-open
+HP number**: against the borrowed 100-HP placeholder, max infection DoT
+(49.3) is ≈49% of the pool; a conservative starting `FEEDBACK_BASE=8`,
+`hop cap=6` → 48 flat damage, ≈48% of the pool in one hit — threatens
+without guaranteeing a kill for an average-Survival build. Deliberately
+starting conservative: walking a punishing number down after a bad-feeling
+playtest is cheaper than un-killing players during it. **These numbers are
+placeholders on a placeholder** — real once §2f resolves, not before.
 
 ---
 
@@ -677,10 +770,25 @@ cosmetic particles/gems. If Swarmbreak's batched path covers the horde
 itself, a context-loss event on a low-end device pushes the *entire enemy
 population* onto the exact Canvas-2D path measured at 176ms avg/1,283ms
 worst under comparable load — not cosmetic degradation, potentially
-unplayable. **Open decision for implementation**: either the Canvas 2D
-fallback carries its own reduced entity cap, or the game accepts and
-names a known low-fps degraded mode on WebGL2-unavailable devices. Not
-resolved here.
+unplayable.
+
+**Resolved, per the Engineer's own quality-pass recommendation**: the
+Canvas 2D fallback carries its own reduced entity cap — a degraded mode,
+named as degraded, not a silent frame-rate collapse. Starting hypothesis
+`FALLBACK_CAP ≈ 320`, taken directly from Iridescent Cosmology's own
+measured Canvas 2D ceiling (176ms avg at that population, the same file
+§7.2 already cites) rather than invented fresh. This is explicitly a
+starting hypothesis, not a locked number: Swarmbreak's per-entity draw
+cost is not Game 1's (different shape budget, `dmgMult`-driven visual
+states, Infection-pulse overlay per §3.4) — the real Milestone-C
+profiling pass (§ below, capability sign-off) must confirm or revise
+`FALLBACK_CAP` against Swarmbreak's own measured per-entity cost before
+this ships, the same "measure, don't assume" discipline `CELL` sizing in
+§7.6 is held to. When the cap is exceeded, excess enemies past
+`FALLBACK_CAP` stay in simulation (still contagion-eligible, still
+dealing/taking damage) but skip their own draw call — a rendering
+truncation, not a gameplay one, so a low-end player never sees invisible
+damage sources.
 
 ### 7.3 Persistence — `localStorage` + `SCHEMA_VERSION`
 
@@ -742,15 +850,36 @@ genre's technique. **The real caveat, not glossed over**: Infall's own
 finding that a grid can make things *worse* under clustering (bucket
 pruning erodes when everything converges into a few cells) is a real risk
 here too — Swarmbreak's whole premise is deliberately dense clustering,
-exactly the condition that erodes a grid's benefit. Whether the horde gets
-a minimum-separation/anti-stack rule is the one design choice that
-actually determines whether the grid keeps its pruning benefit at Surge
-peak — an open question for implementation, not resolved here. **No
-fabricated profiling numbers**: no prototype exists yet; the correct next
-step is porting Game 1's `Grid` implementation as a starting point, then
-measuring brute-force vs. grid at real peak numbers before finalizing
-`CELL` size, the same methodology Infall's own team used once real code
-existed.
+exactly the condition that erodes a grid's benefit.
+
+**Resolved, per the Engineer's own quality-pass recommendation**: the
+horde gets a minimum-separation/anti-stack rule — a **soft steering
+force** (boids-style separation: each enemy nudged away from neighbors
+within `SEPARATION_RADIUS`, proportional to overlap, blended with its
+existing seek-player steering), not a hard positional clamp. A hard
+clamp fights the player's own movement and reads as rubber-banding; a
+soft force degrades gracefully under the exact peak-density conditions
+the caveat above names. **The one constraint this force must respect,
+stated so it can't be gotten wrong silently**: `SEPARATION_RADIUS` must
+stay measurably smaller than `CONTAGION_RADIUS_BASE = 42px`. If
+separation force ever pushed the *typical* inter-enemy gap past 42px, it
+would suppress Infection chain formation by construction — the anti-stack
+fix would quietly break the game's own core mechanic. Starting value
+`SEPARATION_RADIUS ≈ 18px` (well under the 42px floor, leaves room for
+`CONTAGION_RADIUS_MAX`'s relic-scaled 120px to still connect separated
+enemies). **Verification the Engineer specifically asked for**: an A/B
+chain-length-distribution test — run identical horde-density scenarios
+with the separation force on vs. off, histogram the resulting Infection
+chain lengths, confirm the "on" distribution isn't measurably shifted
+down from "off." If it is, `SEPARATION_RADIUS` is too large and must
+shrink, not `CONTAGION_RADIUS_BASE` grow to compensate. This closes the
+open design choice; `CELL` sizing itself still waits on real profiling
+once code exists, per the "no fabricated numbers" discipline below.
+**No fabricated profiling numbers**: no prototype exists yet; the correct
+next step is porting Game 1's `Grid` implementation as a starting point,
+then measuring brute-force vs. grid at real peak numbers before
+finalizing `CELL` size, the same methodology Infall's own team used once
+real code existed.
 
 ### 7.7 Test coverage, built in from initial scope
 
@@ -806,14 +935,29 @@ direct check of this document against itself and against the studio's own
 established pillars-doc convention (`GAME_4_PILLARS.md`'s full shape, used
 as the rigor bar throughout) surfaces real items still open:
 
-**Already named as open earlier in this doc, restated here so they don't
-get lost in a 700-line document**:
-- §7.2: whether WebGL2 context-loss falls back to a *reduced* Canvas 2D
-  entity cap or a named, accepted low-fps degraded mode — not decided.
-- §7.6: whether the horde gets a minimum-separation/anti-stack rule — the
-  one choice that determines whether the spatial-hash grid keeps its real
-  benefit at Surge peak, or eats Infall's own "grid made it worse under
-  clustering" failure mode. Not decided.
+**Resolved since first written, per the Engineer's quality-pass
+recommendations — no longer open**:
+- §7.2: WebGL2 context-loss now falls back to a *reduced* Canvas 2D
+  entity cap (`FALLBACK_CAP ≈ 320`, starting hypothesis pending real
+  Milestone-C profiling), not a silent degraded mode.
+- §7.6: the horde now has a minimum-separation/anti-stack rule (a soft
+  boids-style steering force, `SEPARATION_RADIUS ≈ 18px`, held under
+  `CONTAGION_RADIUS_BASE=42px` by explicit constraint) — the choice that
+  determines whether the spatial-hash grid keeps its real benefit at Surge
+  peak is made, with a named A/B verification test to confirm it in code.
+
+**The single highest-leverage open item, found this pass — see §2f**:
+- **Player base HP is undefined anywhere in this document.** Every damage
+  number in the doc (Infection DoT, the new Feedback Pulse boss damage) is
+  a rate with no stated pool to check it against — structurally the same
+  root cause as the original Drain-mechanic incident this studio's own
+  catalog already names. Not resolved unilaterally here; needs a joint
+  Engineer/Game Designer pass. This blocks meaningfully evaluating every
+  other balance number in the document, which is why it's listed first
+  even though it was found last.
+
+**Still open, restated here so they don't get lost in a 900+-line
+document**:
 - §1a: whether any story beat surfaces as literal on-screen text, or
   stays a pure design-language framing device (the portfolio default).
   Not decided.
@@ -845,14 +989,14 @@ caught the five Resolved Conflicts in the first place**:
   don't exist yet since there's no build, but this should be the first
   thing checked once one does, not assumed to pass because the hue
   cleared a different test.
-- **No boss-fight design, despite bosses being named as a required
-  hand-authored entity type.** §3.3 states bosses need hand-authored
-  silhouettes; §3 (Surge set-pieces) implies scripted climax moments; but
-  no specialist pass actually designed what a boss *does* — a unique
-  attack pattern, a phase structure, anything beyond "a bigger enemy."
-  This is the single largest content gap in the document: every other
-  section has real mechanical depth, and the boss is currently a
-  placeholder category, not a designed encounter.
+- **Boss-fight design — now partially closed by §2g ("Feedback Pulse").**
+  A real proposal exists: reads the existing chain-adjacency graph,
+  damage scales by hop count found, phase structure as a continuous
+  function of `healthMargin`. What's still open: it's a single boss
+  concept, not a roster (no second/third boss archetype exists yet, and
+  §3 implies multiple Surge climax moments across a run), and every
+  number in §2g is explicitly marked contingent on §2f resolving first —
+  so "partially closed," not closed.
 - **No UI copy pass beyond mechanic names.** §1a's story gives Health,
   Chitin, and the Relic Draft a real thematic frame, but no actual
   HUD/menu label text is written (does the HUD say "Health" or something
@@ -874,6 +1018,13 @@ caught the five Resolved Conflicts in the first place**:
   as one consolidated fact rather than scattered across a dozen
   individual disclaimers, per `difficulty-curve-calibration`'s own
   reporting discipline.
+
+**See `SWARMBREAK_QUALITY_PLAN.md`** for the full cross-team
+quality/robustness consolidation report — six specialist verification
+plans (Game Designer, Visual/Art, Audio, Engineer, Capability Auditor,
+QA/Playtest), each stating a pre-registered, checkable bar for its domain
+before any implementation exists, and a bounded, honest answer to "does
+this surpass what's typical for browser gaming" per domain.
 
 **What is genuinely NOT a gap, stated so it isn't re-litigated**: the
 five Resolved Conflicts already caught and closed the cross-role
