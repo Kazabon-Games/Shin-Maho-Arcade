@@ -470,6 +470,67 @@ un-killing players during it. **No longer placeholders on a placeholder**
 `SWARMBREAK_QUALITY_PLAN.md`'s calibration gate; promotion to Tier-2/3
 still needs real playtest data.
 
+### 2h. Launch & Control — closes §9's "no control scheme" gap
+
+Per producer decision, 2026-08-10: **movement + fully automatic
+firing, no dash/active-ability button.** Vectors auto-target the
+nearest enemy (Plague Vectors prioritizing an uninfected target, so
+chains start where they're useful) exactly as §1 already states — this
+section fixes how movement input actually reaches the game, not a new
+mechanic.
+
+**Desktop**: WASD/arrow keys, ported directly from Iridescent
+Cosmology's own keyboard handling (`iridescentcosmology.html:2347-2374`)
+— no reinvention needed, same digital 8-direction input shape.
+
+**Gamepad**: left-stick movement, polled every frame (the Gamepad API
+has no persistent event stream for stick position, only a snapshot read
+— `iridescentcosmology.html:2406-2426` already solves this correctly).
+Input-source precedence follows IC's own rule: gamepad, touch, and
+keyboard don't fight each other — whichever produced the most recent
+input wins for that frame.
+
+**Touch — explicitly NOT Iridescent Cosmology's fixed bottom-left
+joystick.** Real player feedback (left-handed players) named IC's
+fixed-position joystick as a genuine ergonomic problem — a joystick
+anchored to one screen corner structurally favors one hand. Swarmbreak
+uses a **dynamic/floating joystick** instead: touching down anywhere
+inside the defined play area spawns the joystick base centered at that
+exact touch point; dragging from there (clamped to a fixed max radius,
+same magnitude-clamp math IC's `joyKnob` already uses, just recentered
+per-touch rather than fixed) drives movement; releasing hides it and
+clears movement input to zero, ready to reappear wherever the next touch
+lands. This is genre-standard for exactly this reason (most mobile
+twin-stick/survivor games use a floating base) and is hand-agnostic by
+construction — there is no "left" or "right" side.
+
+**Implementation notes, named now so they aren't rediscovered mid-build**:
+- **Play area vs. HUD boundary must be explicit.** The joystick may only
+  spawn on a touch that starts outside every live HUD hit-region (relic
+  draft cards, pause button, any future on-screen buttons) — reuse
+  whatever hit-testing the HUD's own buttons already need for touch
+  targets, don't duplicate a second boundary system.
+- **Track by touch identifier, not "the first touch."** A joystick drag
+  in progress must ignore a second, unrelated touch landing elsewhere
+  (a HUD tap mid-move) — bind the active joystick to `touches[i].identifier`
+  from `touchstart` through its matching `touchend`/`touchcancel`, the
+  same discipline this studio's multi-touch bugs have always traced back
+  to skipping.
+- **Edge case: touch starting very close to a screen edge.** The
+  functional offset (knob position minus anchor) is what drives
+  movement, not the base's on-screen position — so a joystick anchored
+  near an edge still works correctly even if its visual base partially
+  renders off-canvas. No special-case clamping needed for correctness,
+  only worth a real device check for whether it looks acceptable.
+- **This is a genuinely new UI pattern for this studio** — no existing
+  game has a floating joystick to port verbatim (only IC's fixed one
+  exists as precedent for the underlying drag-math). Build it as its
+  own small module, not a patch on IC's `#joystick` code, since the
+  spawn-position logic has no fixed-position equivalent to inherit from.
+
+Closes the control-scheme gap named in §9 as the one genuine blocker
+found against the studio's own pillars-doc convention.
+
 ---
 
 ## 3. Visual identity
@@ -976,6 +1037,16 @@ recommendations — no longer open**:
 `localStorage`) — confirmed `localStorage` for initial ship, no
 replay/run-history feature in scope. See §1's own updated note.
 
+**Control scheme — resolved, 2026-08-10, see new §2h**: movement
+(WASD/arrows/left-stick, ported from IC) + fully automatic firing, no
+dash. Touch input deliberately does NOT reuse IC's fixed bottom-left
+joystick — real left-handed-player feedback on IC named that as a
+genuine ergonomic problem, so Swarmbreak gets a dynamic/floating
+joystick instead (spawns wherever the play area is touched), a
+genuinely new UI pattern for this studio, not a port. This was the one
+item flagged as a real, load-bearing blocker rather than a deferrable
+gap — now closed.
+
 **Still open, restated here so they don't get lost in a 900+-line
 document**:
 - §1a: whether any story beat surfaces as literal on-screen text, or
@@ -984,12 +1055,8 @@ document**:
 
 **Not previously named — found by re-checking this doc's own shape
 against `GAME_4_PILLARS.md`'s, the same cross-check discipline that
-caught the five Resolved Conflicts in the first place**:
-- **No control scheme.** Every prior pillars doc has one (Infall's §2
-  "Launch & Control" — keyboard/stick/touch inputs stated explicitly).
-  This doc never says how a player actually moves, aims, or fires a
-  Vector. A real, load-bearing gap for an action game specifically, not
-  a cosmetic omission.
+caught the five Resolved Conflicts in the first place** (control scheme
+was in this category too — now resolved above, see §2h):
 - **No accessibility section.** Infall's §3.6 (`prefers-reduced-motion`
   scope, informational-vs-decorative split) has no Swarmbreak
   counterpart. Given §3.5 already names a high design-taste risk around
