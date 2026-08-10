@@ -22,17 +22,22 @@ against it.
 
 ---
 
-## The one blocker that touches every team's plan
+## The blocker that touched every team's plan — now resolved
 
-**Player base HP is undefined anywhere in `GAME_8_PILLARS.md`** — first
-surfaced as §2f during this synthesis pass (see `GAME_8_PILLARS.md`
-§2f), and independently re-confirmed by the Game Designer, Engineer, and
-Capability Auditor below without cross-talk. Every damage-rate number in
-the document (`INFECTION_DPS_BASE=6`, Feedback Pulse's `FEEDBACK_BASE=8`)
-is unverifiable as "balanced" against a pool that doesn't exist yet.
-This isn't being resolved unilaterally in this report — it's named here,
-plainly, as the single item that blocks the largest number of downstream
-claims across the most teams. Fix it first.
+**Player base HP was undefined anywhere in `GAME_8_PILLARS.md`** — first
+surfaced as §2f during this synthesis pass, and independently
+re-confirmed by the Game Designer, Engineer, and Capability Auditor
+below without cross-talk. Every damage-rate number in the document
+(`INFECTION_DPS_BASE=6`, Feedback Pulse's `FEEDBACK_BASE=8`) was
+unverifiable as "balanced" against a pool that didn't exist yet.
+
+**Resolved by producer decision, 2026-08-10: `PLAYER_BASE_HP = 100`**,
+flat, with Survival-tag relic magnitude set alongside it (`+15 HP`/rank,
+per §2f). This does not promote any number below past Tier 1 in the Game
+Designer's calibration gate — a stated target still isn't measured
+data — but every plan in this report that was gated on "the input
+doesn't exist yet" can now proceed to real Tier-2 measurement once a
+build exists.
 
 ---
 
