@@ -963,6 +963,23 @@ own Initiative cost (reusing the existing 1:1 Life-damage-per-Initiative
 convention already established for Inflict), stacked on top of the
 card's normal effect, not a replacement.
 
+**⚠ Bug found and fixed by the pre-alpha worldbreaker pass:** this check
+used to read `cardCategory(card) === 'aggressive'`, which is **never**
+true for an Ultimate card — `cardCategory()` always returns `'ultimate'`
+regardless of the card's actual effects, the exact gap `isAggressiveFlavored()`
+was built to close for Defensive interception several passes ago. An
+Aggressive-flavored Ultimate (`ult-devastate`, `ult-nhul-particul`,
+`ult-eviscerate`) was silently skipping this bonus entirely — verified
+live before the fix (`ult-devastate` dropped a target's Life by exactly
+50, Inflict alone, with the bonus open; should have been 100) and
+reconfirmed after. Fixed to `isAggressiveFlavored(card)`. The same audit
+found a second instance of the identical bug: `finalizeCast`'s Wonderland
+`aggInTurn` counter (which Rykndu's own `agg-abilities-in-turn: 3`
+activation condition reads) had the same `cardCategory(card) ===
+'aggressive'` check and was silently undercounting an Aggressive-flavored
+Ultimate play the same way — also fixed to `isAggressiveFlavored(card)`.
+Both are now covered by `tests/monolith-worldbreaker-arena.js`'s Stage 1.
+
 ## Seeded Canon Characters (GDD §12)
 
 Arena's AI Squad (`PRESET_AI_SQUAD`) is the three personal Tulpa of

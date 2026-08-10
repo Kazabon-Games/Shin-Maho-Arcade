@@ -296,8 +296,34 @@ short on purpose.
   `confirm()` dialog. Verified with a new
   `test-ai-plays-or-ultimate-defensive.js` (14/14, a real AI-Squad battle,
   not Local Pass-and-Play) — 214 regression checks green in total after
-  this pass. Still ahead on the "close every gap" list: Refine's
-  ally-targeting half and Rhyzl Step.
+  this pass. With every buildable gap on the original list closed, the
+  user asked for a pre-alpha `worldbreaker` pass — adversarial, UI-driven
+  testing aimed at INTERACTIONS between mechanics that individually pass
+  their own feature tests but were never stress-tested together, the
+  actual risk after a session this dense with feature passes. Two new
+  committed suites, `tests/monolith-worldbreaker-arena.js` (37/37) and
+  `tests/monolith-worldbreaker-codex.js` (35/35), found and this fixed 2
+  real bugs sharing one root cause: `cardCategory(card) === 'aggressive'`
+  is never true for an Ultimate card, so two separate checks were
+  silently skipping Aggressive-flavored Ultimates
+  (`ult-devastate`/`ult-nhul-particul`/`ult-eviscerate`) — the
+  `direct-damage-aggressive` Wonderland bonus (Ala zyu Haad's Singular
+  Entity), and `finalizeCast`'s `aggInTurn` counter that Rykndu's own
+  Wonderland activation condition reads. Both fixed to
+  `isAggressiveFlavored(card)`, the helper already built for Defensive
+  interception. Everything else held up clean under real pressure: Spear's
+  two-cell Strike with a mid-sequence Defeat, multi-effect Ultimates under
+  both Auto-Win accept and decline, duplicate-operator Defensive readying
+  plus rapid double-clicks on the response overlay, corrupt JSON import,
+  XSS attempts across every text field, a 15-Esori stress add, a real
+  export→reimport round-trip, and mobile-viewport passes on both
+  documents. One design-only finding (not a bug) surfaced and stayed
+  open: accepting Auto-Win ends the battle without applying the card's
+  own listed operators — folded into the still-open PvP-tightness
+  checklist rather than guessed at. 286 regression checks green in total
+  after this pass. Still ahead on the "close every gap" list: Refine's
+  ally-targeting half and Rhyzl Step — both still blocked on a real
+  ruling, not buildable without guessing.
 - **`GAME_3_PILLARS.md` / `GAME_4_PILLARS.md` / `GAME_7_PILLARS.md`** —
   each game's pre-implementation design doc (Game Designer / Visual-Art-
   Director / Audio-Designer / Engineer / Capability-Auditor sign-off),

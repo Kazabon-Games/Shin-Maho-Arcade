@@ -11,6 +11,46 @@
   the authoritative record of what actually changed; this comment is
   useful context, not ground truth)
 
+  v0.27.0 — 2026-08-06 — CORRECTNESS: pre-alpha worldbreaker pass (see
+                          new tests/monolith-worldbreaker-arena.js and
+                          tests/monolith-worldbreaker-codex.js) found and
+                          this fixes 2 real bugs, both the same root
+                          cause: `cardCategory(card) === 'aggressive'` is
+                          NEVER true for an Ultimate card, so two separate
+                          checks were silently skipping Aggressive-
+                          flavored Ultimates (ult-devastate, ult-nhul-
+                          particul, ult-eviscerate). (1) The
+                          direct-damage-aggressive Wonderland bonus
+                          (Ala zyu Haad's Singular Entity) — verified live
+                          before the fix, an Aggressive-flavored Ultimate
+                          dropped a target by 50 (Inflict alone) instead
+                          of the correct 100 with the bonus open; fixed to
+                          isAggressiveFlavored(card), the same helper
+                          already built for Defensive interception. (2) A
+                          second instance of the identical bug, found by
+                          grepping the file for every other
+                          `cardCategory(card) === 'aggressive'` check:
+                          finalizeCast's Wonderland aggInTurn counter
+                          (which Rykndu's own agg-abilities-in-turn:3
+                          activation condition reads) was undercounting
+                          the same way — also fixed. No other product bugs
+                          found: the worldbreaker pass also stress-tested
+                          Spear's two-cell Strike with a mid-sequence
+                          Defeat, multi-effect Ultimates (Defeat→Exhaust)
+                          under both Auto-Win accept and decline, the
+                          Defensive/Reactive system under duplicate-
+                          operator readying and rapid double-clicks on the
+                          response overlay, and general UI mashing — all
+                          held up clean. One design-only (not a bug)
+                          finding surfaced and left open pending a
+                          decision: accepting Auto-Win ends the battle but
+                          never applies the card's own listed operators
+                          (Defeat/Exhaust never touch anyone) — see
+                          MONOLITH_RULESET.md and the open PvP-tightness
+                          checklist. 286 regression checks green in total
+                          after this pass (committed suites + scratch
+                          verification scripts).
+
   v0.26.0 — 2026-08-06 — AI plays OR/Ultimate/Defensive cards — the last
                           "AI playing Ultimate/Defensive/OR cards" gap.
                           aiChooseAndPlayCard() previously filtered
@@ -2971,7 +3011,16 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
   // state at all.
   if (u.wonderlandProgress){
     u.wonderlandProgress.lastCardPlayedId = card.id;
-    if (cardCategory(card) === 'aggressive') u.wonderlandProgress.aggInTurn += 1;
+    // BUG FIX (pre-alpha, same root cause as the direct-damage-aggressive
+    // fix above — found while auditing every other `cardCategory(card)
+    // === 'aggressive'` check in this file for the same gap): this
+    // undercounted Rykndu's Wonderland activation condition
+    // (agg-abilities-in-turn: 3) whenever an Aggressive-flavored
+    // Ultimate (ult-devastate, ult-nhul-particul, ult-eviscerate) was one
+    // of the plays — cardCategory() is never 'aggressive' for an
+    // Ultimate card. isAggressiveFlavored() is the correct check, same
+    // helper already used for Defensive interception.
+    if (isAggressiveFlavored(card)) u.wonderlandProgress.aggInTurn += 1;
     checkWonderlandActivation(u);
   }
   const proceedCast = () => {
@@ -3018,7 +3067,17 @@ function finalizeCast(u, target, card, cost, chosenOperatorId){
     // Initiative cost, stacked on top of whatever it already does. Only
     // against unit targets — a Talisman (Destroy/Capture) has no Life to
     // damage.
-    if (cardCategory(card) === 'aggressive' && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
+    // BUG FIX (found by worldbreaker pass, pre-alpha): this used to check
+    // `cardCategory(card) === 'aggressive'`, which is NEVER true for an
+    // Ultimate card — cardCategory() always returns 'ultimate' regardless
+    // of the card's actual effects, the same gap isAggressiveFlavored()
+    // was built to close for Defensive interception. An Aggressive-
+    // flavored Ultimate (ult-devastate, ult-nhul-particul, ult-eviscerate)
+    // was silently skipping this bonus entirely. Verified live:
+    // ult-devastate dropped a target by exactly 50 (Inflict alone) with
+    // the bonus open, not 100 — confirmed via a real Playwright check
+    // before this fix, re-confirmed after.
+    if (isAggressiveFlavored(card) && target.life !== undefined && hasWonderlandEffect(u, 'direct-damage-aggressive')){
       applyLifeDamage(target, cost);
       logMsg(`${u.name}'s open Wonderland makes ${cardDescription(card)} deal ${cost} direct damage too.`, u.team);
     }
